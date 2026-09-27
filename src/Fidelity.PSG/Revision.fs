@@ -113,6 +113,10 @@ type RevisionHeader = {
 type Revision = {
     Header: RevisionHeader
     Nodes: Map<NodeId, SemanticNode>
+    /// The entire edge set of the graph: the structural and reference relations each node's
+    /// kind implies, in node order, followed by every relation that saturation wrote.
+    /// A reader plans its traversal from this set. It never adds to it.
+    Edges: Hyperedge list
     DeclarationRoots: (NodeId * DeclRoot) list
     ModuleClassifications: Map<NodeId, ModuleClassification>
     Platform: PlatformWidths
@@ -129,10 +133,72 @@ type Revision = {
     ObligationQuery: string
 }
 
+module Codata =
+    let empty : Codata =
+        { Escapes = Map.empty
+          Curry = { PartialApplications = Map.empty; SaturatedCalls = Map.empty; PartialAppBindings = Set.empty; AbsorbedLambdas = Set.empty }
+          Meets = Map.empty
+          ReturnMeets = Map.empty
+          Closures = Map.empty
+          EnvironmentLayouts = Map.empty
+          EnvironmentDestinations = Map.empty
+          EnvironmentOrigins = Map.empty
+          LazyLayouts = Map.empty
+          LazyOrigins = Map.empty
+          LazyDestinations = Map.empty
+          KnownCallables = Map.empty
+          CallableCarriers = Map.empty
+          CallableJoins = Map.empty
+          CallableFlows = Map.empty
+          MutableCallableStorage = Map.empty
+          ContinuationFrames = Map.empty
+          SequenceOrigins = Map.empty
+          SequenceFlows = Map.empty
+          SequenceFamilies = Map.empty
+          SequenceTemplateCopies = Map.empty
+          ContinuationStorage = Map.empty
+          ContinuationRegions = Map.empty
+          SequenceInitializers = Map.empty
+          SequenceDestinations = Map.empty
+          SequenceCurrentReads = Set.empty
+          Pins = None
+          DeclarationRootLambdas = Map.empty
+          FunctionPointers = Map.empty
+          Mmio = Map.empty
+          ProgramStorage = Empty.programStorage }
+
+module ForeignStorageProjection =
+    let empty : ForeignStorageProjection =
+        { BorrowedViews = Map.empty; Mmio = Map.empty; MappedCalls = Set.empty }
+
+module ExplicitDemandProjection =
+    let empty : ExplicitDemandProjection =
+        { Operands = Map.empty; Relations = Map.empty }
+
 module Revision =
     /// The version of the contract declared by this library.
     [<Literal>]
     let Schema = 1
+
+    /// The published form of a program with nothing in it, from a producer that
+    /// declares no platform width.
+    let empty (producer: string) : Revision =
+        { Header = { Schema = Schema; Producer = producer }
+          Nodes = Map.empty
+          Edges = []
+          DeclarationRoots = []
+          ModuleClassifications = Map.empty
+          Platform =
+            { Register = Error "The revision declares no Register width."
+              Pointer = Error "The revision declares no Pointer width." }
+          StaticStringPool = None
+          Codata = Codata.empty
+          Emission = Empty.emission
+          Foreign = ForeignStorageProjection.empty
+          Demand = ExplicitDemandProjection.empty
+          Obligations = []
+          ObligationSources = Map.empty
+          ObligationQuery = "" }
 
     let tryNode (id: NodeId) (revision: Revision) : SemanticNode option =
         Map.tryFind id revision.Nodes

@@ -312,3 +312,49 @@ type ReturnBound = {
     AtMost: string
 }
 
+/// Arena affinity for memory management
+[<RequireQualifiedAccess>]
+type ArenaAffinity =
+    /// Default: current actor's arena
+    | CurrentActor
+    /// Named arena (explicit allocation context)
+    | Explicit of name: string
+    /// Stack allocation (no arena, scope-bound)
+    | Stack
+
+/// Type layout determines memory representation
+[<RequireQualifiedAccess>]
+type TypeLayout =
+    /// Stack-allocated, known size and alignment
+    | Inline of size: int * align: int
+    /// Arena-allocated (heap-like but deterministic)
+    | Reference of arena: ArenaAffinity
+    /// Platform-specific, size determined at codegen
+    | Opaque
+    /// Platform word size - size/alignment depend on target architecture.
+    /// CCS preserves type identity at type checking and resolves the size at saturation, where
+    /// the platform is (Placement reads the declared Pointer width into `SemanticGraph.Layouts`);
+    /// Alex reads the settled layout and resolves nothing (Layout_As_Joint_Constraint.md §3).
+    | PlatformWord
+    /// Fat pointer: pointer + length (both platform word sized)
+    /// Used for arrays, strings, spans - compound of two NTU components.
+    /// On x86_64: 16 bytes (8 + 8), on ARM32: 8 bytes (4 + 4)
+    /// Alex resolves to concrete size via platform quotations.
+    | FatPointer
+    /// NTU compound: struct of multiple NTU-sized components
+    /// Size = sum of component sizes (all platform-dependent)
+    /// Used for types like NativeSlice (ptr + length + flags)
+    | NTUCompound of componentCount: int
+    /// Substrate-qualified layout: same type, different placement.
+    /// Qualifiers do NOT affect type identity — only inform codegen
+    /// and BAREWire inter-substrate transfer strategy.
+    | Qualified of inner: TypeLayout * qualifiers: NTUQualifiers
+    /// A record: the identity of a type laid out field by field in declaration order. Its byte
+    /// layout is settled at saturation from its fields' selected representations and the declared
+    /// Pointer width (Placement, `SemanticGraph.Layouts`; Dimensional_Range_Design.md ruling 2),
+    /// never computed here against a word of eight.
+    | Record
+    /// A union: the identity of a type laid out as a tag and the payload slot of its widest case,
+    /// settled at saturation likewise.
+    | Union
+

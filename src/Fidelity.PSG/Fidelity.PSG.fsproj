@@ -26,9 +26,13 @@
     <Compile Include="TypeIdentity.fs" />
     <Compile Include="Nodes.fs" />
     <Compile Include="Settled.fs" />
+    <Compile Include="Edges.fs" />
     <Compile Include="Codata.fs" />
     <Compile Include="Node.fs" />
+    <Compile Include="Empty.fs" />
     <Compile Include="Revision.fs" />
+    <Compile Include="IntegrityNamed.fs" />
+    <Compile Include="Integrity.fs" />
   </ItemGroup>
 
   <ItemGroup>
