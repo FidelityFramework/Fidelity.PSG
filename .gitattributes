@@ -1,0 +1,27 @@
+# Auto-detect text files and normalise line endings
+* text=auto
+
+# F# source
+*.fs text diff=fsharp
+*.fsx text diff=fsharp
+*.fsproj text
+
+# Solution files
+*.slnx text
+*.sln text
+
+# Build infrastructure
+*.props text
+*.targets text
+
+# Documentation
+*.md text diff=markdown
+
+# Config
+*.json text
+*.toml text
+*.xml text
+*.yml text
+*.yaml text
+
+*.clef linguist-language=F# linguist-detectable=false

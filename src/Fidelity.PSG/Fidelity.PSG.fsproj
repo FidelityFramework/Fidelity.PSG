@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="../../build/Contract.targets" />
+
+  <!-- The published form of the Program Semantic Graph. The Clef Compiler Service
+       produces a revision; Composer, Alex and every other reader consume it through
+       this library. This project declares data and readings of data. It references
+       no compiler. -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <RootNamespace>Fidelity.PSG</RootNamespace>
+    <AssemblyName>Fidelity.PSG</AssemblyName>
+    <Nullable>disable</Nullable>
+    <WarningLevel>3</WarningLevel>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Identity.fs" />
+    <Compile Include="Numeric.fs" />
+    <Compile Include="Dimension.fs" />
+    <Compile Include="TypeIdentity.fs" />
+    <Compile Include="Nodes.fs" />
+    <Compile Include="Settled.fs" />
+    <Compile Include="Codata.fs" />
+    <Compile Include="Node.fs" />
+    <Compile Include="Revision.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FSharp.Core" Version="10.1.401" />
+    <ProjectReference Include="$(BAREWireProjectPath)" />
+  </ItemGroup>
+
+</Project>

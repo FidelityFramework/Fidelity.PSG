@@ -1,0 +1,51 @@
+# Build results
+bin/
+obj/
+out/
+
+# NuGet packages
+*.nupkg
+.nuget/
+packages/
+
+# Visual Studio / JetBrains
+.vs/
+.idea/
+*.user
+*.suo
+*.userprefs
+
+# Build artifacts
+*.dll
+*.exe
+*.pdb
+*.cache
+
+# Test results
+TestResults/
+*.trx
+
+# Coverage
+coverage/
+*.coverage
+*.coveragexml
+
+# Paket
+paket-files/
+.paket/
+
+# FAKE
+.fake/
+
+# Documentation build
+_site/
+docs/_site/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor backups
+*~
+*.swp
+*.swo

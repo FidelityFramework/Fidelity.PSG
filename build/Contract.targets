@@ -1,0 +1,61 @@
+<Project>
+  <!--
+    The contract declares data. These checks run before every compile of Fidelity.PSG.
+
+    PSG001  A source names the compiler. The contract is what the compiler publishes;
+            it cannot reach back into the compiler that produces it.
+    PSG002  The project references something other than BAREWire.
+    PSG003  A source opens a file, starts a process, or holds process-wide state.
+  -->
+  <UsingTask TaskName="ValidatePsgContract"
+             TaskFactory="RoslynCodeTaskFactory"
+             AssemblyFile="$(MSBuildToolsPath)/Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <Sources ParameterType="Microsoft.Build.Framework.ITaskItem[]" Required="true" />
+      <ProjectReferences ParameterType="Microsoft.Build.Framework.ITaskItem[]" Required="false" />
+      <PermittedProject ParameterType="System.String" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System" />
+      <Using Namespace="System.IO" />
+      <Using Namespace="System.Text.RegularExpressions" />
+      <Code Type="Method" Language="cs"><![CDATA[
+      public override bool Execute() {
+        var compiler = new Regex(@"\bClef\s*\.\s*Compiler\b|\bFSharp\s*\.\s*Compiler\b");
+        var effects = new Regex(@"\bSystem\.IO\b|\bFile\.|\bDirectory\.|\bSystem\.Diagnostics\.Process\b|\bProcessStartInfo\b|\bEnvironment\.|\bConditionalWeakTable\b|\bmutable\b");
+        foreach (var item in Sources) {
+          var path = Path.GetFullPath(item.ItemSpec);
+          var lines = File.ReadAllLines(path);
+          for (var index = 0; index < lines.Length; index++) {
+            // Comments describe; only code is checked.
+            var line = lines[index];
+            var comment = line.IndexOf("//", StringComparison.Ordinal);
+            var code = comment >= 0 ? line.Substring(0, comment) : line;
+            if (compiler.IsMatch(code))
+              Log.LogError(null, "PSG001", null, path, index + 1, 0, 0, 0,
+                "The published contract cannot name the compiler that produces it.");
+            var effect = effects.Match(code);
+            if (effect.Success)
+              Log.LogError(null, "PSG003", null, path, index + 1, 0, 0, 0,
+                "The contract declares data and readings of stored fields. '{0}' is an effect or process-wide state.", effect.Value);
+          }
+        }
+        var permitted = Path.GetFullPath(PermittedProject);
+        if (ProjectReferences != null)
+          foreach (var reference in ProjectReferences) {
+            var path = Path.GetFullPath(reference.ItemSpec);
+            if (!string.Equals(path, permitted, StringComparison.Ordinal))
+              Log.LogError(null, "PSG002", null, path, 0, 0, 0, 0,
+                "The contract references BAREWire and no other project.");
+          }
+        return !Log.HasLoggedErrors;
+      }
+      ]]></Code>
+    </Task>
+  </UsingTask>
+  <Target Name="CheckPsgContract" BeforeTargets="CoreCompile">
+    <ValidatePsgContract Sources="@(Compile)"
+                         ProjectReferences="@(ProjectReference)"
+                         PermittedProject="$(BAREWireProjectPath)" />
+  </Target>
+</Project>

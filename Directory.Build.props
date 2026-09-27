@@ -1,0 +1,8 @@
+<Project>
+  <!-- Optional local checkout selection; command-line properties still take precedence. -->
+  <Import Project="$(MSBuildThisFileDirectory)Directory.Build.local.props" Condition="Exists('$(MSBuildThisFileDirectory)Directory.Build.local.props')" />
+  <PropertyGroup>
+    <!-- The one library the contract references: declared platform types today, layout facilities later. -->
+    <BAREWireProjectPath Condition="'$(BAREWireProjectPath)' == ''">$(MSBuildThisFileDirectory)../BAREWire/src/BAREWire.fsproj</BAREWireProjectPath>
+  </PropertyGroup>
+</Project>
