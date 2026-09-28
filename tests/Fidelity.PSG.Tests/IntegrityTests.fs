@@ -301,7 +301,7 @@ let ``a materialized literal names the pool entry that lists it`` () =
 
 [<Fact>]
 let ``a literal that no demanded position reads states the omissions under which it is not entered`` () =
-    Assert.Empty(Integrity.check (stored (LiteralStorage.NotMaterialized [ omission ]) None))
+    Assert.Empty(Integrity.check (stored (LiteralStorage.NotMaterialized (StoragePremise.Established [ omission ])) None))
 
 [<Fact>]
 let ``a literal proof whose literal has no storage row is reported`` () =
@@ -330,17 +330,148 @@ let ``every literal a pool entry lists has a row that names the entry`` defect =
     let violations =
         match defect with
         | "no row" -> Integrity.check placed
-        | _ -> Integrity.check { placed with LiteralStorage = Map.ofList [ NodeId 3, LiteralStorage.NotMaterialized [ omission ] ] }
+        | _ -> Integrity.check { placed with LiteralStorage = Map.ofList [ NodeId 3, LiteralStorage.NotMaterialized (StoragePremise.Established [ omission ]) ] }
     let violation = within "StaticStringPool.Entries" violations
     Assert.Equal(Some (NodeId 3), violation.Node)
 
 [<Fact>]
 let ``a row that is not materialized and states no omission is reported`` () =
-    let violation = only "LiteralStorage" (Integrity.check (stored (LiteralStorage.NotMaterialized []) None))
+    let violation = only "LiteralStorage" (Integrity.check (stored (LiteralStorage.NotMaterialized (StoragePremise.Established [])) None))
     Assert.Equal(Some (NodeId 3), violation.Node)
 
 [<Fact>]
 let ``an omission that names a node absent from the revision is reported`` () =
-    let foreign = LiteralStorage.NotMaterialized [ { omission with Site = NodeId 9 } ]
+    let foreign = LiteralStorage.NotMaterialized (StoragePremise.Established [ { omission with Site = NodeId 9 } ])
     let violation = only "LiteralStorage (values)" (Integrity.check (stored foreign None))
     Assert.Equal(Some (NodeId 9), violation.Node)
+
+[<Fact>]
+let ``a storage premise that is pending is reported at its literal`` () =
+    let violation = only "LiteralStorage" (Integrity.check (stored (LiteralStorage.NotMaterialized (StoragePremise.Pending [ omission ])) None))
+    Assert.Equal(Some (NodeId 3), violation.Node)
+    Assert.Contains("pending", violation.Reason)
+
+// A string byte view at node 3 of source 4, whose extent source and one origin is the
+// literal 5 and whose byte representation node 6 declares. The calls 7 and 9 supply
+// the actuals 8 and 10, each of which reaches the literal 5.
+let private octet : NumericRepresentation =
+    { Name = "octet"; Capability = "native"; Family = "uint"; Bits = 8; MinMagnitude = "0"; MaxMagnitude = "255"; Boundary = "wrap" }
+
+let private participant number role ordinal group : Participant =
+    { Node = NodeId number; Role = role; Ordinal = ordinal; Group = NodeId group }
+
+let private borrowed : Participant list =
+    [ participant 3 ParticipantRole.Site 0 3
+      participant 4 ParticipantRole.Source 0 3
+      participant 5 ParticipantRole.ExtentSource 0 3
+      participant 6 ParticipantRole.RepresentationDeclaration 0 3
+      participant 7 ParticipantRole.ReachingCall 0 7
+      participant 8 ParticipantRole.ReachingActual 0 7
+      participant 5 ParticipantRole.Origin 0 7
+      participant 9 ParticipantRole.ReachingCall 0 9
+      participant 10 ParticipantRole.ReachingActual 0 9
+      participant 5 ParticipantRole.Origin 0 9 ]
+
+let private nodesOf (participants: Participant list) = participants |> List.map _.Node
+
+let private byteView (participants: ParticipantEvidence) : BoundaryByteView =
+    { Site = NodeId 3; Source = NodeId 4; ExtentSource = NodeId 5; Representation = octet; RepresentationDeclaration = NodeId 6
+      StaticOrigins = Map.ofList [ NodeId 5, 4I ]; Participants = participants }
+
+let private stringExtent (participants: ParticipantEvidence) : BoundaryStringExtent =
+    { Site = NodeId 3; Source = NodeId 4; ExtentSource = NodeId 5; StaticOrigins = Map.ofList [ NodeId 5, 4I ]; Participants = participants }
+
+let private borrowNodes = [ 3 .. 10 ] |> List.map (fun number -> node number (SemanticKind.Literal(NativeLiteral.Bool true)) [])
+
+/// The nodes of the borrow with the edges given.
+let private withEdges (edges: Hyperedge list) : Revision =
+    { revision borrowNodes with Edges = edges }
+
+/// The borrow's view row with the participants and the sources given.
+let private viewEdge (participants: ParticipantEvidence) (sources: NodeId list) : Hyperedge =
+    { Sources = sources; Target = NodeId 3; Class = EdgeClass.Range; Role = EdgeRole.StringByteView (byteView participants); Ordinal = 0 }
+
+[<Fact>]
+let ``one node in two roles and in two groups is no violation`` () =
+    let occurrences = borrowed |> List.filter (fun occurrence -> occurrence.Node = NodeId 5)
+    Assert.Equal(2, occurrences |> List.map _.Role |> List.distinct |> List.length)
+    Assert.Equal(3, occurrences |> List.map _.Group |> List.distinct |> List.length)
+    Assert.Empty(Integrity.check (withEdges [ viewEdge (ParticipantEvidence.Established borrowed) (nodesOf borrowed) ]))
+
+[<Fact>]
+let ``a participant that names a node absent from the revision is reported`` () =
+    let foreign = borrowed @ [ participant 11 ParticipantRole.Path 0 7 ]
+    let violations = Integrity.check (withEdges [ viewEdge (ParticipantEvidence.Established foreign) (nodesOf foreign) ])
+    let violation = within "Edges.Role" violations
+    Assert.Equal(Some (NodeId 11), violation.Node)
+    Assert.DoesNotContain(violations, fun other -> other.Part = "Edges (StringByteView)")
+
+[<Theory>]
+[<InlineData("prefix")>]
+[<InlineData("order")>]
+[<InlineData("set")>]
+let ``an edge whose sources differ from its participants is reported at its site`` form =
+    let sources =
+        match form with
+        | "prefix" -> NodeId 4 :: NodeId 5 :: nodesOf borrowed
+        | "order" -> List.rev (nodesOf borrowed)
+        | _ -> nodesOf borrowed |> List.distinct
+    let violation = only "Edges (StringByteView)" (Integrity.check (withEdges [ viewEdge (ParticipantEvidence.Established borrowed) sources ]))
+    Assert.Equal(Some (NodeId 3), violation.Node)
+
+[<Theory>]
+[<InlineData("no site")>]
+[<InlineData("empty")>]
+let ``an established list without the row's site is reported at the site`` form =
+    let participants =
+        match form with
+        | "no site" -> borrowed |> List.filter (fun occurrence -> occurrence.Role <> ParticipantRole.Site)
+        | _ -> []
+    let violation = only "Edges (StringByteView)" (Integrity.check (withEdges [ viewEdge (ParticipantEvidence.Established participants) (nodesOf participants) ]))
+    Assert.Equal(Some (NodeId 3), violation.Node)
+
+[<Theory>]
+[<InlineData("Edges (StringByteView)")>]
+[<InlineData("Edges (StringExtent)")>]
+[<InlineData("Emission.Boundary.ByteViews")>]
+[<InlineData("Emission.Boundary.StringExtents")>]
+let ``a string borrow row with pending participants is reported at its site`` part =
+    let pending = ParticipantEvidence.Pending { Derived = borrowed }
+    let boundary = (revision borrowNodes).Emission.Boundary
+    let stated =
+        match part with
+        | "Edges (StringByteView)" -> withEdges [ viewEdge pending (nodesOf borrowed) ]
+        | "Edges (StringExtent)" ->
+            withEdges [ { Sources = nodesOf borrowed; Target = NodeId 3; Class = EdgeClass.Range; Role = EdgeRole.StringExtent (stringExtent pending); Ordinal = 0 } ]
+        | "Emission.Boundary.ByteViews" ->
+            let borrow = revision borrowNodes
+            { borrow with Emission = { borrow.Emission with Boundary = { boundary with ByteViews = Map.ofList [ NodeId 3, byteView pending ] } } }
+        | _ ->
+            let borrow = revision borrowNodes
+            { borrow with Emission = { borrow.Emission with Boundary = { boundary with StringExtents = Map.ofList [ NodeId 3, stringExtent pending ] } } }
+    let violation = only part (Integrity.check stated)
+    Assert.Equal(Some (NodeId 3), violation.Node)
+    Assert.Contains("pending", violation.Reason)
+
+/// The history row of the borrow at node 3, whose early derivation is the list given.
+let private historyEdge (early: Participant list) : Hyperedge =
+    { Sources = nodesOf early; Target = NodeId 3; Class = EdgeClass.Provenance
+      Role = EdgeRole.StringBorrowHistory { Site = NodeId 3; Early = { Derived = early } }; Ordinal = 0 }
+
+[<Fact>]
+let ``a history row that names a node absent from the revision is reported`` () =
+    let early = borrowed @ [ participant 11 ParticipantRole.OmissionSite 1 7 ]
+    let violations = Integrity.check (withEdges [ viewEdge (ParticipantEvidence.Established borrowed) (nodesOf borrowed); historyEdge early ])
+    let violation = within "Edges.Role" violations
+    Assert.Equal(Some (NodeId 11), violation.Node)
+    Assert.All(violations, fun other -> Assert.Equal(Some (NodeId 11), other.Node))
+
+[<Fact>]
+let ``a history row that differs from its current row is no violation`` () =
+    let early = borrowed |> List.map (fun occurrence ->
+        if occurrence.Role = ParticipantRole.ReachingCall && occurrence.Node = NodeId 7 then { occurrence with Node = NodeId 6 } else occurrence)
+    Assert.NotEqual<Participant list>(borrowed, early)
+    let premise = { Literal = NodeId 5; Early = [ { Site = NodeId 6; Ordinal = 0; Actual = NodeId 8 } ] }
+    let literalHistory : Hyperedge =
+        { Sources = [ NodeId 6; NodeId 8 ]; Target = NodeId 5; Class = EdgeClass.Provenance; Role = EdgeRole.LiteralStorageHistory premise; Ordinal = 0 }
+    Assert.Empty(Integrity.check (withEdges [ viewEdge (ParticipantEvidence.Established borrowed) (nodesOf borrowed); historyEdge early; literalHistory ]))

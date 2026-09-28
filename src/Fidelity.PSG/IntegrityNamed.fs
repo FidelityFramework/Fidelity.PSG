@@ -68,6 +68,10 @@ module IntegrityNamed =
         @ (value.End |> Option.toList |> List.collect (fun v0 -> [ v0 ]))
         @ (value.Within |> Option.toList |> List.collect (fun v0 -> [ v0 ]))
 
+    and private idsOfBorrowHistory (value: Fidelity.PSG.BorrowHistory) : NodeId list =
+        [ value.Site ]
+        @ (idsOfEarlyDerivation value.Early)
+
     and private idsOfBorrowedViewOperation (value: Fidelity.PSG.BorrowedViewOperation) : NodeId list =
         [ value.Site ]
         @ [ value.View ]
@@ -79,7 +83,7 @@ module IntegrityNamed =
         @ [ value.ExtentSource ]
         @ [ value.RepresentationDeclaration ]
         @ (value.StaticOrigins |> Map.toList |> List.collect (fun (k0, h0) -> [ k0 ] @ []))
-        @ (value.Participants |> Set.toList |> List.collect (fun v0 -> [ v0 ]))
+        @ (idsOfParticipantEvidence value.Participants)
 
     and private idsOfBoundaryCall (value: Fidelity.PSG.BoundaryCall) : NodeId list =
         [ value.Site ]
@@ -166,7 +170,7 @@ module IntegrityNamed =
         @ [ value.Source ]
         @ [ value.ExtentSource ]
         @ (value.StaticOrigins |> Map.toList |> List.collect (fun (k0, h0) -> [ k0 ] @ []))
-        @ (value.Participants |> Set.toList |> List.collect (fun v0 -> [ v0 ]))
+        @ (idsOfParticipantEvidence value.Participants)
 
     and private idsOfCallableCarrier (value: Fidelity.PSG.CallableCarrier) : NodeId list =
         [ value.Occurrence ]
@@ -356,6 +360,9 @@ module IntegrityNamed =
     and private idsOfEagerDemandRelation (value: Fidelity.PSG.EagerDemandRelation) : NodeId list =
         (value.Sources |> List.collect (fun v0 -> [ v0 ]))
 
+    and private idsOfEarlyDerivation (value: Fidelity.PSG.EarlyDerivation) : NodeId list =
+        (value.Derived |> List.collect (fun v0 -> (idsOfParticipant v0)))
+
     and private idsOfEdgeRole (value: Fidelity.PSG.EdgeRole) : NodeId list =
         match value with
         | Fidelity.PSG.EdgeRole.NumericDomain(a0) -> (idsOfNumericDomain a0)
@@ -386,6 +393,8 @@ module IntegrityNamed =
         | Fidelity.PSG.EdgeRole.BoundaryProof(_) -> []
         | Fidelity.PSG.EdgeRole.StringByteView(a0) -> (idsOfBoundaryByteView a0)
         | Fidelity.PSG.EdgeRole.StringExtent(a0) -> (idsOfBoundaryStringExtent a0)
+        | Fidelity.PSG.EdgeRole.StringBorrowHistory(a0) -> (idsOfBorrowHistory a0)
+        | Fidelity.PSG.EdgeRole.LiteralStorageHistory(a0) -> (idsOfStoragePremiseHistory a0)
         | Fidelity.PSG.EdgeRole.StringComparisonConstruction(_) -> []
         | Fidelity.PSG.EdgeRole.StringLengthComparison(_) -> []
         | Fidelity.PSG.EdgeRole.IntrinsicWriteAbi(a0) -> (idsOfIntrinsicWriteImport a0)
@@ -676,7 +685,7 @@ module IntegrityNamed =
     and private idsOfLiteralStorage (value: Fidelity.PSG.LiteralStorage) : NodeId list =
         match value with
         | Fidelity.PSG.LiteralStorage.Materialized(_) -> []
-        | Fidelity.PSG.LiteralStorage.NotMaterialized(a0) -> (a0 |> List.collect (fun v0 -> (idsOfOrdinaryOmission v0)))
+        | Fidelity.PSG.LiteralStorage.NotMaterialized(a0) -> (idsOfStoragePremise a0)
 
     and private idsOfMatchCase (value: Fidelity.PSG.MatchCase) : NodeId list =
         (value.PatternBindings |> List.collect (fun v0 -> [ v0 ]))
@@ -940,6 +949,15 @@ module IntegrityNamed =
         [ value.TargetBindingId ]
         @ (value.SuppliedArgNodes |> List.collect (fun v0 -> [ v0 ]))
 
+    and private idsOfParticipant (value: Fidelity.PSG.Participant) : NodeId list =
+        [ value.Node ]
+        @ [ value.Group ]
+
+    and private idsOfParticipantEvidence (value: Fidelity.PSG.ParticipantEvidence) : NodeId list =
+        match value with
+        | Fidelity.PSG.ParticipantEvidence.Pending(a0) -> (idsOfEarlyDerivation a0)
+        | Fidelity.PSG.ParticipantEvidence.Established(a0) -> (a0 |> List.collect (fun v0 -> (idsOfParticipant v0)))
+
     and private idsOfPredicateEvidence (value: Fidelity.PSG.PredicateEvidence) : NodeId list =
         [ value.Declaration ]
         @ [ value.Expression ]
@@ -1161,6 +1179,15 @@ module IntegrityNamed =
     and private idsOfStaticStringPool (value: Fidelity.PSG.StaticStringPool) : NodeId list =
         (value.Entries |> List.collect (fun v0 -> (idsOfStaticStringEntry v0)))
         @ [ value.DeclarationNode ]
+
+    and private idsOfStoragePremise (value: Fidelity.PSG.StoragePremise) : NodeId list =
+        match value with
+        | Fidelity.PSG.StoragePremise.Pending(a0) -> (a0 |> List.collect (fun v0 -> (idsOfOrdinaryOmission v0)))
+        | Fidelity.PSG.StoragePremise.Established(a0) -> (a0 |> List.collect (fun v0 -> (idsOfOrdinaryOmission v0)))
+
+    and private idsOfStoragePremiseHistory (value: Fidelity.PSG.StoragePremiseHistory) : NodeId list =
+        [ value.Literal ]
+        @ (value.Early |> List.collect (fun v0 -> (idsOfOrdinaryOmission v0)))
 
     and private idsOfStorageWitnessProjection (value: Fidelity.PSG.StorageWitnessProjection) : NodeId list =
         (value.Lazies |> Map.toList |> List.collect (fun (k0, h0) -> [ k0 ] @ (idsOfLazyWitnessContract h0)))
@@ -1518,7 +1545,7 @@ module IntegrityNamed =
           "Emission.Boundary.ByteViews.ExtentSource", (revision.Emission.Boundary.ByteViews |> Map.toList |> List.collect (fun (_, row) -> [ row.ExtentSource ]))
           "Emission.Boundary.ByteViews.RepresentationDeclaration", (revision.Emission.Boundary.ByteViews |> Map.toList |> List.collect (fun (_, row) -> [ row.RepresentationDeclaration ]))
           "Emission.Boundary.ByteViews.StaticOrigins", (revision.Emission.Boundary.ByteViews |> Map.toList |> List.collect (fun (_, row) -> (row.StaticOrigins |> Map.toList |> List.collect (fun (k1, h1) -> [ k1 ] @ []))))
-          "Emission.Boundary.ByteViews.Participants", (revision.Emission.Boundary.ByteViews |> Map.toList |> List.collect (fun (_, row) -> (row.Participants |> Set.toList |> List.collect (fun v1 -> [ v1 ]))))
+          "Emission.Boundary.ByteViews.Participants", (revision.Emission.Boundary.ByteViews |> Map.toList |> List.collect (fun (_, row) -> (idsOfParticipantEvidence row.Participants)))
           "Emission.Boundary.StringExtents", (revision.Emission.Boundary.StringExtents |> Map.toList |> List.collect (fun (key, _) -> [ key ]))
           "Emission.Boundary.StringExtents.Site", (revision.Emission.Boundary.StringExtents |> Map.toList |> List.collect (fun (_, row) -> [ row.Site ]))
           "Emission.Boundary.StringExtents.Source", (revision.Emission.Boundary.StringExtents |> Map.toList |> List.collect (fun (_, row) -> [ row.Source ]))
@@ -1526,7 +1553,7 @@ module IntegrityNamed =
 
     let private group13 (revision: Revision) : (string * NodeId list) list =
         [ "Emission.Boundary.StringExtents.StaticOrigins", (revision.Emission.Boundary.StringExtents |> Map.toList |> List.collect (fun (_, row) -> (row.StaticOrigins |> Map.toList |> List.collect (fun (k1, h1) -> [ k1 ] @ []))))
-          "Emission.Boundary.StringExtents.Participants", (revision.Emission.Boundary.StringExtents |> Map.toList |> List.collect (fun (_, row) -> (row.Participants |> Set.toList |> List.collect (fun v1 -> [ v1 ]))))
+          "Emission.Boundary.StringExtents.Participants", (revision.Emission.Boundary.StringExtents |> Map.toList |> List.collect (fun (_, row) -> (idsOfParticipantEvidence row.Participants)))
           "Emission.Boundary.IntrinsicWriteImports", (revision.Emission.Boundary.IntrinsicWriteImports |> Map.toList |> List.collect (fun (key, _) -> [ key ]))
           "Emission.Boundary.IntrinsicWriteImports.Identity", (revision.Emission.Boundary.IntrinsicWriteImports |> Map.toList |> List.collect (fun (_, row) -> [ row.Identity ]))
           "Emission.Boundary.IntrinsicWriteImports.Scope", (revision.Emission.Boundary.IntrinsicWriteImports |> Map.toList |> List.collect (fun (_, row) -> [ row.Scope ]))

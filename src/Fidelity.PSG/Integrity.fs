@@ -107,8 +107,8 @@ module Integrity =
 
     /// The storage rows against the static string pool. A row that states
     /// materialization names an entry the pool has, and that entry lists the row's
-    /// literal. A row that states no materialization states its omissions. Every
-    /// literal an entry lists has a row that names the entry.
+    /// literal. A row that states no materialization states an established premise
+    /// with its omissions. Every literal an entry lists has a row that names the entry.
     let stored (revision: Revision) : IntegrityViolation list =
         let entries = revision.StaticStringPool |> Option.map _.Entries |> Option.defaultValue []
         let violation part literal reason = { Part = part; Node = Some literal; Reason = reason }
@@ -123,9 +123,12 @@ module Integrity =
                 | LiteralStorage.Materialized entry when not (List.contains literal entries[entry].NodeIds) ->
                     Some (violation "LiteralStorage" literal
                             (sprintf "The storage row of node %d names pool entry %d, which does not list the node." (NodeId.value literal) entry))
-                | LiteralStorage.NotMaterialized [] ->
+                | LiteralStorage.NotMaterialized (StoragePremise.Established []) ->
                     Some (violation "LiteralStorage" literal
                             (sprintf "The storage row of node %d states neither a pool entry nor an omission." (NodeId.value literal)))
+                | LiteralStorage.NotMaterialized (StoragePremise.Pending _) ->
+                    Some (violation "LiteralStorage" literal
+                            (sprintf "The storage row of node %d states its omission premise as pending." (NodeId.value literal)))
                 | _ -> None)
         let listed =
             entries
@@ -138,6 +141,41 @@ module Integrity =
                         Some (violation "StaticStringPool.Entries" literal
                                 (sprintf "Pool entry %d lists node %d, whose storage row does not name the entry." ordinal (NodeId.value literal)))))
         named @ listed
+
+    /// The string byte view and string extent rows against their participants. A row
+    /// states established participants, one of which names the row's site in the role
+    /// Site, and the sources of its edge are the nodes of its participants in order.
+    let incidence (revision: Revision) : IntegrityViolation list =
+        let violation part site reason = { Part = part; Node = Some site; Reason = reason }
+        let stated part site evidence =
+            match evidence with
+            | ParticipantEvidence.Pending _ ->
+                [ violation part site (sprintf "The string borrow row of node %d states its participants as pending." (NodeId.value site)) ]
+            | ParticipantEvidence.Established participants
+                when not (participants |> List.exists (fun participant -> participant.Role = ParticipantRole.Site && participant.Node = site)) ->
+                [ violation part site (sprintf "The participants of the string borrow row of node %d do not name the node in the role Site." (NodeId.value site)) ]
+            | ParticipantEvidence.Established _ -> []
+        // A pending row has no participant list to compare; `stated` reports it.
+        let ordered part site (sources: NodeId list) evidence =
+            match evidence with
+            | ParticipantEvidence.Established participants when sources <> (participants |> List.map _.Node) ->
+                [ violation part site (sprintf "The sources of the string borrow edge at node %d are not the nodes of its participants in order." (NodeId.value site)) ]
+            | _ -> []
+        let edges =
+            revision.Edges
+            |> List.collect (fun edge ->
+                match edge.Role with
+                | EdgeRole.StringByteView view ->
+                    stated "Edges (StringByteView)" view.Site view.Participants @ ordered "Edges (StringByteView)" view.Site edge.Sources view.Participants
+                | EdgeRole.StringExtent extent ->
+                    stated "Edges (StringExtent)" extent.Site extent.Participants @ ordered "Edges (StringExtent)" extent.Site edge.Sources extent.Participants
+                | _ -> [])
+        let boundary = revision.Emission.Boundary
+        let views =
+            boundary.ByteViews |> Map.toList |> List.collect (fun (_, view) -> stated "Emission.Boundary.ByteViews" view.Site view.Participants)
+        let extents =
+            boundary.StringExtents |> Map.toList |> List.collect (fun (_, extent) -> stated "Emission.Boundary.StringExtents" extent.Site extent.Participants)
+        edges @ views @ extents
 
     /// Every structural defect of the revision. The list is empty for a well-formed one.
     let check (revision: Revision) : IntegrityViolation list =
@@ -178,7 +216,7 @@ module Integrity =
                 |> List.map (fun identity ->
                     { Part = part; Node = Some identity
                       Reason = sprintf "The row of node %d in %s differs from its row in %s." (NodeId.value identity) part other }))
-        header @ misfiled @ absent @ unrelated @ disagreed @ stored revision
+        header @ misfiled @ absent @ unrelated @ disagreed @ stored revision @ incidence revision
 
     /// The first violations as one reason, for a reader that refuses the revision.
     let describe (violations: IntegrityViolation list) : string =

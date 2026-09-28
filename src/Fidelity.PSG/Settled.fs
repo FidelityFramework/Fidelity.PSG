@@ -115,7 +115,11 @@ type BoundaryByteView = {
     Representation: NumericRepresentation
     RepresentationDeclaration: NodeId
     StaticOrigins: Map<NodeId, bigint>
-    Participants: Set<NodeId>
+    /// The occurrences of the borrow, in order: the row's own occurrences, then one group
+    /// for each demanded input and one for each omitted input with every omission that is
+    /// its reason, by call and ordinal, with the roles of a group in case order. A node in
+    /// two groups or two roles occurs in each.
+    Participants: ParticipantEvidence
 }
 
 type BoundaryStringExtent = {
@@ -123,7 +127,8 @@ type BoundaryStringExtent = {
     Source: NodeId
     ExtentSource: NodeId
     StaticOrigins: Map<NodeId, bigint>
-    Participants: Set<NodeId>
+    /// The occurrences of the extent, ordered and grouped as `BoundaryByteView.Participants`.
+    Participants: ParticipantEvidence
 }
 
 type IntrinsicWriteImport = {

@@ -21,6 +21,7 @@
 
   <ItemGroup>
     <Compile Include="Identity.fs" />
+    <Compile Include="Participant.fs" />
     <Compile Include="Numeric.fs" />
     <Compile Include="Dimension.fs" />
     <Compile Include="TypeIdentity.fs" />

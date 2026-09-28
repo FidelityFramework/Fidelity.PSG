@@ -2,6 +2,8 @@ module Fidelity.PSG.Tests.GeneratedTests
 
 open System.Diagnostics
 open System.IO
+open System.Reflection
+open Microsoft.FSharp.Reflection
 open Xunit
 open Fidelity.PSG
 
@@ -30,3 +32,34 @@ let ``the generated list of parts is the one the contract produces`` () =
 [<Fact>]
 let ``every part the generator lists is examined`` () =
     Assert.Equal(IntegrityNamed.Parts, (Integrity.named (Revision.empty "contract-test")).Length)
+
+/// The contract types with a field `Participants` that is a set of node identities, with
+/// no role, ordinal or group for an occurrence. A row that states its participants as
+/// `Participant` values leaves this list; no type joins it.
+let private untypedParticipantSets =
+    [ "ArrayAllocationConstruction"; "ArrayCopyConstruction"; "BoundaryCall"; "BoundaryImport"
+      "CallableEmissionCall"; "CallableEmissionDeclaration"; "CallableProgramInstance"; "HardwareModuleWitness"
+      "IntrinsicWriteCall"; "IntrinsicWriteImport"; "IntrinsicWriteProof"; "KernelIngress"
+      "KernelModuleWitness"; "KernelTargetPlan"; "MemoryAddressWitness"; "MemoryArrayAccessWitness"
+      "MemoryArrayAllocationWitness"; "MemoryArrayCopyWitness"; "MemoryArrayExtentWitness"; "MemoryArrayLiteralWitness"
+      "MemoryBoundsWitness"; "MemoryExtentWitness"; "MemoryProof"; "MemoryStringViewWitness"
+      "NumericIndexTransport"; "NumericOperationProof"; "NumericOperationWitness"; "ProgramStorageEntry"
+      "ScalarCarrier"; "SequenceFamily"; "SequenceProgramWitness"; "SpatialProof" ]
+
+[<Fact>]
+let ``no contract type adds a participant set without roles`` () =
+    let flags = BindingFlags.Public ||| BindingFlags.NonPublic
+    let untyped (field: PropertyInfo) = field.Name = "Participants" && field.PropertyType = typeof<Set<NodeId>>
+    let types = typeof<Revision>.Assembly.GetTypes()
+    let records =
+        types
+        |> Array.filter (fun ty -> FSharpType.IsRecord(ty, flags) && FSharpType.GetRecordFields(ty, flags) |> Array.exists untyped)
+        |> Array.map _.Name
+    let cases =
+        types
+        |> Array.filter (fun ty -> FSharpType.IsUnion(ty, flags))
+        |> Array.collect (fun ty ->
+            FSharpType.GetUnionCases(ty, flags)
+            |> Array.filter (fun case -> case.GetFields() |> Array.exists untyped)
+            |> Array.map (fun case -> ty.Name + "." + case.Name))
+    Assert.Equal<string list>(untypedParticipantSets, Array.append records cases |> Array.sort |> Array.toList)

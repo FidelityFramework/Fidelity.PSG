@@ -300,6 +300,12 @@ type EdgeRole =
     | BoundaryProof of BoundaryProofOutcome
     | StringByteView of BoundaryByteView
     | StringExtent of BoundaryStringExtent
+    /// [nodes of the early derivation] -> the borrow site. What was derived for the
+    /// borrow before the final demand rows; not a current premise.
+    | StringBorrowHistory of BorrowHistory
+    /// [site and actual of each early omission] -> the literal. The omissions read for
+    /// the literal's storage before the final demand rows; not a current premise.
+    | LiteralStorageHistory of StoragePremiseHistory
     | StringComparisonConstruction of negated: bool
     | StringLengthComparison of negated: bool
     | IntrinsicWriteAbi of IntrinsicWriteImport
