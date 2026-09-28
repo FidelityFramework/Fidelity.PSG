@@ -116,9 +116,11 @@ type BoundaryByteView = {
     RepresentationDeclaration: NodeId
     StaticOrigins: Map<NodeId, bigint>
     /// The occurrences of the borrow, in order: the row's own occurrences, then one group
-    /// for each demanded input and one for each omitted input with every omission that is
-    /// its reason, by call and ordinal, with the roles of a group in case order. A node in
-    /// two groups or two roles occurs in each.
+    /// for each demanded input and one for each omitted input with the site of every omission
+    /// that is its reason, by call and ordinal, with the roles of a group in case order; an
+    /// omitted actual is in the group of its omission's site, at its ordinal, and a callee's
+    /// body is in the group of the callee. A node in two groups or two roles
+    /// occurs in each.
     Participants: ParticipantEvidence
 }
 

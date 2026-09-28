@@ -144,17 +144,74 @@ module Integrity =
 
     /// The string byte view and string extent rows against their participants. A row
     /// states established participants, one of which names the row's site in the role
-    /// Site, and the sources of its edge are the nodes of its participants in order.
+    /// Site, and the sources of its edge are the nodes of its participants in order. An
+    /// omitted actual is in the group of an omission site with the same ordinal, and an
+    /// omission site with one ordinal has exactly one omitted actual. A callee's body is in
+    /// the group of a callee; a callee's arguments and parameters are in the group of a call
+    /// in whose group a callee occurs, at the same set of ordinals.
     let incidence (revision: Revision) : IntegrityViolation list =
         let violation part site reason = { Part = part; Node = Some site; Reason = reason }
+        let paired part site (participants: Participant list) =
+            let sites =
+                participants
+                |> List.filter (fun participant -> participant.Role = ParticipantRole.OmissionSite)
+                |> List.map (fun participant -> participant.Node, participant.Ordinal)
+                |> List.distinct
+            let actuals = participants |> List.filter (fun participant -> participant.Role = ParticipantRole.OmittedActual)
+            let unplaced =
+                actuals
+                |> List.filter (fun actual -> not (List.contains (actual.Group, actual.Ordinal) sites))
+                |> List.map (fun actual ->
+                    violation part site
+                        (sprintf "The omitted actual %d of the string borrow row of node %d is not in the group of an omission site at ordinal %d."
+                            (NodeId.value actual.Node) (NodeId.value site) actual.Ordinal))
+            let counted =
+                sites
+                |> List.map (fun (omission, ordinal) ->
+                    omission, ordinal, actuals |> List.filter (fun actual -> actual.Group = omission && actual.Ordinal = ordinal) |> List.length)
+                |> List.filter (fun (_, _, count) -> count <> 1)
+                |> List.map (fun (omission, ordinal, count) ->
+                    violation part site
+                        (sprintf "The omission site %d at ordinal %d of the string borrow row of node %d has %d omitted actuals, not one."
+                            (NodeId.value omission) ordinal (NodeId.value site) count))
+            unplaced @ counted
+        let owned part site (participants: Participant list) =
+            let callees = participants |> List.filter (fun participant -> participant.Role = ParticipantRole.Callee)
+            let lambdas = callees |> List.map _.Node |> Set.ofList
+            let calls = callees |> List.map _.Group |> Set.ofList
+            let placed =
+                participants
+                |> List.choose (fun participant ->
+                    match participant.Role with
+                    | ParticipantRole.CalleeBody when not (lambdas.Contains participant.Group) ->
+                        Some (violation part site
+                                (sprintf "The callee body %d of the string borrow row of node %d is not in the group of a callee."
+                                    (NodeId.value participant.Node) (NodeId.value site)))
+                    | ParticipantRole.CalleeArgument | ParticipantRole.CalleeParameter when not (calls.Contains participant.Group) ->
+                        Some (violation part site
+                                (sprintf "The callee argument or parameter %d of the string borrow row of node %d is not in the group of a call in whose group a callee occurs."
+                                    (NodeId.value participant.Node) (NodeId.value site)))
+                    | _ -> None)
+            let ordinals role call =
+                participants |> List.filter (fun participant -> participant.Role = role && participant.Group = call) |> List.map _.Ordinal |> Set.ofList
+            let unmatched =
+                calls
+                |> Set.toList
+                |> List.filter (fun call -> ordinals ParticipantRole.CalleeArgument call <> ordinals ParticipantRole.CalleeParameter call)
+                |> List.map (fun call ->
+                    violation part site
+                        (sprintf "The callee arguments and parameters in the group of call %d of the string borrow row of node %d are at different ordinals."
+                            (NodeId.value call) (NodeId.value site)))
+            placed @ unmatched
         let stated part site evidence =
             match evidence with
             | ParticipantEvidence.Pending _ ->
                 [ violation part site (sprintf "The string borrow row of node %d states its participants as pending." (NodeId.value site)) ]
             | ParticipantEvidence.Established participants
                 when not (participants |> List.exists (fun participant -> participant.Role = ParticipantRole.Site && participant.Node = site)) ->
-                [ violation part site (sprintf "The participants of the string borrow row of node %d do not name the node in the role Site." (NodeId.value site)) ]
-            | ParticipantEvidence.Established _ -> []
+                violation part site (sprintf "The participants of the string borrow row of node %d do not name the node in the role Site." (NodeId.value site))
+                :: (paired part site participants @ owned part site participants)
+            | ParticipantEvidence.Established participants -> paired part site participants @ owned part site participants
         // A pending row has no participant list to compare; `stated` reports it.
         let ordered part site (sources: NodeId list) evidence =
             match evidence with

@@ -52,7 +52,7 @@ The Clef Compiler Service, in the clef repository:
 | Reference | A lazy value has its occurrence, an occurrence has its layout, and a lazy thunk declaration is the thunk of a layout. | `Integrity.related` |
 | Agreement | The four codata tables that the callable projection republishes hold the same rows in both places. | `Integrity.agreeing` |
 | Storage | A literal's storage row that states materialization names a pool entry that lists the literal, and every literal an entry lists has such a row. A row that states no materialization states an established premise with at least one omission. | `Integrity.stored` |
-| Incidence | A string byte view or string extent states established participants, one of which names its site in the role Site. The sources of its edge are the nodes of its participants in order. | `Integrity.incidence` |
+| Incidence | A string byte view or string extent states established participants, one of which names its site in the role Site. The sources of its edge are the nodes of its participants in order. An omitted actual is in the group of an omission site with the same ordinal, and an omission site with one ordinal has exactly one omitted actual. A callee's body is in the group of a callee; a callee's arguments and parameters are in the group of a call in whose group a callee occurs, at the same set of ordinals. | `Integrity.incidence` |
 
 The closure rule examines every position of a revision that holds an identity. The list of positions is generated from the compiled contract by `tools/GenerateIntegrity.fsx` into `src/Fidelity.PSG/IntegrityNamed.fs`. A test compares the file with the generator's output, so a contract type cannot change and leave a table unexamined.
 

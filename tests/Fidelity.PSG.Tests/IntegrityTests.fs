@@ -475,3 +475,85 @@ let ``a history row that differs from its current row is no violation`` () =
     let literalHistory : Hyperedge =
         { Sources = [ NodeId 6; NodeId 8 ]; Target = NodeId 5; Class = EdgeClass.Provenance; Role = EdgeRole.LiteralStorageHistory premise; Ordinal = 0 }
     Assert.Empty(Integrity.check (withEdges [ viewEdge (ParticipantEvidence.Established borrowed) (nodesOf borrowed); historyEdge early; literalHistory ]))
+
+// The borrow with the omitted call 20 of actual 21 under the omissions (22, 0, 23) and
+// (24, 0, 25): each site in the group of the omitted call, each actual in the group of its site.
+let private omissionNodes = [ 3 .. 10 ] @ [ 20 .. 25 ] |> List.map (fun number -> node number (SemanticKind.Literal(NativeLiteral.Bool true)) [])
+
+let private omitted : Participant list =
+    borrowed
+    @ [ participant 20 ParticipantRole.OmittedCall 0 20
+        participant 21 ParticipantRole.OmittedCallActual 0 20
+        participant 22 ParticipantRole.OmissionSite 0 20
+        participant 24 ParticipantRole.OmissionSite 0 20
+        participant 23 ParticipantRole.OmittedActual 0 22
+        participant 25 ParticipantRole.OmittedActual 0 24 ]
+
+let private withOmissions (participants: Participant list) : Revision =
+    { revision omissionNodes with Edges = [ viewEdge (ParticipantEvidence.Established participants) (nodesOf participants) ] }
+
+[<Fact>]
+let ``each omitted actual in the group of its omission site at the same ordinal is no violation`` () =
+    Assert.Empty(Integrity.check (withOmissions omitted))
+
+[<Theory>]
+[<InlineData("actual in the omitted call's group")>]
+[<InlineData("actual at another ordinal")>]
+[<InlineData("two actuals at one site and ordinal")>]
+[<InlineData("site with no actual")>]
+let ``an omission whose site and actual are not paired is reported at the row's site`` defect =
+    let changed =
+        match defect with
+        | "actual in the omitted call's group" ->
+            omitted |> List.map (fun occurrence -> if occurrence.Node = NodeId 23 then { occurrence with Group = NodeId 20 } else occurrence)
+        | "actual at another ordinal" ->
+            omitted |> List.map (fun occurrence -> if occurrence.Node = NodeId 23 then { occurrence with Ordinal = 1 } else occurrence)
+        | "two actuals at one site and ordinal" -> omitted @ [ participant 21 ParticipantRole.OmittedActual 0 22 ]
+        | _ -> omitted |> List.filter (fun occurrence -> occurrence.Node <> NodeId 23)
+    let violations = Integrity.check (withOmissions changed)
+    Assert.NotEmpty violations
+    Assert.All(violations, fun violation ->
+        Assert.Equal("Edges (StringByteView)", violation.Part)
+        Assert.Equal(Some (NodeId 3), violation.Node)
+        Assert.Contains("omi", violation.Reason))
+
+// The borrow whose demanded call 7 resolves to the lambda 30 with the body 31: the lambda,
+// the call's argument 8 and the parameter 32 that remains for the call are in the group
+// of the call, the body in the group of the lambda.
+let private targetNodes = [ 3 .. 10 ] @ [ 30 .. 32 ] |> List.map (fun number -> node number (SemanticKind.Literal(NativeLiteral.Bool true)) [])
+
+let private targeted : Participant list =
+    borrowed
+    @ [ participant 30 ParticipantRole.Callee 0 7
+        participant 8 ParticipantRole.CalleeArgument 0 7
+        participant 31 ParticipantRole.CalleeBody 0 30
+        participant 32 ParticipantRole.CalleeParameter 0 7 ]
+
+let private withTargets (participants: Participant list) : Revision =
+    { revision targetNodes with Edges = [ viewEdge (ParticipantEvidence.Established participants) (nodesOf participants) ] }
+
+[<Fact>]
+let ``a target's body in the group of its lambda and its arguments and parameters in the group of the call are no violation`` () =
+    Assert.Empty(Integrity.check (withTargets targeted))
+
+[<Theory>]
+[<InlineData("body in the call's group")>]
+[<InlineData("parameter in the lambda's group")>]
+[<InlineData("argument and parameter at different ordinals")>]
+[<InlineData("argument in the lambda's group")>]
+let ``a target's body, parameter or argument outside the group of its owner is reported at the row's site`` defect =
+    let moved node group =
+        targeted |> List.map (fun occurrence -> if occurrence.Node = NodeId node && occurrence.Role <> ParticipantRole.ReachingActual then { occurrence with Group = NodeId group } else occurrence)
+    let changed =
+        match defect with
+        | "body in the call's group" -> moved 31 7
+        | "parameter in the lambda's group" -> moved 32 30
+        | "argument and parameter at different ordinals" ->
+            targeted |> List.map (fun occurrence -> if occurrence.Node = NodeId 32 then { occurrence with Ordinal = 1 } else occurrence)
+        | _ -> moved 8 30
+    let violations = Integrity.check (withTargets changed)
+    Assert.NotEmpty violations
+    Assert.All(violations, fun violation ->
+        Assert.Equal("Edges (StringByteView)", violation.Part)
+        Assert.Equal(Some (NodeId 3), violation.Node)
+        Assert.Contains("callee", violation.Reason))

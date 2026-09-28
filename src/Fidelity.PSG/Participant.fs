@@ -27,15 +27,16 @@ type ParticipantRole =
     /// The call of an omission relation whose omitted actual contains the omitted call;
     /// the ordinal is the omitted position.
     | OmissionSite
-    /// The omitted actual of that omission relation, at the same ordinal.
+    /// The omitted actual of an omission relation, in the group of the omission's site and
+    /// at its ordinal.
     | OmittedActual
     /// A lambda the call resolves to.
     | Callee
-    /// The body of that lambda.
+    /// The body of that lambda, in the group of the lambda.
     | CalleeBody
-    /// An argument of the resolved call; the ordinal is its position.
+    /// An argument of the resolved call, in the group of the call; the ordinal is its position.
     | CalleeArgument
-    /// A parameter of the resolved lambda; the ordinal is its position.
+    /// A parameter that remains for the call, in the group of the call; the ordinal is its position.
     | CalleeParameter
     /// A node of the formal's closed ingress: its callers, dependencies and calls.
     | Ingress
@@ -47,7 +48,8 @@ type ParticipantRole =
 /// One occurrence in a relation: the node, its role, its ordinal within the role (an
 /// argument or parameter position; 0 for a role without positions) and its group. The
 /// group is the row's site for the row's own occurrences, the call of an input for the
-/// occurrences of that input, and the formal for the formal's ingress.
+/// occurrences of that input and for the arguments and parameters of its call, the omission's
+/// site for an omitted actual, a callee for its body, and the formal for the formal's ingress.
 type Participant = { Node: NodeId; Role: ParticipantRole; Ordinal: int; Group: NodeId }
 
 /// What the compiler service derived before the final demand rows. Its OmissionSite and
