@@ -557,3 +557,26 @@ let ``a target's body, parameter or argument outside the group of its owner is r
         Assert.Equal("Edges (StringByteView)", violation.Part)
         Assert.Equal(Some (NodeId 3), violation.Node)
         Assert.Contains("callee", violation.Reason))
+
+// The same target with the nodes 33 and 34 held, for a second parameter and a second argument.
+let private withPositions (participants: Participant list) : Revision =
+    let nodes = targetNodes @ ([ 33; 34 ] |> List.map (fun number -> node number (SemanticKind.Literal(NativeLiteral.Bool true)) []))
+    { revision nodes with Edges = [ viewEdge (ParticipantEvidence.Established participants) (nodesOf participants) ] }
+
+[<Fact>]
+let ``one argument and one parameter at each position of a call, the same argument at two positions, is no violation`` () =
+    let twoPositions = targeted @ [ participant 8 ParticipantRole.CalleeArgument 1 7; participant 33 ParticipantRole.CalleeParameter 1 7 ]
+    Assert.Empty(Integrity.check (withPositions twoPositions))
+
+[<Theory>]
+[<InlineData("two parameters at one position")>]
+[<InlineData("two arguments at one position")>]
+let ``two parameters or two arguments at one position of a call are reported at the row's site`` defect =
+    let changed =
+        match defect with
+        | "two parameters at one position" -> targeted @ [ participant 33 ParticipantRole.CalleeParameter 0 7 ]
+        | _ -> targeted @ [ participant 34 ParticipantRole.CalleeArgument 0 7 ]
+    let violation = only "Edges (StringByteView)" (Integrity.check (withPositions changed))
+    Assert.Equal(Some (NodeId 3), violation.Node)
+    Assert.Contains("call 7", violation.Reason)
+    Assert.Contains("ordinal 0", violation.Reason)

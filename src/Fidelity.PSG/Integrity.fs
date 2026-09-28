@@ -148,7 +148,8 @@ module Integrity =
     /// omitted actual is in the group of an omission site with the same ordinal, and an
     /// omission site with one ordinal has exactly one omitted actual. A callee's body is in
     /// the group of a callee; a callee's arguments and parameters are in the group of a call
-    /// in whose group a callee occurs, at the same set of ordinals.
+    /// in whose group a callee occurs, with exactly one argument and exactly one parameter at
+    /// each of its ordinals.
     let incidence (revision: Revision) : IntegrityViolation list =
         let violation part site reason = { Part = part; Node = Some site; Reason = reason }
         let paired part site (participants: Participant list) =
@@ -192,16 +193,23 @@ module Integrity =
                                 (sprintf "The callee argument or parameter %d of the string borrow row of node %d is not in the group of a call in whose group a callee occurs."
                                     (NodeId.value participant.Node) (NodeId.value site)))
                     | _ -> None)
-            let ordinals role call =
-                participants |> List.filter (fun participant -> participant.Role = role && participant.Group = call) |> List.map _.Ordinal |> Set.ofList
+            // The number of occurrences of a role at each ordinal in the group of a call.
+            let counts role call =
+                participants |> List.filter (fun participant -> participant.Role = role && participant.Group = call) |> List.countBy _.Ordinal |> Map.ofList
             let unmatched =
                 calls
                 |> Set.toList
-                |> List.filter (fun call -> ordinals ParticipantRole.CalleeArgument call <> ordinals ParticipantRole.CalleeParameter call)
-                |> List.map (fun call ->
-                    violation part site
-                        (sprintf "The callee arguments and parameters in the group of call %d of the string borrow row of node %d are at different ordinals."
-                            (NodeId.value call) (NodeId.value site)))
+                |> List.collect (fun call ->
+                    let arguments, parameters = counts ParticipantRole.CalleeArgument call, counts ParticipantRole.CalleeParameter call
+                    Set.union (arguments |> Map.keys |> Set.ofSeq) (parameters |> Map.keys |> Set.ofSeq)
+                    |> Set.toList
+                    |> List.choose (fun ordinal ->
+                        match arguments.TryFind ordinal |> Option.defaultValue 0, parameters.TryFind ordinal |> Option.defaultValue 0 with
+                        | 1, 1 -> None
+                        | argumentCount, parameterCount ->
+                            Some (violation part site
+                                    (sprintf "The group of call %d of the string borrow row of node %d has %d callee arguments and %d callee parameters at ordinal %d, not one of each."
+                                        (NodeId.value call) (NodeId.value site) argumentCount parameterCount ordinal))))
             placed @ unmatched
         let stated part site evidence =
             match evidence with
