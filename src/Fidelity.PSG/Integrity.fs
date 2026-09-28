@@ -19,6 +19,20 @@ module Integrity =
     let private rows (table: Map<NodeId, 'value>) : Set<NodeId> =
         table |> Map.toList |> List.map fst |> Set.ofList
 
+    /// The literals the storage, view and sentinel proofs of string literals name:
+    /// the sources of every obligation node with one of those bodies.
+    let private literalsWithProofs (revision: Revision) : NodeId list =
+        revision.Nodes
+        |> Map.toList
+        |> List.filter (fun (_, node) ->
+            match node.Kind with
+            | SemanticKind.Obligation info ->
+                match info.Body with
+                | ObligationBody.StorageReservation _ | ObligationBody.ViewContainment _ | ObligationBody.NulSentinel _ -> true
+                | _ -> false
+            | _ -> false)
+        |> List.collect (fun (id, _) -> revision.ObligationSources.TryFind id |> Option.toList |> List.concat |> List.concat)
+
     /// Every part of a revision that names nodes, with the identities it names. The
     /// list is generated from the contract types (tools/GenerateIntegrity.fsx) and
     /// holds every position of a revision where an identity is stored.
@@ -71,7 +85,9 @@ module Integrity =
           "Emission.Storage.LazyValues", Set.toList storage.LazyValues,
             "Emission.Storage.LazyOccurrences", rows storage.LazyOccurrences
           "Emission.Storage.DefinitionOnlyThunks", Set.toList storage.DefinitionOnlyThunks,
-            "Emission.Storage.Lazies (Layout.Thunk)", thunks ]
+            "Emission.Storage.Lazies (Layout.Thunk)", thunks
+          // Every literal that has proofs has its storage row.
+          "ObligationSources (literal proofs)", literalsWithProofs revision, "LiteralStorage", rows revision.LiteralStorage ]
 
     let private disagreeing (left: Map<NodeId, 'row>) (right: Map<NodeId, 'row>) : NodeId list =
         Set.union (rows left) (rows right)
@@ -88,6 +104,40 @@ module Integrity =
           "Emission.Callable.Flows", "Codata.CallableFlows", disagreeing callable.Flows codata.CallableFlows
           "Emission.Callable.MutableStorage", "Codata.MutableCallableStorage",
             disagreeing callable.MutableStorage codata.MutableCallableStorage ]
+
+    /// The storage rows against the static string pool. A row that states
+    /// materialization names an entry the pool has, and that entry lists the row's
+    /// literal. A row that states no materialization states its omissions. Every
+    /// literal an entry lists has a row that names the entry.
+    let stored (revision: Revision) : IntegrityViolation list =
+        let entries = revision.StaticStringPool |> Option.map _.Entries |> Option.defaultValue []
+        let violation part literal reason = { Part = part; Node = Some literal; Reason = reason }
+        let named =
+            revision.LiteralStorage
+            |> Map.toList
+            |> List.choose (fun (literal, row) ->
+                match row with
+                | LiteralStorage.Materialized entry when entry < 0 || entry >= entries.Length ->
+                    Some (violation "LiteralStorage" literal
+                            (sprintf "The storage row of node %d names pool entry %d. The pool has %d entries." (NodeId.value literal) entry entries.Length))
+                | LiteralStorage.Materialized entry when not (List.contains literal entries[entry].NodeIds) ->
+                    Some (violation "LiteralStorage" literal
+                            (sprintf "The storage row of node %d names pool entry %d, which does not list the node." (NodeId.value literal) entry))
+                | LiteralStorage.NotMaterialized [] ->
+                    Some (violation "LiteralStorage" literal
+                            (sprintf "The storage row of node %d states neither a pool entry nor an omission." (NodeId.value literal)))
+                | _ -> None)
+        let listed =
+            entries
+            |> List.indexed
+            |> List.collect (fun (ordinal, entry) ->
+                entry.NodeIds |> List.distinct |> List.choose (fun literal ->
+                    match revision.LiteralStorage.TryFind literal with
+                    | Some (LiteralStorage.Materialized entry) when entry = ordinal -> None
+                    | _ ->
+                        Some (violation "StaticStringPool.Entries" literal
+                                (sprintf "Pool entry %d lists node %d, whose storage row does not name the entry." ordinal (NodeId.value literal)))))
+        named @ listed
 
     /// Every structural defect of the revision. The list is empty for a well-formed one.
     let check (revision: Revision) : IntegrityViolation list =
@@ -128,7 +178,7 @@ module Integrity =
                 |> List.map (fun identity ->
                     { Part = part; Node = Some identity
                       Reason = sprintf "The row of node %d in %s differs from its row in %s." (NodeId.value identity) part other }))
-        header @ misfiled @ absent @ unrelated @ disagreed
+        header @ misfiled @ absent @ unrelated @ disagreed @ stored revision
 
     /// The first violations as one reason, for a reader that refuses the revision.
     let describe (violations: IntegrityViolation list) : string =

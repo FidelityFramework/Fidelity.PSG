@@ -585,3 +585,22 @@ type StaticStringPool = {
     DeclarationNode: NodeId
 }
 
+/// One omission relation of ordinary demand: the call, the ordinal of the actual
+/// that the call does not enter, and that actual.
+type OrdinaryOmission = {
+    Site: NodeId
+    Ordinal: int
+    Actual: NodeId
+}
+
+/// Whether the storage of a string literal was materialized in the static string
+/// pool. The compiler service states it for every reachable string literal where
+/// it lays out the pool.
+[<RequireQualifiedAccess>]
+type LiteralStorage =
+    /// The literal's bytes are the entry at this position of `StaticStringPool.Entries`.
+    | Materialized of entry: int
+    /// No demanded position reads the literal: the omission relations whose omitted
+    /// actual contains it.
+    | NotMaterialized of omissions: OrdinaryOmission list
+

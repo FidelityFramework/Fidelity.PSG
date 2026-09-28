@@ -121,6 +121,8 @@ type Revision = {
     ModuleClassifications: Map<NodeId, ModuleClassification>
     Platform: PlatformWidths
     StaticStringPool: StaticStringPool option
+    /// Per reachable string literal, whether its storage was materialized in `StaticStringPool`.
+    LiteralStorage: Map<NodeId, LiteralStorage>
     Codata: Codata
     Emission: WitnessEmissionProjection
     Foreign: ForeignStorageProjection
@@ -178,7 +180,7 @@ module ExplicitDemandProjection =
 module Revision =
     /// The version of the contract declared by this library.
     [<Literal>]
-    let Schema = 1
+    let Schema = 2
 
     /// The published form of a program with nothing in it, from a producer that
     /// declares no platform width.
@@ -192,6 +194,7 @@ module Revision =
             { Register = Error "The revision declares no Register width."
               Pointer = Error "The revision declares no Pointer width." }
           StaticStringPool = None
+          LiteralStorage = Map.empty
           Codata = Codata.empty
           Emission = Empty.emission
           Foreign = ForeignStorageProjection.empty

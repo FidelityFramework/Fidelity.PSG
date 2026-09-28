@@ -31,6 +31,7 @@ The Clef Compiler Service, in the clef repository:
 | `DeclarationRoots`, `ModuleClassifications` | The roots of the design and the members of each module |
 | `Platform` | The declared Register and Pointer widths, or the producer's diagnostic where one is undeclared |
 | `StaticStringPool` | The placement of source strings |
+| `LiteralStorage` | Per reachable string literal, whether its storage was materialized: its pool entry, or the omission relations under which no demanded position reads it |
 | `Codata` | Facts settled at the end of saturation: escapes, meets, layouts, carriers, frames |
 | `Emission` | Seven projections: ordinary demand, callable, storage, boundary, numeric, memory, spatial |
 | `Foreign` | Declared access to storage the program does not own |

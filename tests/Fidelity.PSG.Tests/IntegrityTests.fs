@@ -269,3 +269,78 @@ let ``a fact held in two tables must be the same in both`` held =
             Codata = { codata with CallableJoins = Map.ofList [ NodeId 1, join ] }
             Emission = { bindingWithLiteral.Emission with Callable = { callable with Joins = Map.ofList [ NodeId 1, join ] } } }
     Assert.Empty(Integrity.check agreed)
+
+// A string literal (node 3) and its storage proof (node 4). Node 5 is a call whose
+// ordinal 0 is omitted and node 6 the declaration of the pool's space.
+let private storageProof : ObligationInfo =
+    { Id = "storage_text"; Kind = "storage-reservation"; Logic = "QF_LIA"
+      Statement = "the storage of \"text\" reserves 5 bytes"; Source = "contract-test.clef:1:0"; Refs = []
+      Body = ObligationBody.StorageReservation(4, 5) }
+
+let private literalWithProof : Revision =
+    let literal = node 3 (SemanticKind.Literal(NativeLiteral.String "text")) []
+    let proof = node 4 (SemanticKind.Obligation storageProof) []
+    let call = node 5 (SemanticKind.Literal(NativeLiteral.Bool true)) []
+    let space = node 6 (SemanticKind.Literal(NativeLiteral.Bool false)) []
+    { revision [ literal; proof; call; space ] with ObligationSources = Map.ofList [ NodeId 4, [ [ NodeId 3 ] ] ] }
+
+let private pool (listed: int) : StaticStringPool =
+    { Symbol = "__clef_static_strings"; Bytes = [ 116uy; 101uy; 120uy; 116uy; 0uy ]; Alignment = 1; Size = 5; UsedSize = 5
+      Entries = [ { NodeIds = [ NodeId listed ]; Content = "text"; Offset = 0; Length = 4; StorageLength = 5 } ]
+      SpaceName = "rodata"; Capacity = 4096L; SpaceAlignment = 1; Granularity = 1; DeclarationNode = NodeId 6 }
+
+let private omission : OrdinaryOmission = { Site = NodeId 5; Ordinal = 0; Actual = NodeId 3 }
+
+/// The literal with its storage row, and the pool given.
+let private stored (row: LiteralStorage) (placed: StaticStringPool option) : Revision =
+    { literalWithProof with StaticStringPool = placed; LiteralStorage = Map.ofList [ NodeId 3, row ] }
+
+[<Fact>]
+let ``a materialized literal names the pool entry that lists it`` () =
+    Assert.Empty(Integrity.check (stored (LiteralStorage.Materialized 0) (Some (pool 3))))
+
+[<Fact>]
+let ``a literal that no demanded position reads states the omissions under which it is not entered`` () =
+    Assert.Empty(Integrity.check (stored (LiteralStorage.NotMaterialized [ omission ]) None))
+
+[<Fact>]
+let ``a literal proof whose literal has no storage row is reported`` () =
+    let violation = only "ObligationSources (literal proofs)" (Integrity.check literalWithProof)
+    Assert.Equal(Some (NodeId 3), violation.Node)
+    Assert.Contains("LiteralStorage", violation.Reason)
+
+[<Theory>]
+[<InlineData("no pool")>]
+[<InlineData("no entry")>]
+[<InlineData("other literal")>]
+let ``a materialized row names an entry that the pool has for its literal`` defect =
+    let violations =
+        match defect with
+        | "no pool" -> Integrity.check (stored (LiteralStorage.Materialized 0) None)
+        | "no entry" -> Integrity.check (stored (LiteralStorage.Materialized 1) (Some (pool 3)))
+        | _ -> Integrity.check (stored (LiteralStorage.Materialized 0) (Some (pool 5)))
+    let violation = within "LiteralStorage" violations
+    Assert.Equal(Some (NodeId 3), violation.Node)
+
+[<Theory>]
+[<InlineData("no row")>]
+[<InlineData("not materialized")>]
+let ``every literal a pool entry lists has a row that names the entry`` defect =
+    let placed = { literalWithProof with StaticStringPool = Some (pool 3) }
+    let violations =
+        match defect with
+        | "no row" -> Integrity.check placed
+        | _ -> Integrity.check { placed with LiteralStorage = Map.ofList [ NodeId 3, LiteralStorage.NotMaterialized [ omission ] ] }
+    let violation = within "StaticStringPool.Entries" violations
+    Assert.Equal(Some (NodeId 3), violation.Node)
+
+[<Fact>]
+let ``a row that is not materialized and states no omission is reported`` () =
+    let violation = only "LiteralStorage" (Integrity.check (stored (LiteralStorage.NotMaterialized []) None))
+    Assert.Equal(Some (NodeId 3), violation.Node)
+
+[<Fact>]
+let ``an omission that names a node absent from the revision is reported`` () =
+    let foreign = LiteralStorage.NotMaterialized [ { omission with Site = NodeId 9 } ]
+    let violation = only "LiteralStorage (values)" (Integrity.check (stored foreign None))
+    Assert.Equal(Some (NodeId 9), violation.Node)
