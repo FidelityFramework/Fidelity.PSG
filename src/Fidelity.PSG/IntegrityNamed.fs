@@ -522,6 +522,8 @@ module IntegrityNamed =
         | Fidelity.PSG.EdgeRole.AggregateCopy -> []
         | Fidelity.PSG.EdgeRole.AggregateSnapshot -> []
         | Fidelity.PSG.EdgeRole.SequenceTemplateBorrow -> []
+        | Fidelity.PSG.EdgeRole.SequenceProgramBorrow -> []
+        | Fidelity.PSG.EdgeRole.SequenceSlotBorrow -> []
         | Fidelity.PSG.EdgeRole.Resides -> []
         | Fidelity.PSG.EdgeRole.Constrains -> []
         | Fidelity.PSG.EdgeRole.CallableReferenceOrigin -> []
