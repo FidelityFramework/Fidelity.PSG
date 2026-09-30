@@ -59,6 +59,7 @@ type ExplicitDemandProjection = {
 
 /// The codata a revision carries for emission, settled by the producer.
 type Codata = {
+    WitnessSegmentation: WitnessSegmentation option
     Escapes: Map<NodeId, EscapeKind>
     Curry: CurryInfo
     /// Per consumer node, its meets in operand order.
@@ -137,7 +138,8 @@ type Revision = {
 
 module Codata =
     let empty : Codata =
-        { Escapes = Map.empty
+        { WitnessSegmentation = None
+          Escapes = Map.empty
           Curry = { PartialApplications = Map.empty; SaturatedCalls = Map.empty; PartialAppBindings = Set.empty; AbsorbedLambdas = Set.empty }
           Meets = Map.empty
           ReturnMeets = Map.empty
@@ -180,7 +182,7 @@ module ExplicitDemandProjection =
 module Revision =
     /// The version of the contract declared by this library.
     [<Literal>]
-    let Schema = 3
+    let Schema = 6
 
     /// The published form of a program with nothing in it, from a producer that
     /// declares no platform width.

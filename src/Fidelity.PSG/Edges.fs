@@ -1,5 +1,11 @@
 namespace Fidelity.PSG
 
+/// Immutable source types and ordered occurrences of a local demand derivation.
+type BindingDemandEvidence = {
+    SourceTypes: Map<NodeId, TypeIdentity>
+    Participants: Participant list
+}
+
 /// Ports of a local evaluation contract. Operand indices identify incidences
 /// within the target node, not runtime states or new semantic node identities.
 [<RequireQualifiedAccess>]
@@ -439,6 +445,12 @@ type EdgeRole =
     | LazyLayout
     /// Complete-use covering activation and retained source cells.
     | EnvironmentResidence
+    /// Required reservation at its Baker firing, including rejected proposals.
+    /// Target is the obligation; Sources are the participant occurrences in order.
+    | EnvironmentReservation of participants: Participant list
+    /// Baker's current startup/read-order premises, targeting the obligation.
+    | ProgramInitializationOrder of participants: Participant list
+    | ProgramInitializationOrderHistory of participants: Participant list
     /// Required caller destination: [factory implementation; closure owner;
     /// destination formal] -> exact EnvironmentCreate constructor.
     | EnvironmentResultDestination
@@ -579,6 +591,9 @@ type EdgeRole =
     /// Exact invocation/formal/actual correspondence for an omitted physical
     /// operand. Direct explicit eager demand remains independently required.
     | OrdinaryUnusedActual
+    | OrdinaryBindingDemand of BindingDemandEvidence
+    | OrdinaryBindingDemandPending of reason: string * evidence: BindingDemandEvidence
+    | OrdinaryBindingDemandHistory of BindingDemandEvidence
     /// Complete rooted activation census and typed affine transitions for a
     /// finite program cell. The arithmetic certificate supplies no lifetime.
     | FiniteCellRange
@@ -598,4 +613,3 @@ type Hyperedge = {
     /// beta: position among same-role siblings (argument 0, 1, ...); 0 if unique.
     Ordinal: int
 }
-

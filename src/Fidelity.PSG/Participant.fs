@@ -3,6 +3,17 @@ namespace Fidelity.PSG
 /// The role of one occurrence in a relation over nodes.
 [<RequireQualifiedAccess>]
 type ParticipantRole =
+    | DemandBinding | DemandCell | DemandInitializer | DemandAlias | DemandUse
+    | DemandScope | DemandFrontier | DemandStatement | DemandPremise
+    | InitializationBinding | InitializationValue | InitializationSpine | InitializationEntry
+    | InitializationUse | InitializationScope | InitializationParent | InitializationPhase
+    | InitializationCaller | InitializationCallee | InitializationPremise
+    /// Environment reservation occurrences; grouped by allocation, except factory
+    /// correspondence grouped by its actual call. Ordinals retain source order.
+    | EnvironmentAllocation | EnvironmentBinding | EnvironmentInitializer
+    | EnvironmentOwner | EnvironmentImplementation | EnvironmentFormal
+    | EnvironmentConstructor | EnvironmentFactory | EnvironmentCall | EnvironmentDestination
+    | EnvironmentLayoutProof | EnvironmentSpace | EnvironmentDeclarationInput | EnvironmentAuthorityInput
     /// The node at which the relation is stated.
     | Site
     /// The string operand of the site.

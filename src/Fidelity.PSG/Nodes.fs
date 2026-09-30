@@ -211,6 +211,9 @@ type FiniteLinearRecurrenceModel = {
 
 [<RequireQualifiedAccess>]
 type ObligationBody =
+    /// Finite program initialization phases supplied by Baker. This arithmetic
+    /// checks order only; source incidence and lowering preservation are separate.
+    | ProgramInitializationOrder of initializerOrdinal: int * initializerCount: int * useOrdinals: int list
     | FiniteLoopTrip of FiniteLoopTripModel
     | AdditiveLoopInvariant of AdditiveLoopInvariantModel
     /// The additive/index step after successful native mapping guards establish
@@ -260,6 +263,9 @@ type ObligationBody =
     /// establishes layout only, not allocation lifetime or a memory budget.
     /// The empty transient activation layout has extent zero and alignment one.
     | ContinuationLayout of slots: (int * int * int) list * extent: int * alignment: int
+    /// Proposed individual environment extent in declared writable space. Missing
+    /// premises refute coverage; this proves neither lifetime nor aggregate capacity.
+    | EnvironmentStorageReservation of extent: int option * alignment: int option * capacity: int64 option * spaceAlignment: int option * granularity: int option
     /// String.concat2 copy discipline: for ANY operand lengths a, b >= 0
     /// (pinned where the operand is a literal), the two copy windows [0,a) and
     /// [a,a+b) lie within the (a+b)-byte allocation.
@@ -450,4 +456,3 @@ type EagerFrontier =
     | Actual
     | Component
     | Expression
-

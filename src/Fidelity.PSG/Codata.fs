@@ -560,6 +560,26 @@ type WitnessEmissionProjection = {
     Spatial: SpatialModuleProjection
 }
 
+/// Source-authored domains. Consumers retain or re-witness these domains; they
+/// never recover dependency boundaries from emitted operations.
+[<RequireQualifiedAccess>]
+type WitnessRegionKind = Common | ScalarCallable
+
+type WitnessRegion = {
+    Identity: string
+    Flavor: WitnessRegionKind
+    Root: NodeId option
+    Anchor: NodeId option
+    /// Actual structural breadcrumbs, nearest parent first.
+    Path: (NodeId * NodeId list * NodeId list) list
+    Members: Set<NodeId>
+    Supports: Set<NodeId>
+    Fingerprint: string
+    Dependencies: Set<string>
+}
+
+type WitnessSegmentation = { Version: int; Regions: WitnessRegion list }
+
 /// A source string's view into the BAREWire-owned static byte pool.
 type StaticStringEntry = {
     NodeIds: NodeId list
@@ -595,4 +615,3 @@ type LiteralStorage =
     /// No demanded position reads the literal: the premise states the omission relations
     /// whose omitted actual contains it.
     | NotMaterialized of premise: StoragePremise
-
