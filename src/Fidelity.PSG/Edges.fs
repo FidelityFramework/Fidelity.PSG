@@ -368,6 +368,15 @@ type EdgeRole =
     /// [loop; induction cell; accumulator initial; store; update; delta]
     /// -> accumulator cell. Both cell and exact update acquire its enclosure.
     | LoopAccumulation
+    /// Target: exact current read. Sources begin with producer owner,
+    /// generator, input, enumerator, acquisition, guard and consuming loop,
+    /// followed by direct support/navigation identities. Full current source
+    /// revalidation remains required; this is not a scoped proof-cache key.
+    | SequencePullBound
+    /// Target: accumulator cell. Sources begin with ordinary lambda, loop,
+    /// seed, store, update, delta and current read, then direct support identities.
+    /// Complete write/effect authority comes from current source revalidation.
+    | SequenceAccumulation
     /// [owner; loop] -> cell whose recurrence remains outside admission.
     | LoopRangePending of LoopRangeResidual
     // structural
@@ -583,7 +592,9 @@ type EdgeRole =
     /// [allocation; covering activation; owner; generator; storage root;
     /// retained slot; writer; complete current access support] proves the
     /// target FrameRead's bounded use after validating every writer/read and
-    /// excluding escaped or metadata-captured scratch storage.
+    /// excluding escaped or metadata-captured storage. A persistent formal
+    /// slot additionally retains its live-across/cut and current acquisition
+    /// correspondence to an exact iterator region owned by that frame.
     | SequenceSlotBorrow
     // declared platform (BAREWire docs/11: cross-applied with the code it governs)
     /// A declared memory space or buffer schema constrains the value that

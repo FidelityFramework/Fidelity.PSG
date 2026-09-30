@@ -175,6 +175,23 @@ type FiniteLoopTripModel = {
     MaximumIterations: bigint
 }
 
+/// One exact continuation occurrence and its remaining successful-pull budget.
+/// Baker retains the complete source/control correspondence separately.
+type FiniteSequencePullStep = {
+    Label: int
+    Suspend: bool
+    Successors: int list
+    Remaining: bigint
+}
+
+/// A nonnegative potential bounds successful suspensions along every retained
+/// path. This is a pull-count bound, not a claim that evaluation terminates.
+type FiniteSequencePullModel = {
+    Entry: int
+    MaximumPulls: bigint
+    Steps: FiniteSequencePullStep list
+}
+
 /// An additive enclosure across all iteration prefixes, including the initial
 /// state and the final write. This is independent of any physical carrier.
 type AdditiveLoopInvariantModel = {
@@ -215,6 +232,7 @@ type ObligationBody =
     /// checks order only; source incidence and lowering preservation are separate.
     | ProgramInitializationOrder of initializerOrdinal: int * initializerCount: int * useOrdinals: int list
     | FiniteLoopTrip of FiniteLoopTripModel
+    | FiniteSequencePull of FiniteSequencePullModel
     | AdditiveLoopInvariant of AdditiveLoopInvariantModel
     /// The additive/index step after successful native mapping guards establish
     /// a finite byte extent. Native allocation provenance and stride*rows

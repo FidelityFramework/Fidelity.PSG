@@ -420,6 +420,8 @@ module IntegrityNamed =
         | Fidelity.PSG.EdgeRole.StringUtf8Constant(_) -> []
         | Fidelity.PSG.EdgeRole.LoopInduction(_, _) -> []
         | Fidelity.PSG.EdgeRole.LoopAccumulation -> []
+        | Fidelity.PSG.EdgeRole.SequencePullBound -> []
+        | Fidelity.PSG.EdgeRole.SequenceAccumulation -> []
         | Fidelity.PSG.EdgeRole.LoopRangePending(_) -> []
         | Fidelity.PSG.EdgeRole.Callee -> []
         | Fidelity.PSG.EdgeRole.Argument -> []
