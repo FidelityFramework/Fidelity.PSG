@@ -124,6 +124,8 @@ module IntegrityNamed =
         @ (value.Calls |> List.collect (fun v0 -> [ v0 ]))
         @ (value.ByteViews |> List.collect (fun v0 -> (idsOfBoundaryByteView v0)))
         @ (value.StringExtents |> List.collect (fun v0 -> (idsOfBoundaryStringExtent v0)))
+        @ (value.StringOriginRelations |> Option.toList |> List.collect (fun v0 -> (v0 |> List.collect (fun v1 -> (idsOfStringOriginRelation v1)))))
+        @ (value.StringOriginRoots |> Option.toList |> List.collect (fun v0 -> (v0 |> List.collect (fun v1 -> (let (t2_0, t2_1) = v1 in [ t2_0 ])))))
         @ (value.StringComparisons |> List.collect (fun v0 -> (let (t1_0, t1_1, t1_2) = v0 in [ t1_0 ] @ (t1_2 |> List.collect (fun v2 -> [ v2 ])))))
         @ (value.StringLengthComparisons |> List.collect (fun v0 -> (let (t1_0, t1_1, t1_2) = v0 in [ t1_0 ] @ (t1_2 |> List.collect (fun v2 -> [ v2 ])))))
         @ (value.StringComparisonReads |> List.collect (fun v0 -> (idsOfMemoryArrayAccessWitness v0)))
@@ -1214,6 +1216,20 @@ module IntegrityNamed =
         @ (value.Requirements |> Map.toList |> List.collect (fun (k0, h0) -> [ k0 ] @ (idsOfRequirementWitness h0)))
         @ (value.PatternRequirements |> Map.toList |> List.collect (fun (k0, h0) -> [ k0 ] @ [ h0 ]))
         @ (idsOfProgramStorageInventory value.ProgramStorage)
+
+    and private idsOfStringOriginRelation (value: Fidelity.PSG.StringOriginRelation) : NodeId list =
+        (idsOfStringOriginRelationKind value.Flavor)
+        @ (value.Sources |> List.collect (fun v0 -> [ v0 ]))
+        @ [ value.Target ]
+
+    and private idsOfStringOriginRelationKind (value: Fidelity.PSG.StringOriginRelationKind) : NodeId list =
+        match value with
+        | Fidelity.PSG.StringOriginRelationKind.Named(_) -> []
+        | Fidelity.PSG.StringOriginRelationKind.ContinuationCase(_) -> []
+        | Fidelity.PSG.StringOriginRelationKind.EnvironmentCapture(_) -> []
+        | Fidelity.PSG.StringOriginRelationKind.LazyCapture(_) -> []
+        | Fidelity.PSG.StringOriginRelationKind.EagerDemand(_) -> []
+        | Fidelity.PSG.StringOriginRelationKind.BoundaryImplementation(a0) -> [ a0 ]
 
     and private idsOfWitnessEmissionProjection (value: Fidelity.PSG.WitnessEmissionProjection) : NodeId list =
         (idsOfOrdinaryDemandProjection value.Ordinary)

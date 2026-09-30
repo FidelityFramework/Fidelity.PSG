@@ -55,6 +55,8 @@ type ParticipantRole =
     | Origin
     /// A node of the local comparison or length construction that owns the site.
     | Construction
+    /// The source origin recipe consumed this exact lazy force protocol.
+    | LazyStringOrigin
 
 /// One occurrence in a relation: the node, its role, its ordinal within the role (an
 /// argument or parameter position; 0 for a role without positions) and its group. The
