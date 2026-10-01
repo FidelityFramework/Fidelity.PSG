@@ -374,6 +374,13 @@ type EdgeRole =
     /// followed by direct support/navigation identities. Full current source
     /// revalidation remains required; this is not a scoped proof-cache key.
     | SequencePullBound
+    /// Range-class correspondence for one finite product-model state. Ordinal
+    /// is the model label; sourceLabel names an actual outer control occurrence.
+    /// Sources are outer producer, inner producer, fresh enumerator, acquisition,
+    /// guard, loop and actual control-step origin; target is the consumer current.
+    /// The remaining budget belongs to that enumerator. Complete source control
+    /// and iterator-census revalidation remain required for the certificate.
+    | SequencePullComposition of sourceLabel: int * remainingPulls: bigint
     /// Target: accumulator cell. Sources begin with ordinary lambda, loop,
     /// seed, store, update, delta and current read, then direct support identities.
     /// Complete write/effect authority comes from current source revalidation.
