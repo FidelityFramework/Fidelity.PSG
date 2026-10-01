@@ -9,7 +9,8 @@ module Empty =
         { Parameters = Map.empty; Calls = Map.empty; DeferredOnly = Set.empty }
 
     let callable : CallableEmissionProjection =
-        { Carriers = Map.empty; Joins = Map.empty; Flows = Map.empty; MutableStorage = Map.empty
+        { Branches = CallableBranchAuthority.empty
+          Carriers = Map.empty; Joins = Map.empty; Flows = Map.empty; MutableStorage = Map.empty
           ValueShapes = Map.empty; SignatureData = Map.empty; Calls = Map.empty; Transports = Map.empty
           Declarations = Map.empty; Symbols = Map.empty; IntrinsicAliases = Set.empty
           DirectCallees = Map.empty; ForeignCalls = Set.empty; MutableRetentions = Set.empty

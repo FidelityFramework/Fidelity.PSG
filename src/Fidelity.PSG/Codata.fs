@@ -409,11 +409,71 @@ type CallableProgramInstance = {
     Participants: Set<NodeId>
 }
 
+/// Logical source comparison; no representation/ABI selection is implied.
+[<RequireQualifiedAccess>]
+type CallableBranchComparison = Equal | NotEqual
+
+/// This authority includes all current reachable origin inputs, relation/capture
+/// membership, and absence/uniqueness tests. Participants below are navigation;
+/// they are not a complete dependency key or permission for selective reuse.
+[<RequireQualifiedAccess>]
+type CallableBranchScope = WholeRevision
+
+/// An exact zero-offset constructor alternative in the final origin fixed point.
+type CallableBranchAlternative = {
+    Constructor: NodeId
+    Tag: int
+    Payloads: NodeId list
+}
+
+/// A unanimous final logical guard observation authored by Baker. Both source
+/// arms remain in the graph; selection neither erases effects nor proves reachability.
+type CallableBranchObservation = {
+    Choice: NodeId
+    Guard: NodeId
+    Operator: NodeId
+    Comparison: CallableBranchComparison
+    TagRead: NodeId
+    Subject: NodeId
+    Literal: NodeId
+    ExpectedTag: int
+    UnionType: TypeIdentity
+    TrueArm: NodeId
+    FalseArm: NodeId
+    SelectedArm: NodeId
+    Alternatives: CallableBranchAlternative list
+    /// Ordered direct observations with explicit roles; WholeRevision remains
+    /// the joint authority, including transitive inputs and negative premises.
+    Participants: Participant list
+}
+
+/// Conservative joint authority for callable facts. Each listed occurrence
+/// depends on every observation in this revision. Empty observation inventory
+/// has empty use sets. Current full source revalidation is mandatory; a new
+/// origin/opaque path can invalidate a row without removing any participant ID.
+type CallableBranchAuthority = {
+    Scope: CallableBranchScope
+    Observations: Map<NodeId, CallableBranchObservation>
+    CarrierUses: Set<NodeId>
+    FlowUses: Set<NodeId>
+    CallUses: Set<NodeId>
+}
+
+module CallableBranchAuthority =
+    let empty = {
+        Scope = CallableBranchScope.WholeRevision
+        Observations = Map.empty
+        CarrierUses = Set.empty
+        FlowUses = Set.empty
+        CallUses = Set.empty
+    }
+
 /// Eager source-owned observations for passive callable witnessing. No field
 /// contains an analysis callback or a deferred semantic computation. These are
 /// snapshot observations; source revision/worklist authority is a separate
 /// contract, and the immutable leaf emission model additionally freezes types.
 type CallableEmissionProjection = {
+    Branches: CallableBranchAuthority
     Carriers: Map<NodeId, CallableCarrier>
     Joins: Map<NodeId, CallableJoin>
     Flows: Map<NodeId, CallableFlow>

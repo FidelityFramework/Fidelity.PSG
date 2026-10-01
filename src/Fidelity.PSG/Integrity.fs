@@ -48,6 +48,10 @@ module Integrity =
         let every = held |> List.map fst
         let reachable = held |> List.filter (fun (_, node) -> node.IsReachable) |> List.map fst
         let callable = revision.Emission.Callable
+        let branchCalls =
+            held |> List.choose (fun (id, node) ->
+                match node.Kind with SemanticKind.Application _ when node.IsReachable -> Some id | _ -> None)
+            |> Set.ofList
         let storage = revision.Emission.Storage
         let numeric = revision.Emission.Numeric
         let memory = revision.Emission.Memory
@@ -77,6 +81,24 @@ module Integrity =
             "Emission.Memory.Operations or Emission.Memory.Unresolved", Set.union (rows memory.Operations) (rows memory.Unresolved)
           "Emission.Spatial.Required", Set.toList spatial.Required,
             "Emission.Spatial.Hardware or Emission.Spatial.Kernels", Set.union (rows spatial.Hardware) (rows spatial.Kernels)
+          "Emission.Callable.Branches.CarrierUses", Set.toList callable.Branches.CarrierUses,
+            "Emission.Callable.Carriers", rows callable.Carriers
+          "Emission.Callable.Branches.FlowUses", Set.toList callable.Branches.FlowUses,
+            "Emission.Callable.Flows", rows callable.Flows
+          "Emission.Callable.Branches.CallUses", Set.toList callable.Branches.CallUses,
+            "Nodes (reachable Application)", branchCalls
+          // A shared nonempty inventory covers all current carrier/flow rows.
+          "Emission.Callable.Carriers (branch authority)",
+            (if callable.Branches.Observations.IsEmpty then [] else Set.toList (rows callable.Carriers)),
+            "Emission.Callable.Branches.CarrierUses", callable.Branches.CarrierUses
+          "Emission.Callable.Flows (branch authority)",
+            (if callable.Branches.Observations.IsEmpty then [] else Set.toList (rows callable.Flows)),
+            "Emission.Callable.Branches.FlowUses", callable.Branches.FlowUses
+          "Nodes (reachable Application, branch authority)",
+            (if callable.Branches.Observations.IsEmpty then [] else Set.toList branchCalls),
+            "Emission.Callable.Branches.CallUses", callable.Branches.CallUses
+          // CallUses refers to source applications, including un-emitted ones.
+          // It must not be checked against the narrower emitted Calls table.
           // The lazy tables refer to one another.
           "Emission.Callable.Declarations (LazyThunk)", lazyDeclarations,
             "Emission.Storage.Lazies (Layout.Thunk)", thunks
@@ -94,8 +116,11 @@ module Integrity =
         |> Set.toList
         |> List.filter (fun key -> left.TryFind key <> right.TryFind key)
 
+    let private differingMembers left right =
+        Set.union (Set.difference left right) (Set.difference right left) |> Set.toList
+
     /// The tables that hold one fact in two places, with the identities whose rows
-    /// differ. The emission projection republishes four codata tables unchanged.
+    /// differ. The callable emission tables and shared authority copy codata unchanged.
     let agreeing (revision: Revision) : (string * string * NodeId list) list =
         let codata = revision.Codata
         let callable = revision.Emission.Callable
@@ -103,7 +128,36 @@ module Integrity =
           "Emission.Callable.Joins", "Codata.CallableJoins", disagreeing callable.Joins codata.CallableJoins
           "Emission.Callable.Flows", "Codata.CallableFlows", disagreeing callable.Flows codata.CallableFlows
           "Emission.Callable.MutableStorage", "Codata.MutableCallableStorage",
-            disagreeing callable.MutableStorage codata.MutableCallableStorage ]
+            disagreeing callable.MutableStorage codata.MutableCallableStorage
+          "Emission.Callable.Branches.Observations", "Codata.CallableBranches.Observations",
+            disagreeing callable.Branches.Observations codata.CallableBranches.Observations
+          "Emission.Callable.Branches.CarrierUses", "Codata.CallableBranches.CarrierUses",
+            differingMembers callable.Branches.CarrierUses codata.CallableBranches.CarrierUses
+          "Emission.Callable.Branches.FlowUses", "Codata.CallableBranches.FlowUses",
+            differingMembers callable.Branches.FlowUses codata.CallableBranches.FlowUses
+          "Emission.Callable.Branches.CallUses", "Codata.CallableBranches.CallUses",
+            differingMembers callable.Branches.CallUses codata.CallableBranches.CallUses ]
+
+    /// Cross-table authority and scope consistency only. This validates stored
+    /// data, never the source truth of a guard or a constructor alternative.
+    let private branchScopes (revision: Revision) : IntegrityViolation list =
+        let authority = revision.Emission.Callable.Branches
+        let failure part reason = { Part = part; Node = None; Reason = reason }
+        let scope =
+            if authority.Scope = revision.Codata.CallableBranches.Scope then []
+            else [failure "Emission.Callable.Branches.Scope" "The branch authority scope differs from Codata.CallableBranches.Scope."]
+        let empty =
+            if not authority.Observations.IsEmpty ||
+               (authority.CarrierUses.IsEmpty && authority.FlowUses.IsEmpty && authority.CallUses.IsEmpty) then []
+            else [failure "Emission.Callable.Branches" "An empty observation inventory has nonempty authority-use sets."]
+        let partition =
+            if authority.Observations.IsEmpty then [] else
+            match authority.Scope, revision.Codata.WitnessSegmentation with
+            | CallableBranchScope.WholeRevision, Some segmentation
+                when segmentation.Regions |> List.exists (fun region -> region.Flavor = WitnessRegionKind.ScalarCallable) ->
+                [failure "Codata.WitnessSegmentation" "Whole-revision callable branch authority cannot coexist with a scalar callable region."]
+            | _ -> []
+        scope @ empty @ partition
 
     /// The storage rows against the static string pool. A row that states
     /// materialization names an entry the pool has, and that entry lists the row's
@@ -281,7 +335,7 @@ module Integrity =
                 |> List.map (fun identity ->
                     { Part = part; Node = Some identity
                       Reason = sprintf "The row of node %d in %s differs from its row in %s." (NodeId.value identity) part other }))
-        header @ misfiled @ absent @ unrelated @ disagreed @ stored revision @ incidence revision
+        header @ misfiled @ absent @ unrelated @ disagreed @ branchScopes revision @ stored revision @ incidence revision
 
     /// The first violations as one reason, for a reader that refuses the revision.
     let describe (violations: IntegrityViolation list) : string =

@@ -59,6 +59,11 @@ type ParticipantRole =
     | LazyStringOrigin
     /// The source origin recipe consumed this exact scoped immutable environment read.
     | CapturedStringOrigin
+    /// Final callable guard observations. Direct occurrences use ordinal 0 and
+    /// the choice as group. Constructor alternatives use their list ordinal and
+    /// choice group; payloads use their field ordinal and constructor group.
+    | BranchChoice | BranchGuard | BranchOperator | BranchTagRead | BranchSubject | BranchLiteral
+    | BranchTrueArm | BranchFalseArm | BranchSelectedArm | BranchConstructor | BranchPayload
 
 /// One occurrence in a relation: the node, its role, its ordinal within the role (an
 /// argument or parameter position; 0 for a role without positions) and its group. The

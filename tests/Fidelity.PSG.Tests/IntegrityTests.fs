@@ -580,3 +580,146 @@ let ``two parameters or two arguments at one position of a call are reported at 
     Assert.Equal(Some (NodeId 3), violation.Node)
     Assert.Contains("call 7", violation.Reason)
     Assert.Contains("ordinal 0", violation.Reason)
+
+// These are deliberately stored-data controls. They do not claim that these
+// rows prove the semantics of a source Result program; Baker owns that check.
+let private branchAuthorityRevision : Revision =
+    let one, two = NodeId 1, NodeId 2
+    let occurrence role ordinal group node : Participant =
+        { Node = node; Role = role; Ordinal = ordinal; Group = group }
+    let observation : CallableBranchObservation =
+        { Choice = one; Guard = two; Operator = two; Comparison = CallableBranchComparison.Equal
+          TagRead = two; Subject = two; Literal = two; ExpectedTag = 0; UnionType = boolType
+          TrueArm = one; FalseArm = two; SelectedArm = one
+          Alternatives = [{ Constructor = one; Tag = 0; Payloads = [two] }]
+          Participants =
+            [ occurrence ParticipantRole.BranchChoice 0 one one
+              occurrence ParticipantRole.BranchGuard 0 one two
+              occurrence ParticipantRole.BranchOperator 0 one two
+              occurrence ParticipantRole.BranchTagRead 0 one two
+              occurrence ParticipantRole.BranchSubject 0 one two
+              occurrence ParticipantRole.BranchLiteral 0 one two
+              occurrence ParticipantRole.BranchTrueArm 0 one one
+              occurrence ParticipantRole.BranchFalseArm 0 one two
+              occurrence ParticipantRole.BranchSelectedArm 0 one one
+              occurrence ParticipantRole.BranchConstructor 0 one one
+              occurrence ParticipantRole.BranchPayload 0 one two ] }
+    let authority : CallableBranchAuthority =
+        { Scope = CallableBranchScope.WholeRevision; Observations = Map.ofList [one, observation]
+          CarrierUses = Set.singleton one; FlowUses = Set.singleton two; CallUses = Set.singleton one }
+    let carrier : CallableCarrier =
+        { Occurrence = one; SourceType = boolType; Implementation = two; Parameters = []
+          ParameterShapes = []; OmittedParameters = Set.empty; Result = two
+          ResultShape = CallableValueShape.Data two; Environment = None }
+    let flow : CallableFlow =
+        { Occurrence = two; SourceType = boolType; Alternatives = [one]; Dependencies = Map.empty; Calls = [] }
+    let carriers, flows = Map.ofList [one, carrier], Map.ofList [two, flow]
+    let application =
+        { bindingWithLiteral.Nodes[one] with Kind = SemanticKind.Application(two, []); Children = [two] }
+    let codata =
+        { bindingWithLiteral.Codata with
+            CallableCarriers = carriers; CallableFlows = flows; CallableBranches = authority }
+    let callable =
+        { bindingWithLiteral.Emission.Callable with
+            Carriers = carriers; Flows = flows; Branches = authority }
+    { bindingWithLiteral with
+        Nodes = bindingWithLiteral.Nodes.Add(one, application)
+        Codata = codata
+        Emission = { bindingWithLiteral.Emission with Callable = callable } }
+
+let private withBranchAuthority (authority: CallableBranchAuthority) (revision: Revision) =
+    { revision with
+        Codata = { revision.Codata with CallableBranches = authority }
+        Emission = { revision.Emission with Callable = { revision.Emission.Callable with Branches = authority } } }
+
+[<Fact>]
+let ``shared callable branch authority references source applications outside emitted calls`` () =
+    Assert.Empty branchAuthorityRevision.Emission.Callable.Calls
+    Assert.NotEmpty branchAuthorityRevision.Emission.Callable.Branches.CallUses
+    Assert.Empty(Integrity.check branchAuthorityRevision)
+
+[<Theory>]
+[<InlineData("observations")>]
+[<InlineData("carriers")>]
+[<InlineData("flows")>]
+[<InlineData("calls")>]
+let ``duplicated callable branch authority must agree field for field`` change =
+    let original = branchAuthorityRevision
+    Assert.Empty(Integrity.check original)
+    let held = original.Emission.Callable.Branches
+    let part, changed =
+        match change with
+        | "observations" ->
+            let key, row = held.Observations |> Map.toList |> Assert.Single
+            "Observations", { held with Observations = Map.ofList [key, { row with SelectedArm = row.FalseArm }] }
+        | "carriers" -> "CarrierUses", { held with CarrierUses = Set.empty }
+        | "flows" -> "FlowUses", { held with FlowUses = Set.empty }
+        | "calls" -> "CallUses", { held with CallUses = Set.empty }
+        | other -> failwithf "Unexpected authority mutation: %s" other
+    let revision =
+        { original with Emission = { original.Emission with Callable = { original.Emission.Callable with Branches = changed } } }
+    let violation = within ("Emission.Callable.Branches." + part) (Integrity.check revision)
+    Assert.Contains("differs from", violation.Reason)
+
+[<Theory>]
+[<InlineData(true)>]
+[<InlineData(false)>]
+let ``branch authority uses require the declared carrier or flow row`` carrier =
+    let original = branchAuthorityRevision
+    Assert.Empty(Integrity.check original)
+    let codata, callable =
+        if carrier then
+            { original.Codata with CallableCarriers = Map.empty },
+            { original.Emission.Callable with Carriers = Map.empty }
+        else
+            { original.Codata with CallableFlows = Map.empty },
+            { original.Emission.Callable with Flows = Map.empty }
+    let revision = { original with Codata = codata; Emission = { original.Emission with Callable = callable } }
+    let part = if carrier then "CarrierUses" else "FlowUses"
+    let violation = only ("Emission.Callable.Branches." + part) (Integrity.check revision)
+    Assert.Contains("has no row", violation.Reason)
+
+[<Fact>]
+let ``branch call authority does not name a nonapplication node`` () =
+    let original = branchAuthorityRevision
+    Assert.Empty(Integrity.check original)
+    let authority = { original.Emission.Callable.Branches with CallUses = original.Emission.Callable.Branches.CallUses.Add(NodeId 2) }
+    let violation = only "Emission.Callable.Branches.CallUses" (Integrity.check (withBranchAuthority authority original))
+    Assert.Contains("Nodes (reachable Application)", violation.Reason)
+
+[<Theory>]
+[<InlineData(true)>]
+[<InlineData(false)>]
+let ``whole revision branch authority and scalar reuse scopes cannot overlap`` nonempty =
+    let original = branchAuthorityRevision
+    Assert.Empty(Integrity.check original)
+    let authority = if nonempty then original.Emission.Callable.Branches else CallableBranchAuthority.empty
+    let scalar : WitnessRegion =
+        { Identity = "scalar-data-control"; Flavor = WitnessRegionKind.ScalarCallable
+          Root = Some(NodeId 1); Anchor = None; Path = []; Members = Set.ofList [NodeId 1; NodeId 2]
+          Supports = Set.ofList [NodeId 1; NodeId 2]; Fingerprint = "stored-data"; Dependencies = Set.empty }
+    let revision = withBranchAuthority authority original
+    let revision = { revision with Codata = { revision.Codata with WitnessSegmentation = Some { Version = 1; Regions = [scalar] } } }
+    if nonempty then
+        let violation = only "Codata.WitnessSegmentation" (Integrity.check revision)
+        Assert.Contains("Whole-revision", violation.Reason)
+    else Assert.Empty(Integrity.check revision)
+
+[<Fact>]
+let ``empty branch observations do not authorize nonempty use sets`` () =
+    let original = branchAuthorityRevision
+    Assert.Empty(Integrity.check original)
+    let authority = { original.Emission.Callable.Branches with Observations = Map.empty }
+    let violation = only "Emission.Callable.Branches" (Integrity.check (withBranchAuthority authority original))
+    Assert.Contains("empty observation", violation.Reason)
+
+[<Fact>]
+let ``shared branch authority cannot omit a source application from both copies`` () =
+    let original = branchAuthorityRevision
+    Assert.Empty(Integrity.check original)
+    let authority = { original.Emission.Callable.Branches with CallUses = Set.empty }
+    let changed = withBranchAuthority authority original
+    Assert.Equal<CallableBranchAuthority>(changed.Codata.CallableBranches, changed.Emission.Callable.Branches)
+    let violation = only "Nodes (reachable Application, branch authority)" (Integrity.check changed)
+    Assert.Equal(Some(NodeId 1), violation.Node)
+    Assert.Contains("Emission.Callable.Branches.CallUses", violation.Reason)

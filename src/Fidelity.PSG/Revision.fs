@@ -78,6 +78,7 @@ type Codata = {
     CallableCarriers: Map<NodeId, CallableCarrier>
     CallableJoins: Map<NodeId, CallableJoin>
     CallableFlows: Map<NodeId, CallableFlow>
+    CallableBranches: CallableBranchAuthority
     MutableCallableStorage: Map<NodeId, MutableCallableStorage>
     ContinuationFrames: Map<NodeId, ContinuationFrame>
     SequenceOrigins: Map<NodeId, NodeId>
@@ -154,6 +155,7 @@ module Codata =
           CallableCarriers = Map.empty
           CallableJoins = Map.empty
           CallableFlows = Map.empty
+          CallableBranches = CallableBranchAuthority.empty
           MutableCallableStorage = Map.empty
           ContinuationFrames = Map.empty
           SequenceOrigins = Map.empty
@@ -182,7 +184,7 @@ module ExplicitDemandProjection =
 module Revision =
     /// The version of the contract declared by this library.
     [<Literal>]
-    let Schema = 10
+    let Schema = 11
 
     /// The published form of a program with nothing in it, from a producer that
     /// declares no platform width.
