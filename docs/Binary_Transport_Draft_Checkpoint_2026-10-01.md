@@ -4,6 +4,10 @@ October 1, 2026. This records draft source for audit and continuation. The six
 codec/generator files are **not included in Fidelity.PSG.fsproj** and are not
 part of the installed compiler. Published revision schema 12 is unchanged.
 
+The subsequent [cross-project auditor handback](../../Bozzetto/docs/PSG_Transport_Integration_Auditor_Checkpoint_2026-10-01.md)
+records verified producer/consumer state, ownership and the coordinated repair gates.
+The narrow evidence below remains unchanged.
+
 ## Source being preserved
 
 - `BinaryTypes.fs`: explicit snapshot resource limits and typed refusal cases.
