@@ -234,12 +234,13 @@ type SpatialModuleDomain = {
     Unresolved: Map<NodeId, string>
 }
 
-/// Exact relation observations used by the source lazy string-origin owner.
+/// Exact relation observations used by the source lazy/captured string-origin owner.
 [<RequireQualifiedAccess>]
 type StringOriginRelationKind =
     | Named of string
     | ContinuationCase of int
     | EnvironmentCapture of bool
+    | SequenceCaptureInitializer of bool
     | LazyCapture of bool
     | EagerDemand of EagerFrontier
     | BoundaryImplementation of NodeId
@@ -262,7 +263,7 @@ type BoundaryDomain = {
     Calls: NodeId list
     ByteViews: BoundaryByteView list
     StringExtents: BoundaryStringExtent list
-    /// Baker's complete relation observation when a lazy string origin was read.
+    /// Baker's complete relation observation when a lazy/captured string origin was read.
     StringOriginRelations: StringOriginRelation list option
     StringOriginRoots: (NodeId * DeclRoot) list option
     StringComparisons: (NodeId * bool * NodeId list) list

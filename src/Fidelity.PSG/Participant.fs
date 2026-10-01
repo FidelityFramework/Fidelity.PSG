@@ -57,6 +57,8 @@ type ParticipantRole =
     | Construction
     /// The source origin recipe consumed this exact lazy force protocol.
     | LazyStringOrigin
+    /// The source origin recipe consumed this exact scoped immutable environment read.
+    | CapturedStringOrigin
 
 /// One occurrence in a relation: the node, its role, its ordinal within the role (an
 /// argument or parameter position; 0 for a role without positions) and its group. The

@@ -1231,6 +1231,7 @@ module IntegrityNamed =
         | Fidelity.PSG.StringOriginRelationKind.Named(_) -> []
         | Fidelity.PSG.StringOriginRelationKind.ContinuationCase(_) -> []
         | Fidelity.PSG.StringOriginRelationKind.EnvironmentCapture(_) -> []
+        | Fidelity.PSG.StringOriginRelationKind.SequenceCaptureInitializer(_) -> []
         | Fidelity.PSG.StringOriginRelationKind.LazyCapture(_) -> []
         | Fidelity.PSG.StringOriginRelationKind.EagerDemand(_) -> []
         | Fidelity.PSG.StringOriginRelationKind.BoundaryImplementation(a0) -> [ a0 ]
