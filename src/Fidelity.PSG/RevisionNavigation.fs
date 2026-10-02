@@ -38,14 +38,30 @@ module RevisionNavigation =
                             | OccurrencePort.StructuralChild, Some parent ->
                                 if parent.Children.Length <> port.Extent || (parent.Children |> List.tryItem frame.Ordinal) <> Some child then
                                     Error "Source occurrence structural position disagrees with its live parent body."
-                                else Ok ()
+                                else
+                                    match readings.Children.TryFind frame.Parent with
+                                    | None -> Error "Source occurrence structural child disposition account is absent."
+                                    | Some dispositions when dispositions.Length <> parent.Children.Length ->
+                                        Error "Source occurrence structural child disposition account is incomplete."
+                                    | Some dispositions ->
+                                        match List.tryItem frame.Ordinal dispositions with
+                                        | Some { Ordinal = ordinal; Traversal = ChildTraversal.EnterLocal declared }
+                                            when ordinal = frame.Ordinal && declared = child -> Ok ()
+                                        | Some { Ordinal = ordinal; Traversal = ChildTraversal.SourceOmitted _ }
+                                            when ordinal = frame.Ordinal -> Error "The source omitted this original occurrence position."
+                                        | Some { Ordinal = ordinal; Traversal = ChildTraversal.EnterImported _ }
+                                            when ordinal = frame.Ordinal -> Error "Imported source occurrence requires its exact authorized resident scope."
+                                        | _ -> Error "Source occurrence structural child disposition disagrees with its original ordinal or child."
                             | OccurrencePort.StructuralChild, None ->
                                 Error "A declaration context header cannot stand in for a structural parent body."
                             | OccurrencePort.ModuleDeclaration, _ ->
                                 match readings.ContextHeaders.TryFind frame.Parent with
+                                | None -> Error "Source declaration context header account is absent."
+                                | Some header when header.Identity <> frame.Parent ->
+                                    Error "Source declaration context header names another identity."
                                 | Some header when header.Ports.TryFind frame.Port <> Some port ->
                                     Error "Source declaration context header disagrees with its port account."
-                                | _ -> Ok ()
+                                | Some _ -> Ok ()
                         original |> Result.bind (fun () -> check frame.Parent (seen.Add frame.Parent) rest)
         if not (knownPosition revision focus) then Error "Source occurrence focus has no live body or context header."
         else

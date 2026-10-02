@@ -117,9 +117,9 @@ type Revision = {
     Nodes: Map<NodeId, SemanticNode>
     /// Source-owned entry, traversal, positional and binding-use accounts.
     SourceReadings: WitnessSourceReadings
-    /// The entire edge set of the graph: the structural and reference relations each node's
-    /// kind implies, in node order, followed by every relation that saturation wrote.
-    /// A reader plans its traversal from this set. It never adds to it.
+    /// Explicitly published relation facts. Analysis incidence and full owner
+    /// support stay source-private. Witness traversal reads SourceReadings;
+    /// it never discovers a traversal or demand closure through these edges.
     Edges: Hyperedge list
     DeclarationRoots: (NodeId * DeclRoot) list
     ModuleClassifications: Map<NodeId, ModuleClassification>

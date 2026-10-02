@@ -45,7 +45,44 @@ let covered (revision: Revision) : Revision =
         { revision.Emission.Numeric with
             SourceTypes = reachable |> List.map (fun (id, node) -> id, node.Type) |> Map.ofList
             OccurrenceRepresentations = reachable |> List.map (fun (id, _) -> id, form) |> Map.ofList }
-    { revision with Emission = { revision.Emission with Callable = callable; Numeric = numeric } }
+    let port parent (children: NodeId list) : SourcePortAccount =
+        { Extent = children.Length; Stamp = sprintf "fixture-port-%d" (NodeId.value parent)
+          Positions = children |> List.indexed |> Map.ofList }
+    let ports = held |> List.map (fun (id, node) -> (id, OccurrencePort.StructuralChild), port id node.Children) |> Map.ofList
+    let rec context (node: SemanticNode) =
+        match node.Parent |> Option.bind revision.Nodes.TryFind with
+        | Some parent ->
+            match parent.Children |> List.tryFindIndex ((=) node.Id) with
+            | Some ordinal ->
+                { Parent = parent.Id; Port = OccurrencePort.StructuralChild; Ordinal = ordinal
+                  Extent = parent.Children.Length; Stamp = (port parent.Id parent.Children).Stamp } :: context parent
+            | None -> []
+        | None -> []
+    let uses =
+        held |> List.choose (fun (id, node) ->
+            match node.Kind with
+            | SemanticKind.VarRef(name, Some target) ->
+                revision.Nodes.TryFind target |> Option.bind (fun binding ->
+                    let bindingClass =
+                        match binding.Kind with
+                        | SemanticKind.Binding(_, true, _, _) -> Some SourceBindingClass.MutableCell
+                        | SemanticKind.Binding _ -> Some SourceBindingClass.ImmutableValue
+                        | SemanticKind.PatternBinding _ -> Some SourceBindingClass.Formal
+                        | _ -> None
+                    bindingClass |> Option.map (fun classification ->
+                        id, { Binding = target; Name = name; Class = classification; IsProgramSlotIntent = false
+                              HasProgramSlotAuthority = false; IsFunctionBinding = false; IsCallableDeclaration = false; IsPartialApplication = false }))
+            | _ -> None) |> Map.ofList
+    let source =
+        { WitnessSourceReadings.empty with
+            Ports = ports
+            Children = held |> List.map (fun (id, node) ->
+                id, node.Children |> List.mapi (fun ordinal child -> { Ordinal = ordinal; Traversal = ChildTraversal.EnterLocal child })) |> Map.ofList
+            Contexts = held |> List.map (fun (id, node) -> id, [context node]) |> Map.ofList
+            Entries = held |> List.filter (fun (_, node) -> node.Parent.IsNone)
+                           |> List.map (fun (id, _) -> { Focus = id; Reason = SourceEntryReason.ExecutableRoot; Context = [] })
+            BindingUses = uses }
+    { revision with SourceReadings = source; Emission = { revision.Emission with Callable = callable; Numeric = numeric } }
 
 /// A revision that holds the nodes given, with the rows published for every node.
 let revision (nodes: SemanticNode list) : Revision =

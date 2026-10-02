@@ -104,8 +104,13 @@ let ``scope envelope refuses unknown format schema contract and inconsistent ext
     let mutate at value = let altered = Array.copy bytes in altered[at] <- value; altered
     match OccurrenceBinary.decode limits (mutate 8 2uy) with
     | Error(BinaryError.UnsupportedFormat 2u) -> () | other -> failwithf "%A" other
-    match OccurrenceBinary.decode limits (mutate 12 15uy) with
-    | Error(BinaryError.SchemaMismatch(14, 15)) -> () | other -> failwithf "%A" other
+    let otherSchema = Array.copy bytes
+    BAREWire.Encoding.Encoder.writeI32 otherSchema 12 (Revision.Schema + 1) |> ignore
+    match OccurrenceBinary.decode limits otherSchema with
+    | Error(BinaryError.SchemaMismatch(expected, actual)) ->
+        Assert.Equal(Revision.Schema, expected)
+        Assert.Equal(Revision.Schema + 1, actual)
+    | other -> failwithf "%A" other
     match OccurrenceBinary.decode limits (mutate 16 (bytes[16] ^^^ 1uy)) with
     | Error BinaryError.ContractMismatch -> () | other -> failwithf "%A" other
     for offset in [48; 56] do

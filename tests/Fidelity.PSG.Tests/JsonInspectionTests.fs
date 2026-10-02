@@ -212,7 +212,11 @@ let ``complete image inspection retains exact proof constants without dischargin
     let obligation = { Id = "inspection-wide"; Kind = "integer-literal-range"; Logic = "QF_LIA"
                        Statement = "stored premise"; Source = "inspection.clef:1:1"; Refs = []
                        Body = ObligationBody.IntegerLiteralRange(constant, -constant, constant) }
-    let revision = { Build.bindingWithLiteral with Obligations = [obligation]; ObligationQuery = "stored-query-is-not-a-discharge" }
+    let revision =
+        { Build.bindingWithLiteral with
+            CurrentClaims = Map.ofList [NodeId 3, obligation]
+            ObligationSources = Map.ofList [NodeId 3, []]
+            Obligations = [obligation]; ObligationQuery = "stored-query-is-not-a-discharge" }
     let limits : Binary.Limits = { MaxBytes = 4 * 1024 * 1024; MaxCollectionLength = 10000; MaxDepth = 128; MaxStringBytes = 1024 * 1024; MaxBigIntegerBytes = 4096; MaxValues = 1000000 }
     let bytes = Binary.encode limits revision |> take
     let view = Binary.openSource limits (BAREWire.Memory.ByteSource.ofArray bytes) |> take
