@@ -794,6 +794,202 @@ module Integrity =
               yield! need "Emission.Boundary.IntrinsicWriteImports.Scope" "SourceReadings.ContextHeaders" imported.Scope
                   (revision.SourceReadings.ContextHeaders.ContainsKey imported.Scope) ]
 
+    /// Source-authored artifact correspondence is data. These comparisons do
+    /// not infer scope, admit residence, or establish an arithmetic proposition.
+    let private artifactAccounts (revision: Revision) : IntegrityViolation list =
+        let storage = revision.Emission.Storage
+        let callable = revision.Emission.Callable
+        let prefix = "Emission.Storage."
+        let fail table field id reason = defect (prefix + table + "." + field) id reason
+        let need table field id present reason = if present then [] else [fail table field id reason]
+        let vector table claim (participants: Participant list) =
+            need table "Participants" claim
+                (revision.ObligationSources.TryFind claim = Some [List.map (fun (p: Participant) -> p.Node) participants])
+                "The current claim's grouped sources differ from its complete ordered participant vector."
+        let group role owner (participants: Participant list) =
+            participants |> List.filter (fun p -> p.Group = owner && p.Role = role)
+        let exactAt table field owner role ordinal expected participants =
+            need table field owner
+                (group role owner participants = [{Node = expected; Role = role; Ordinal = ordinal; Group = owner}])
+                "The participant role differs from its exact source identity, group or ordinal."
+        let exact table field owner role expected participants = exactAt table field owner role 0 expected participants
+        let indexed table field owner role expected participants =
+            let stated = group role owner participants
+            let current = expected |> List.mapi (fun ordinal node -> {Node = node; Role = role; Ordinal = ordinal; Group = owner})
+            need table field owner (stated = current)
+                "The ordered participant role differs from its source vector, including multiplicity."
+        let body table field id predicate =
+            need table field id (revision.Nodes.TryFind id |> Option.exists (fun node -> predicate node.Kind))
+                "The account lacks its exact current executable operation."
+        let resultParticipants (row: EnvironmentFactoryResultAccount) : Participant list =
+            [ParticipantRole.EnvironmentCall, row.Call; ParticipantRole.EnvironmentFactory, row.Factory
+             ParticipantRole.EnvironmentConstructor, row.Constructor; ParticipantRole.EnvironmentFormal, row.Formal
+             ParticipantRole.EnvironmentAllocation, row.Allocation; ParticipantRole.EnvironmentDestination, row.Destination]
+            |> List.map (fun (role, node) -> {Node = node; Role = role; Ordinal = row.Ordinal; Group = row.Call})
+        let initialization table binding initializer =
+            match storage.Startup with
+            | Some startup when startup.ValueBindings.Contains binding ->
+                startup.Initializers |> List.filter (fun row -> row.Binding = binding && row.Initializer = initializer)
+                |> function
+                   | [_] -> []
+                   | _ -> [fail table "Initializer" binding "The account has no unique matching current startup initializer."]
+            | _ -> [fail table "Binding" binding "The account's binding lacks current startup value authority."]
+        [ for KeyValue(key, row) in storage.EnvironmentReservations do
+              let table = "EnvironmentReservations"
+              if key <> row.Claim then yield fail table "Claim" key "The reservation is filed under a different claim identity."
+              match revision.CurrentClaims.TryFind row.Claim with
+              | Some claim when claim.Kind = "environment-storage-reservation" ->
+                  match claim.Body with
+                  | ObligationBody.EnvironmentStorageReservation _ -> ()
+                  | _ -> yield fail table "Claim" row.Claim "The current claim has a different obligation body family."
+              | _ -> yield fail table "Claim" row.Claim "The reservation has no matching current claim family."
+              yield! vector table row.Claim row.Participants
+              yield! exact table "Allocation" row.Allocation ParticipantRole.EnvironmentAllocation row.Allocation row.Participants
+              yield! exact table "Binding" row.Allocation ParticipantRole.EnvironmentBinding row.Binding row.Participants
+              yield! exact table "Initializer" row.Allocation ParticipantRole.EnvironmentInitializer row.Initializer row.Participants
+              yield! body table "Allocation" row.Allocation (function SemanticKind.EnvironmentAllocate _ | SemanticKind.EnvironmentCreate _ -> true | _ -> false)
+              yield! need table "Initializer" row.Initializer (revision.Nodes.ContainsKey row.Initializer)
+                  "The reservation initializer has no current executable body."
+              let baseParticipants = row.Participants |> List.filter (fun p -> p.Group = row.Allocation)
+              let allowed =
+                  Set.ofList [ParticipantRole.EnvironmentAllocation; ParticipantRole.EnvironmentBinding; ParticipantRole.EnvironmentInitializer
+                              ParticipantRole.EnvironmentOwner; ParticipantRole.EnvironmentImplementation; ParticipantRole.EnvironmentConstructor
+                              ParticipantRole.EnvironmentFormal; ParticipantRole.EnvironmentLayoutProof; ParticipantRole.EnvironmentSpace
+                              ParticipantRole.EnvironmentAuthorityInput; ParticipantRole.EnvironmentDeclarationInput]
+              for p in baseParticipants do
+                  if p.Ordinal < 0 || not (allowed.Contains p.Role) then
+                      yield fail table "Participants" row.Claim "A reservation participant has an invalid source role or negative ordinal."
+              let roles = baseParticipants |> List.map _.Role
+              let orderedRoles = allowed |> Set.toList
+              let rank role =
+                  [ParticipantRole.EnvironmentAllocation; ParticipantRole.EnvironmentBinding; ParticipantRole.EnvironmentInitializer
+                   ParticipantRole.EnvironmentOwner; ParticipantRole.EnvironmentImplementation; ParticipantRole.EnvironmentConstructor
+                   ParticipantRole.EnvironmentFormal; ParticipantRole.EnvironmentLayoutProof; ParticipantRole.EnvironmentSpace
+                   ParticipantRole.EnvironmentAuthorityInput; ParticipantRole.EnvironmentDeclarationInput]
+                  |> List.tryFindIndex ((=) role) |> Option.defaultValue orderedRoles.Length
+              if roles <> (roles |> List.sortBy rank) then
+                  yield fail table "Participants" row.Claim "The reservation's source roles are not in their authored order."
+              for role in [ParticipantRole.EnvironmentOwner; ParticipantRole.EnvironmentImplementation; ParticipantRole.EnvironmentConstructor
+                           ParticipantRole.EnvironmentFormal; ParticipantRole.EnvironmentSpace] do
+                  match group role row.Allocation row.Participants with
+                  | [] | [{Ordinal = 0}] -> ()
+                  | _ -> yield fail table "Participants" row.Claim "A singleton allocation role has repeated occurrences or a nonzero ordinal."
+              for role in [ParticipantRole.EnvironmentLayoutProof; ParticipantRole.EnvironmentAuthorityInput; ParticipantRole.EnvironmentDeclarationInput] do
+                  let stated = group role row.Allocation row.Participants
+                  if List.map (fun (p: Participant) -> p.Ordinal) stated <> [0 .. stated.Length - 1] then
+                      yield fail table "Participants" row.Claim "An ordered allocation role has noncontiguous or reordered source ordinals."
+              let calls = row.Participants |> List.filter (fun p -> p.Group <> row.Allocation) |> List.groupBy _.Group
+              for call, participants in calls do
+                  match storage.EnvironmentFactoryResults.TryFind call with
+                  | Some result when result.Allocation = row.Allocation && participants = resultParticipants result -> ()
+                  | _ -> yield fail table "Participants" row.Claim "A factory-call participant group differs from its exact current result account."
+              let expectedCalls = storage.EnvironmentFactoryResults |> Map.toList |> List.filter (fun (_, result) -> result.Allocation = row.Allocation) |> List.map fst |> Set.ofList
+              if (calls |> List.map fst |> Set.ofList) <> expectedCalls then
+                  yield fail table "Participants" row.Claim "The reservation omits or adds a current factory-result call group."
+          for KeyValue(key, row) in storage.EnvironmentFactoryResults do
+              let table = "EnvironmentFactoryResults"
+              if key <> row.Call then yield fail table "Call" key "The factory result is filed under a different actual call identity."
+              if row.Ordinal < 0 then yield fail table "Ordinal" row.Call "The source result occurrence ordinal is negative."
+              yield! body table "Call" row.Call (function SemanticKind.Application _ -> true | _ -> false)
+              yield! body table "Allocation" row.Allocation (function SemanticKind.EnvironmentAllocate _ -> true | _ -> false)
+              yield! need table "Destination" row.Destination (revision.Nodes.ContainsKey row.Destination)
+                  "The realized destination lacks its current executable occurrence."
+              match callable.Calls.TryFind row.Call with
+              | Some call when call.Site = row.Call && call.Implementation = row.Factory ->
+                  let parameters = call.Parameters |> List.map (fun (_, _, formal) -> formal)
+                  let pairs = List.zip (parameters |> List.truncate call.Arguments.Length) (call.Arguments |> List.truncate parameters.Length)
+                  if parameters.Length <> call.Arguments.Length || (pairs |> List.filter (fun (formal, _) -> formal = row.Formal)) <> [row.Formal, row.Destination] then
+                      yield fail table "Formal" row.Call "The factory's exact formal/actual pair differs from the realized destination."
+              | _ -> yield fail table "Factory" row.Call "The actual call lacks the exact realized factory implementation."
+              yield! need table "Formal" row.Constructor
+                  (revision.Codata.EnvironmentDestinations.TryFind row.Constructor = Some row.Formal)
+                  "The constructor destination differs from the factory-result formal."
+          for KeyValue(key, row) in storage.EnvironmentResidences do
+              let table = "EnvironmentResidences"
+              if key <> row.Allocation then yield fail table "Allocation" key "The residence is filed under a different allocation identity."
+              match storage.EnvironmentReservations.TryFind row.ReservationClaim with
+              | Some reservation when reservation.Claim = row.ReservationClaim && reservation.Allocation = row.Allocation && reservation.Binding = row.Binding ->
+                  yield! exact table "Owner" row.Allocation ParticipantRole.EnvironmentOwner row.Owner reservation.Participants
+                  yield! exact table "Implementation" row.Allocation ParticipantRole.EnvironmentImplementation row.Implementation reservation.Participants
+                  yield! exact table "Formal" row.Allocation ParticipantRole.EnvironmentFormal row.Formal reservation.Participants
+                  yield! indexed table "LayoutClaims" row.Allocation ParticipantRole.EnvironmentLayoutProof row.LayoutClaims reservation.Participants
+                  yield! indexed table "AuthorityInputs" row.Allocation ParticipantRole.EnvironmentAuthorityInput row.AuthorityInputs reservation.Participants
+                  yield! indexed table "DeclarationInputs" row.Allocation ParticipantRole.EnvironmentDeclarationInput row.DeclarationInputs reservation.Participants
+                  yield! initialization table row.Binding reservation.Initializer
+                  match storage.ProgramStorage.Entries.TryFind(ProgramStorageIdentity.Allocation row.Allocation), revision.CurrentClaims.TryFind row.ReservationClaim with
+                  | Some entry, Some claim ->
+                      if entry.Identity <> ProgramStorageIdentity.Allocation row.Allocation || entry.Shape <> ProgramStorageShape.Bytes then
+                          yield fail table "Allocation" row.Allocation "The admitted allocation lacks its exact byte storage entry."
+                      yield! exact table "Space" row.Allocation ParticipantRole.EnvironmentSpace entry.SpaceNode reservation.Participants
+                      if claim.Body <> ObligationBody.EnvironmentStorageReservation(Some entry.Bytes, Some entry.Alignment, Some entry.Space.Capacity, Some entry.Space.Alignment, Some entry.Space.Granularity) then
+                          yield fail table "ReservationClaim" row.ReservationClaim "The admitted reservation formula differs from its exact storage extent, alignment or declared space."
+                      match revision.Codata.EnvironmentLayouts.TryFind row.Owner with
+                      | Some layout when layout.Owner = row.Owner && layout.Implementation = row.Implementation && layout.Formal = row.Formal && layout.Obligations = row.LayoutClaims && layout.Bytes = entry.Bytes && layout.Alignment = entry.Alignment -> ()
+                      | _ -> yield fail table "Owner" row.Owner "The admitted residence differs from its exact current environment layout."
+                  | _ -> yield fail table "ReservationClaim" row.ReservationClaim "The admitted residence lacks its exact current storage entry and claim."
+              | _ -> yield fail table "ReservationClaim" row.ReservationClaim "The admitted residence lacks its exact reservation account."
+              match callable.ProgramInstances.TryFind row.Binding with
+              | Some instance when instance.Allocation = Some row.Allocation && instance.Carrier.Implementation = row.Implementation &&
+                                   instance.Carrier.Environment = Some {Owner = row.Owner; Formal = row.Formal} && instance.Participants.Contains row.Allocation -> ()
+              | _ -> yield fail table "Binding" row.Binding "The residence differs from its exact initialized program instance."
+              yield! body table "Allocation" row.Allocation (function SemanticKind.EnvironmentAllocate owner | SemanticKind.EnvironmentCreate(owner, _) -> owner = row.Owner | _ -> false)
+              yield! need table "ProgramInitializationOrders" row.Binding (storage.ProgramInitializationOrders.ContainsKey row.Binding)
+                  "The admitted residence lacks a current initialization order account."
+              match storage.EnvironmentReservations.TryFind row.ReservationClaim with
+              | Some reservation when List.tryHead row.BindingPath = Some row.Allocation && List.contains reservation.Initializer row.BindingPath -> ()
+              | _ -> yield fail table "BindingPath" row.Binding "The source residence path omits its allocation or exact initializer."
+          for KeyValue(key, row) in storage.ProgramInitializationOrders do
+              let table = "ProgramInitializationOrders"
+              if key <> row.Binding then yield fail table "Binding" key "The order account is filed under a different binding identity."
+              yield! vector table row.Claim row.Participants
+              yield! exact table "Binding" row.Binding ParticipantRole.InitializationBinding row.Binding row.Participants
+              match revision.CurrentClaims.TryFind row.Claim, storage.Startup with
+              | Some claim, Some startup when claim.Kind = "program-initialization-order" && startup.ValueBindings.Contains row.Binding ->
+                  match startup.Initializers |> List.filter (fun initializer -> initializer.Binding = row.Binding) with
+                  | [initializer] ->
+                      yield! exactAt table "Initializer" row.Binding ParticipantRole.InitializationValue initializer.Ordinal initializer.Initializer row.Participants
+                      yield! exactAt table "Spine" row.Binding ParticipantRole.InitializationSpine initializer.Ordinal startup.Spine row.Participants
+                      yield! exactAt table "Entry" row.Binding ParticipantRole.InitializationEntry initializer.Ordinal startup.EntryLambda row.Participants
+                      let initial =
+                          [{Node = row.Binding; Role = ParticipantRole.InitializationBinding; Ordinal = 0; Group = row.Binding}
+                           {Node = startup.EntryLambda; Role = ParticipantRole.InitializationEntry; Ordinal = initializer.Ordinal; Group = row.Binding}
+                           {Node = startup.Spine; Role = ParticipantRole.InitializationSpine; Ordinal = initializer.Ordinal; Group = row.Binding}
+                           {Node = initializer.Initializer; Role = ParticipantRole.InitializationValue; Ordinal = initializer.Ordinal; Group = row.Binding}]
+                      if List.truncate 4 row.Participants <> initial then
+                          yield fail table "Participants" row.Claim "The initial source reading roles are not in their authored order."
+                      let phases = row.Participants |> List.filter (fun p -> p.Role = ParticipantRole.InitializationPhase)
+                      if claim.Body <> ObligationBody.ProgramInitializationOrder(initializer.Ordinal, startup.Initializers.Length, List.map (fun (p: Participant) -> p.Ordinal) phases) then
+                          yield fail table "Claim" row.Claim "The current order formula differs from its exact startup ordinal, count or complete ordered phases."
+                      for phase in phases do
+                          let root = if phase.Ordinal = startup.Initializers.Length then Some startup.EntryCall else startup.Initializers |> List.tryFind (fun i -> i.Ordinal = phase.Ordinal) |> Option.map _.Binding
+                          if root <> Some phase.Node then yield fail table "Participants" row.Claim "An initialization phase names a different current startup root."
+                  | _ -> yield fail table "Binding" row.Binding "The order account lacks one exact current startup initializer."
+              | _ -> yield fail table "Claim" row.Claim "The order account lacks its current claim family or startup value authority."
+              for p in row.Participants do
+                  if p.Ordinal < 0 then yield fail table "Participants" row.Claim "An initialization participant has a negative source ordinal."
+                  match p.Role with
+                  | ParticipantRole.InitializationBinding | ParticipantRole.InitializationValue | ParticipantRole.InitializationSpine
+                  | ParticipantRole.InitializationEntry | ParticipantRole.InitializationUse | ParticipantRole.InitializationScope
+                  | ParticipantRole.InitializationParent | ParticipantRole.InitializationPhase | ParticipantRole.InitializationCaller
+                  | ParticipantRole.InitializationCallee | ParticipantRole.InitializationPremise -> ()
+                  | _ -> yield fail table "Participants" row.Claim "The initialization account contains a participant of a different source family."
+                  if p.Role = ParticipantRole.InitializationUse then
+                      yield! need table "Participants" p.Node (revision.Nodes.ContainsKey p.Node)
+                          "An actual initialization use has no current executable occurrence."
+                      match revision.SourceReadings.BindingUses.TryFind p.Node with
+                      | Some bindingUse when bindingUse.Binding <> row.Binding -> yield fail table "Participants" p.Node "An initialization read names a different current binding."
+                      | _ -> ()
+          for KeyValue(binding, instance) in callable.ProgramInstances do
+              yield! need "ProgramInitializationOrders" "Binding" binding (storage.ProgramInitializationOrders.ContainsKey binding)
+                  "An initialized callable instance lacks its current order account."
+              for allocation in Option.toList instance.Allocation do
+                  yield! need "EnvironmentResidences" "Allocation" allocation
+                      (storage.EnvironmentResidences.TryFind allocation |> Option.exists (fun residence ->
+                          residence.Allocation = allocation && residence.Implementation = instance.Carrier.Implementation &&
+                          instance.Carrier.Environment = Some {Owner = residence.Owner; Formal = residence.Formal} &&
+                          instance.Participants.Contains residence.Binding && instance.Participants.Contains allocation))
+                      "An initialized callable instance lacks the exact source-admitted residence for its allocation." ]
+
     /// Exhaustive generated positions retain an explicit role. A typed fact can
     /// justify only the role it declares; it is never added to a universal set of
     /// resident identities. Mixed nested rows are checked separately above.
@@ -867,7 +1063,12 @@ module Integrity =
                          "Emission.Numeric.Operations.Participants"; "Emission.Numeric.IndexTransports.Participants"
                          "Emission.Memory.ArrayCopies.Participants"; "Emission.Spatial.Hardware.Participants"
                          "Emission.Spatial.Kernels.Participants"; "Codata.CallableBranches.Observations.Participants"
-                         "Emission.Callable.Branches.Observations.Participants" ]
+                         "Emission.Callable.Branches.Observations.Participants"
+                         "Emission.Storage.EnvironmentReservations.Participants"
+                         "Emission.Storage.ProgramInitializationOrders.Participants"
+                         "Emission.Storage.EnvironmentResidences.AuthorityInputs"
+                         "Emission.Storage.EnvironmentResidences.BindingPath"
+                         "Emission.Storage.EnvironmentResidences.DeclarationInputs" ]
         let role part id =
             if explicitParts.Contains part || supportParts.Contains part || part.StartsWith("SourceReadings.", System.StringComparison.Ordinal) then true
             else
@@ -920,6 +1121,18 @@ module Integrity =
                 | "Codata.ContinuationFrames.Obligations" | "Emission.Numeric.Values.Obligations"
                 | "Emission.Numeric.Operations.Obligations" | "Emission.Numeric.IndexTransports.Obligation"
                 | "Emission.Spatial.Hardware.Obligations" | "Emission.Spatial.Kernels.Obligations" -> revision.CurrentClaims.ContainsKey id
+                | "Emission.Storage.EnvironmentReservations" | "Emission.Storage.EnvironmentReservations.Claim"
+                | "Emission.Storage.ProgramInitializationOrders.Claim"
+                | "Emission.Storage.EnvironmentResidences.ReservationClaim"
+                | "Emission.Storage.EnvironmentResidences.LayoutClaims" -> revision.CurrentClaims.ContainsKey id
+                | "Emission.Storage.EnvironmentReservations.Binding" | "Emission.Storage.EnvironmentResidences.Binding"
+                | "Emission.Storage.ProgramInitializationOrders" | "Emission.Storage.ProgramInitializationOrders.Binding" -> body id || binding id
+                | "Emission.Storage.EnvironmentFactoryResults.Factory"
+                | "Emission.Storage.EnvironmentResidences.Implementation" -> implementation id
+                | "Emission.Storage.EnvironmentFactoryResults.Formal"
+                | "Emission.Storage.EnvironmentResidences.Formal" -> typeFact id
+                | "Emission.Storage.EnvironmentResidences.Owner" -> revision.Codata.EnvironmentLayouts.ContainsKey id
+                | "Emission.Storage.EnvironmentFactoryResults.Constructor" -> revision.Codata.EnvironmentDestinations.ContainsKey id && body id
                 | _ -> body id
         let stored =
             named revision
@@ -1004,7 +1217,7 @@ module Integrity =
                       Reason = sprintf "The row of node %d in %s differs from its row in %s." (NodeId.value identity) part other }))
         header @ misfiled @ absent @ unrelated @ disagreed @ sourceReadings revision @ claims revision @ regions revision @
         callableRows revision @ numericRows revision @ memoryRows revision @ programStorageRows revision @ spatialRows revision @ startupRows revision @
-        boundaryRows revision @ branchScopes revision @ stored revision @ incidence revision
+        boundaryRows revision @ artifactAccounts revision @ branchScopes revision @ stored revision @ incidence revision
 
     /// The first violations as one reason, for a reader that refuses the revision.
     let describe (violations: IntegrityViolation list) : string =

@@ -5,11 +5,11 @@ module internal BinaryGenerated =
     [<Literal>]
     let Format = 2u
     [<Literal>]
-    let Schema = 15
+    let Schema = 16
     [<Literal>]
-    let Fingerprint = "35E45C215A36331551F13FD935B02A053A9ED35957D2753F64672089F85463A9"
+    let Fingerprint = "7D92113F623A60402739AE33757DD07F6CB54191BBE9B4A6231A1DF3D7FF1638"
     [<Literal>]
-    let NamedTypes = 247
+    let NamedTypes = 251
     [<Literal>]
     let RevisionFields = 17
     [<Literal>]
@@ -1880,6 +1880,18 @@ module internal BinaryGenerated =
               }
     }
 
+    and write_Fidelity_PSG_EnvironmentFactoryResultAccount (state: WriteState) (value: global.Fidelity.PSG.EnvironmentFactoryResultAccount) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = write_Fidelity_PSG_NodeId state value.``Call``
+        let! state = writeI32 state value.``Ordinal``
+        let! state = write_Fidelity_PSG_NodeId state value.``Factory``
+        let! state = write_Fidelity_PSG_NodeId state value.``Constructor``
+        let! state = write_Fidelity_PSG_NodeId state value.``Formal``
+        let! state = write_Fidelity_PSG_NodeId state value.``Allocation``
+        let! state = write_Fidelity_PSG_NodeId state value.``Destination``
+        return leaveWrite state
+    }
+
     and write_Fidelity_PSG_EnvironmentLayout (state: WriteState) (value: global.Fidelity.PSG.EnvironmentLayout) : Result<WriteState, BinaryError> = result {
         let! state = enterWrite state
         let! state = write_Fidelity_PSG_NodeId state value.``Owner``
@@ -1889,6 +1901,31 @@ module internal BinaryGenerated =
         let! state = writeI32 state value.``Bytes``
         let! state = writeI32 state value.``Alignment``
         let! state = (writeList write_Fidelity_PSG_NodeId) state value.``Obligations``
+        return leaveWrite state
+    }
+
+    and write_Fidelity_PSG_EnvironmentReservationAccount (state: WriteState) (value: global.Fidelity.PSG.EnvironmentReservationAccount) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = write_Fidelity_PSG_NodeId state value.``Claim``
+        let! state = write_Fidelity_PSG_NodeId state value.``Allocation``
+        let! state = write_Fidelity_PSG_NodeId state value.``Binding``
+        let! state = write_Fidelity_PSG_NodeId state value.``Initializer``
+        let! state = (writeList write_Fidelity_PSG_Participant) state value.``Participants``
+        return leaveWrite state
+    }
+
+    and write_Fidelity_PSG_EnvironmentResidenceAccount (state: WriteState) (value: global.Fidelity.PSG.EnvironmentResidenceAccount) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = write_Fidelity_PSG_NodeId state value.``Allocation``
+        let! state = write_Fidelity_PSG_NodeId state value.``Binding``
+        let! state = write_Fidelity_PSG_NodeId state value.``Owner``
+        let! state = write_Fidelity_PSG_NodeId state value.``Implementation``
+        let! state = write_Fidelity_PSG_NodeId state value.``Formal``
+        let! state = write_Fidelity_PSG_NodeId state value.``ReservationClaim``
+        let! state = (writeList write_Fidelity_PSG_NodeId) state value.``AuthorityInputs``
+        let! state = (writeList write_Fidelity_PSG_NodeId) state value.``BindingPath``
+        let! state = (writeList write_Fidelity_PSG_NodeId) state value.``LayoutClaims``
+        let! state = (writeList write_Fidelity_PSG_NodeId) state value.``DeclarationInputs``
         return leaveWrite state
     }
 
@@ -4328,6 +4365,14 @@ module internal BinaryGenerated =
               }
     }
 
+    and write_Fidelity_PSG_ProgramInitializationOrderAccount (state: WriteState) (value: global.Fidelity.PSG.ProgramInitializationOrderAccount) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = write_Fidelity_PSG_NodeId state value.``Binding``
+        let! state = write_Fidelity_PSG_NodeId state value.``Claim``
+        let! state = (writeList write_Fidelity_PSG_Participant) state value.``Participants``
+        return leaveWrite state
+    }
+
     and write_Fidelity_PSG_ProgramStorageEntry (state: WriteState) (value: global.Fidelity.PSG.ProgramStorageEntry) : Result<WriteState, BinaryError> = result {
         let! state = enterWrite state
         let! state = write_Fidelity_PSG_ProgramStorageIdentity state value.``Identity``
@@ -5424,6 +5469,10 @@ module internal BinaryGenerated =
         let! state = (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_NodeId) state value.``PatternRequirements``
         let! state = write_Fidelity_PSG_ProgramStorageInventory state value.``ProgramStorage``
         let! state = (writeList writeString) state value.``LiteralPoolAnchors``
+        let! state = (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_EnvironmentReservationAccount) state value.``EnvironmentReservations``
+        let! state = (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_EnvironmentFactoryResultAccount) state value.``EnvironmentFactoryResults``
+        let! state = (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_EnvironmentResidenceAccount) state value.``EnvironmentResidences``
+        let! state = (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_ProgramInitializationOrderAccount) state value.``ProgramInitializationOrders``
         return leaveWrite state
     }
 
@@ -7555,6 +7604,18 @@ module internal BinaryGenerated =
             | _ -> malformed state "Unknown Fidelity.PSG.EmissionStrategy case"
     }
 
+    and read_Fidelity_PSG_EnvironmentFactoryResultAccount (state: ReadState) : Result<global.Fidelity.PSG.EnvironmentFactoryResultAccount * ReadState, BinaryError> = result {
+        let! state = enterReadFields 7 state
+        let! a0, state = read_Fidelity_PSG_NodeId state
+        let! a1, state = readI32 state
+        let! a2, state = read_Fidelity_PSG_NodeId state
+        let! a3, state = read_Fidelity_PSG_NodeId state
+        let! a4, state = read_Fidelity_PSG_NodeId state
+        let! a5, state = read_Fidelity_PSG_NodeId state
+        let! a6, state = read_Fidelity_PSG_NodeId state
+        return! finishRead ({ ``Call`` = a0; ``Ordinal`` = a1; ``Factory`` = a2; ``Constructor`` = a3; ``Formal`` = a4; ``Allocation`` = a5; ``Destination`` = a6 } : global.Fidelity.PSG.EnvironmentFactoryResultAccount) state
+    }
+
     and read_Fidelity_PSG_EnvironmentLayout (state: ReadState) : Result<global.Fidelity.PSG.EnvironmentLayout * ReadState, BinaryError> = result {
         let! state = enterReadFields 7 state
         let! a0, state = read_Fidelity_PSG_NodeId state
@@ -7565,6 +7626,31 @@ module internal BinaryGenerated =
         let! a5, state = readI32 state
         let! a6, state = (readList read_Fidelity_PSG_NodeId) state
         return! finishRead ({ ``Owner`` = a0; ``Implementation`` = a1; ``Formal`` = a2; ``Slots`` = a3; ``Bytes`` = a4; ``Alignment`` = a5; ``Obligations`` = a6 } : global.Fidelity.PSG.EnvironmentLayout) state
+    }
+
+    and read_Fidelity_PSG_EnvironmentReservationAccount (state: ReadState) : Result<global.Fidelity.PSG.EnvironmentReservationAccount * ReadState, BinaryError> = result {
+        let! state = enterReadFields 5 state
+        let! a0, state = read_Fidelity_PSG_NodeId state
+        let! a1, state = read_Fidelity_PSG_NodeId state
+        let! a2, state = read_Fidelity_PSG_NodeId state
+        let! a3, state = read_Fidelity_PSG_NodeId state
+        let! a4, state = (readList read_Fidelity_PSG_Participant) state
+        return! finishRead ({ ``Claim`` = a0; ``Allocation`` = a1; ``Binding`` = a2; ``Initializer`` = a3; ``Participants`` = a4 } : global.Fidelity.PSG.EnvironmentReservationAccount) state
+    }
+
+    and read_Fidelity_PSG_EnvironmentResidenceAccount (state: ReadState) : Result<global.Fidelity.PSG.EnvironmentResidenceAccount * ReadState, BinaryError> = result {
+        let! state = enterReadFields 10 state
+        let! a0, state = read_Fidelity_PSG_NodeId state
+        let! a1, state = read_Fidelity_PSG_NodeId state
+        let! a2, state = read_Fidelity_PSG_NodeId state
+        let! a3, state = read_Fidelity_PSG_NodeId state
+        let! a4, state = read_Fidelity_PSG_NodeId state
+        let! a5, state = read_Fidelity_PSG_NodeId state
+        let! a6, state = (readList read_Fidelity_PSG_NodeId) state
+        let! a7, state = (readList read_Fidelity_PSG_NodeId) state
+        let! a8, state = (readList read_Fidelity_PSG_NodeId) state
+        let! a9, state = (readList read_Fidelity_PSG_NodeId) state
+        return! finishRead ({ ``Allocation`` = a0; ``Binding`` = a1; ``Owner`` = a2; ``Implementation`` = a3; ``Formal`` = a4; ``ReservationClaim`` = a5; ``AuthorityInputs`` = a6; ``BindingPath`` = a7; ``LayoutClaims`` = a8; ``DeclarationInputs`` = a9 } : global.Fidelity.PSG.EnvironmentResidenceAccount) state
     }
 
     and read_Fidelity_PSG_EscapeKind (state: ReadState) : Result<global.Fidelity.PSG.EscapeKind * ReadState, BinaryError> = result {
@@ -9763,6 +9849,14 @@ module internal BinaryGenerated =
             | _ -> malformed state "Unknown Fidelity.PSG.PredicateStatus case"
     }
 
+    and read_Fidelity_PSG_ProgramInitializationOrderAccount (state: ReadState) : Result<global.Fidelity.PSG.ProgramInitializationOrderAccount * ReadState, BinaryError> = result {
+        let! state = enterReadFields 3 state
+        let! a0, state = read_Fidelity_PSG_NodeId state
+        let! a1, state = read_Fidelity_PSG_NodeId state
+        let! a2, state = (readList read_Fidelity_PSG_Participant) state
+        return! finishRead ({ ``Binding`` = a0; ``Claim`` = a1; ``Participants`` = a2 } : global.Fidelity.PSG.ProgramInitializationOrderAccount) state
+    }
+
     and read_Fidelity_PSG_ProgramStorageEntry (state: ReadState) : Result<global.Fidelity.PSG.ProgramStorageEntry * ReadState, BinaryError> = result {
         let! state = enterReadFields 8 state
         let! a0, state = read_Fidelity_PSG_ProgramStorageIdentity state
@@ -10750,7 +10844,7 @@ module internal BinaryGenerated =
     }
 
     and read_Fidelity_PSG_StorageWitnessProjection (state: ReadState) : Result<global.Fidelity.PSG.StorageWitnessProjection * ReadState, BinaryError> = result {
-        let! state = enterReadFields 14 state
+        let! state = enterReadFields 18 state
         let! a0, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_LazyWitnessContract) state
         let! a1, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_NodeId) state
         let! a2, state = (readSet read_Fidelity_PSG_NodeId) state
@@ -10765,7 +10859,11 @@ module internal BinaryGenerated =
         let! a11, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_NodeId) state
         let! a12, state = read_Fidelity_PSG_ProgramStorageInventory state
         let! a13, state = (readList readString) state
-        return! finishRead ({ ``Lazies`` = a0; ``LazyOccurrences`` = a1; ``LazyValues`` = a2; ``DefinitionOnlyThunks`` = a3; ``LazyPrograms`` = a4; ``Sequences`` = a5; ``SequenceCopies`` = a6; ``SequencePrograms`` = a7; ``Startup`` = a8; ``SlotAuthorities`` = a9; ``Requirements`` = a10; ``PatternRequirements`` = a11; ``ProgramStorage`` = a12; ``LiteralPoolAnchors`` = a13 } : global.Fidelity.PSG.StorageWitnessProjection) state
+        let! a14, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_EnvironmentReservationAccount) state
+        let! a15, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_EnvironmentFactoryResultAccount) state
+        let! a16, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_EnvironmentResidenceAccount) state
+        let! a17, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_ProgramInitializationOrderAccount) state
+        return! finishRead ({ ``Lazies`` = a0; ``LazyOccurrences`` = a1; ``LazyValues`` = a2; ``DefinitionOnlyThunks`` = a3; ``LazyPrograms`` = a4; ``Sequences`` = a5; ``SequenceCopies`` = a6; ``SequencePrograms`` = a7; ``Startup`` = a8; ``SlotAuthorities`` = a9; ``Requirements`` = a10; ``PatternRequirements`` = a11; ``ProgramStorage`` = a12; ``LiteralPoolAnchors`` = a13; ``EnvironmentReservations`` = a14; ``EnvironmentFactoryResults`` = a15; ``EnvironmentResidences`` = a16; ``ProgramInitializationOrders`` = a17 } : global.Fidelity.PSG.StorageWitnessProjection) state
     }
 
     and read_Fidelity_PSG_StringOriginRelation (state: ReadState) : Result<global.Fidelity.PSG.StringOriginRelation * ReadState, BinaryError> = result {

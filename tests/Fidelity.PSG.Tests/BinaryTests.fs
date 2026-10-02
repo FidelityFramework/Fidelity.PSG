@@ -66,13 +66,13 @@ let ``binary generator output agrees with every reachable compiled contract fiel
 let ``snapshot header has independent version schema and fingerprint bytes`` () =
     let bytes = Binary.encode limits (Revision.empty "g") |> take
     // Indexed image magic, fixed-width little endian format/schema, then digest.
-    let prefix = Convert.FromHexString("4650534749445832020000000F00000035E45C215A36331551F13FD935B02A053A9ED35957D2753F64672089F85463A9")
+    let prefix = Convert.FromHexString("465053474944583202000000100000007D92113F623A60402739AE33757DD07F6CB54191BBE9B4A6231A1DF3D7FF1638")
     Assert.Equal<byte>(prefix, bytes[..47])
     Assert.Equal<byte>([|64uy;0uy;0uy;0uy;0uy;0uy;0uy;0uy|], bytes[48..55])
     let header = child bytes 64 0
     let schema = child bytes header 0
     let producer = child bytes header 1
-    Assert.Equal<byte>([|15uy;0uy;0uy;0uy|], bytes[schema..schema + 3])
+    Assert.Equal<byte>([|16uy;0uy;0uy;0uy|], bytes[schema..schema + 3])
     Assert.Equal<byte>([|1uy;byte 'g'|], bytes[producer..producer + 1])
     Assert.Equal("g", (Binary.decode limits bytes |> take).Header.Producer)
 
@@ -133,8 +133,8 @@ let ``unknown format schema digest and union cases fail closed`` () =
     let mutate at value = let copy = Array.copy bytes in copy[at] <- value; copy
     match Binary.decode limits (mutate 8 3uy) with
     | Result.Error(BinaryError.UnsupportedFormat 3u) -> () | other -> failwithf "%A" other
-    match Binary.decode limits (mutate 12 16uy) with
-    | Result.Error(BinaryError.SchemaMismatch(15, 16)) -> () | other -> failwithf "%A" other
+    match Binary.decode limits (mutate 12 17uy) with
+    | Result.Error(BinaryError.SchemaMismatch(16, 17)) -> () | other -> failwithf "%A" other
     match Binary.decode limits (mutate 16 0uy) with
     | Result.Error BinaryError.ContractMismatch -> () | other -> failwithf "%A" other
     let unknown = indexedEncoded BinaryGenerated.write_Fidelity_PSG_NativeLiteral NativeLiteral.Unit

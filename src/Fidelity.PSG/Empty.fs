@@ -27,7 +27,8 @@ module Empty =
           LazyPrograms = Map.empty; Sequences = Map.empty; SequenceCopies = Map.empty; SequencePrograms = Map.empty
           Startup = None; SlotAuthorities = Set.empty; Requirements = Map.empty
           PatternRequirements = Map.empty; ProgramStorage = programStorage
-          LiteralPoolAnchors = [] }
+          LiteralPoolAnchors = []; EnvironmentReservations = Map.empty; EnvironmentFactoryResults = Map.empty
+          EnvironmentResidences = Map.empty; ProgramInitializationOrders = Map.empty }
 
     let boundary : BoundaryEmissionProjection =
         { Imports = Map.empty; ByScope = Map.empty; Calls = Map.empty; ByteViews = Map.empty

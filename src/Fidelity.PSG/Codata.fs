@@ -539,6 +539,54 @@ type StartupWitness = {
     ValueBindings: Set<NodeId>
 }
 
+/// One current reservation proposition. Distinct proposals for the same
+/// allocation retain distinct claim identities and their complete ordered roles.
+/// Presence is not a solver verdict or admitted residence.
+type EnvironmentReservationAccount = {
+    Claim: NodeId
+    Allocation: NodeId
+    Binding: NodeId
+    Initializer: NodeId
+    Participants: Participant list
+}
+
+/// The actual invocation created by Baker's factory-result rewrite. Formal is
+/// the factory destination formal; Ordinal is the result occurrence ordinal,
+/// independent of that formal's logical or physical argument position.
+type EnvironmentFactoryResultAccount = {
+    Call: NodeId
+    Ordinal: int
+    Factory: NodeId
+    Constructor: NodeId
+    Formal: NodeId
+    Allocation: NodeId
+    Destination: NodeId
+}
+
+/// A source-admitted unique program environment. The named vectors retain the
+/// complete current authority, path, layout and declaration premise categories.
+/// Formal is the implementation's environment formal, not a factory destination.
+type EnvironmentResidenceAccount = {
+    Allocation: NodeId
+    Binding: NodeId
+    Owner: NodeId
+    Implementation: NodeId
+    Formal: NodeId
+    ReservationClaim: NodeId
+    AuthorityInputs: NodeId list
+    BindingPath: NodeId list
+    LayoutClaims: NodeId list
+    DeclarationInputs: NodeId list
+}
+
+/// The complete current callable-slot reading scope. Pending propositions stay
+/// distinguishable from completed order and separately established discharge.
+type ProgramInitializationOrderAccount = {
+    Binding: NodeId
+    Claim: NodeId
+    Participants: Participant list
+}
+
 type StorageWitnessProjection = {
     Lazies: Map<NodeId, LazyWitnessContract>
     LazyOccurrences: Map<NodeId, NodeId>
@@ -554,6 +602,10 @@ type StorageWitnessProjection = {
     PatternRequirements: Map<NodeId, NodeId>
     ProgramStorage: ProgramStorageInventory
     LiteralPoolAnchors: string list
+    EnvironmentReservations: Map<NodeId, EnvironmentReservationAccount>
+    EnvironmentFactoryResults: Map<NodeId, EnvironmentFactoryResultAccount>
+    EnvironmentResidences: Map<NodeId, EnvironmentResidenceAccount>
+    ProgramInitializationOrders: Map<NodeId, ProgramInitializationOrderAccount>
 }
 
 type BoundaryEmissionProjection = {
