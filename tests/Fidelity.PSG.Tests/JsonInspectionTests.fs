@@ -83,7 +83,10 @@ let private properties = function
     | other -> failwithf "Expected object: %A" other
 let private items = function JsonValue.Array values -> values | other -> failwithf "Expected array: %A" other
 let private text = function JsonValue.String value -> value | other -> failwithf "Expected exact text: %A" other
-let private number = function JsonValue.Number value -> value | other -> failwithf "Expected bounded number: %A" other
+let private number json =
+    match JsonValue.tryAsInt64 json with
+    | Some value -> value
+    | None -> failwithf "Expected bounded integer literal: %A" json
 
 // Independent reflection examines the original value, including every declared
 // field and constructor. No reflection ships with the inspection assembly.
@@ -95,11 +98,11 @@ let rec private check (ty: Type) (value: obj) json =
     match ty.FullName with
     | "System.Boolean" -> Assert.Equal(JsonValue.Bool(unbox value), json)
     | "System.String" -> Assert.Equal(unbox<string> value, text json)
-    | "System.Byte" | "System.UInt16" | "System.Int32" -> Assert.Equal(Convert.ToDouble(value, CultureInfo.InvariantCulture), number json)
+    | "System.Byte" | "System.UInt16" | "System.Int32" -> Assert.Equal(Convert.ToInt64(value, CultureInfo.InvariantCulture), number json)
     | "System.Int64" -> Assert.Equal((unbox<int64> value).ToString(CultureInfo.InvariantCulture), (typed "int64")["value"] |> text)
     | "System.UInt64" -> Assert.Equal((unbox<uint64> value).ToString(CultureInfo.InvariantCulture), (typed "uint64")["value"] |> text)
     | "System.Numerics.BigInteger" -> Assert.Equal((unbox<bigint> value).ToString(CultureInfo.InvariantCulture), (typed "bigint")["value"] |> text)
-    | "System.Char" -> Assert.Equal(float (uint16 (unbox<char> value)), (typed "char-utf16")["codeUnit"] |> number)
+    | "System.Char" -> Assert.Equal(int64 (uint16 (unbox<char> value)), (typed "char-utf16")["codeUnit"] |> number)
     | "System.Double" ->
         let original = unbox<float> value
         let fields = typed "float64"
@@ -222,6 +225,8 @@ let ``complete image inspection retains exact proof constants without dischargin
     let view = Binary.openSource limits (BAREWire.Memory.ByteSource.ofArray bytes) |> take
     let inspected = Inspection.read view |> take |> properties
     Assert.Equal(JsonValue.Bool true, inspected["inspectionOnly"])
+    Assert.Equal(int64 revision.Header.Schema, inspected["schema"] |> number)
+    Assert.Equal(int64 Binary.FormatVersion, inspected["binaryFormat"] |> number)
     check typeof<Revision> (box revision) inspected["Revision"]
     let text = Inspection.render false view |> take
     Assert.Contains(constant.ToString(CultureInfo.InvariantCulture), text)

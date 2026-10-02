@@ -4,21 +4,21 @@ open System
 open System.Globalization
 open Fidelity.Data.JSON
 
-/// Inspection preserves numeric values that JSON's float64 number cannot carry.
+/// Inspection retains tags for wide values and representation-sensitive bit patterns.
 /// These are descriptions of stored fields, never a second wire decoder.
 module internal JsonRuntime =
     let private invariant = CultureInfo.InvariantCulture
     let private exact kind text = JsonValue.Object ["$type", JsonValue.String kind; "value", JsonValue.String text]
     let writeBool value = JsonValue.Bool value
-    let writeByte (value: byte) = JsonValue.Number(float value)
-    let writeUInt16 (value: uint16) = JsonValue.Number(float value)
-    let writeInt32 (value: int) = JsonValue.Number(float value)
+    let writeByte (value: byte) = JsonValue.ofUInt64 (uint64 value)
+    let writeUInt16 (value: uint16) = JsonValue.ofUInt64 (uint64 value)
+    let writeInt32 (value: int) = JsonValue.ofInt64 (int64 value)
     let writeInt64 (value: int64) = exact "int64" (value.ToString invariant)
     let writeUInt64 (value: uint64) = exact "uint64" (value.ToString invariant)
     let writeBigInteger (value: bigint) = exact "bigint" (value.ToString invariant)
     let writeString value = JsonValue.String value
     let writeChar (value: char) =
-        JsonValue.Object ["$type", JsonValue.String "char-utf16"; "codeUnit", JsonValue.Number(float (uint16 value))]
+        JsonValue.Object ["$type", JsonValue.String "char-utf16"; "codeUnit", JsonValue.ofUInt64 (uint64 (uint16 value))]
     let writeDecimal (value: decimal) =
         JsonValue.Object ["$type", JsonValue.String "decimal"; "value", JsonValue.String(value.ToString invariant)
                           "bits", Decimal.GetBits value |> Array.map writeInt32 |> Array.toList |> JsonValue.Array]

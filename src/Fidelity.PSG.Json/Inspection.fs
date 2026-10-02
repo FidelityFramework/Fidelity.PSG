@@ -10,8 +10,8 @@ module Inspection =
         Binary.readRevision view |> Result.map (fun revision ->
             JsonValue.Object [
                 "$format", JsonValue.String "fidelity-psg-inspection/1"
-                "schema", JsonValue.Number(float revision.Header.Schema)
-                "binaryFormat", JsonValue.Number(float Binary.FormatVersion)
+                "schema", JsonValue.ofInt64 (int64 revision.Header.Schema)
+                "binaryFormat", JsonValue.ofUInt64 (uint64 Binary.FormatVersion)
                 "contractFingerprint", JsonValue.String Binary.ContractFingerprint
                 "inspectionOnly", JsonValue.Bool true
                 "Revision", JsonGenerated.writeRevision revision
