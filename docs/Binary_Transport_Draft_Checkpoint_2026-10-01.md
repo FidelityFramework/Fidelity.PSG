@@ -1,4 +1,10 @@
-# Revision binary codec — unfinished source checkpoint
+# Revision binary codec — historical draft checkpoint
+
+This preserves the earlier draft state, not the current implementation. The
+indexed reader, mapped hosting adapter and inspection sink are now included in
+their projects. See [indexed revision images](Binary_Images.md) for the format
+and the [cross-project checkpoint](../../Bozzetto/docs/PSG_Transport_Integration_Auditor_Checkpoint_2026-10-01.md)
+for current integration evidence. Statements below describe the earlier anchor.
 
 October 1, 2026. This records draft source for audit and continuation. The six
 codec/generator files are **not included in Fidelity.PSG.fsproj** and are not

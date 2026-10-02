@@ -631,9 +631,12 @@ type WitnessRegion = {
     Root: NodeId option
     Anchor: NodeId option
     /// Actual structural breadcrumbs, nearest parent first.
-    Path: (NodeId * NodeId list * NodeId list) list
+    Path: OccurrenceBreadcrumb list
     Members: Set<NodeId>
     Supports: Set<NodeId>
+    /// Explicit source-owned support policy. A whole-owner account is checked
+    /// under Baker; its retained node census is not an emission payload.
+    OwnerSupport: SupportKey
     Fingerprint: string
     Dependencies: Set<string>
 }

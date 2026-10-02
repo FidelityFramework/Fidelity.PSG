@@ -1,5 +1,5 @@
-// Generate the complete closed-world snapshot mapping. Reflection is a build-time
-// tool only; the emitted codec contains typed field access and constructors.
+// Generate closed-world artifact and scoped-occurrence mappings. Reflection is
+// a build-time tool only; emitted codecs use typed fields and constructors.
 // Usage: dotnet fsi tools/GenerateBinary.fsx <Fidelity.PSG.dll> <output.fs>
 module PsgBinaryGeneration
 
@@ -54,10 +54,11 @@ let private caseName ty name = sourceName ty + (if name = ty.Name then "" else "
 let generate (assemblyPath: string) =
     let contract = Assembly.LoadFrom(IO.Path.GetFullPath assemblyPath)
     let revision = contract.GetType("Fidelity.PSG.Revision", throwOnError = true)
+    let delivery = contract.GetType("Fidelity.PSG.OccurrenceDelivery", throwOnError = true)
     let rec visit seen ty =
         if List.contains ty seen then seen
         else children ty |> Array.fold visit (ty :: seen)
-    let all = visit [] revision |> List.toArray
+    let all = [revision; delivery] |> List.fold visit [] |> List.toArray
     let types = all |> Array.filter named |> Array.sortBy _.FullName
     let schemaField =
         contract.GetTypes()
@@ -77,7 +78,7 @@ let generate (assemblyPath: string) =
             else
                 ty.FullName + "=union{" +
                 (FSharpType.GetUnionCases(ty, flags) |> Array.sortBy _.Tag |> Array.map(fun case -> string case.Tag + ":" + case.Name + "(" + fields (case.GetFields()) + ")") |> String.concat ";") + "}")
-    let manifest = "Fidelity.PSG.Binary/1\nSchema=" + string schema + "\n" + String.concat "\n" descriptions + "\n"
+    let manifest = "Fidelity.PSG.Binary/2-indexed\nRoots=Revision;OccurrenceDelivery\nSchema=" + string schema + "\n" + String.concat "\n" descriptions + "\n"
     let fingerprint = System.Security.Cryptography.SHA256.HashData(Text.Encoding.UTF8.GetBytes manifest) |> Convert.ToHexString
 
     let rec writer depth ty =
@@ -117,8 +118,8 @@ let generate (assemblyPath: string) =
             let value = (if ty.IsValueType then "struct " else "") + "(" + String.concat ", " names + ")"
             let body =
                 Array.zip elements names |> Array.foldBack (fun (ty, name) rest ->
-                    reader (depth + 1) ty + " state |> Result.bind (fun (" + name + ", state) -> " + rest + ")") <| ("Ok(" + value + ", leaveRead state)")
-            "(fun state -> enterRead state |> Result.bind (fun state -> " + body + "))"
+                    reader (depth + 1) ty + " state |> Result.bind (fun (" + name + ", state) -> " + rest + ")") <| ("finishRead " + value + " state")
+            "(fun state -> enterReadFields " + string elements.Length + " state |> Result.bind (fun state -> " + body + "))"
         | _ -> failwithf "Unsupported reader: %s" ty.FullName
 
     let writeDefinition first ty =
@@ -139,36 +140,43 @@ let generate (assemblyPath: string) =
             header + "        return!\n            match value with\n" + String.concat "" cases + "    }\n"
     let readDefinition first ty =
         let prefix = if first then "let rec" else "and"
-        let header = "    " + prefix + " read_" + identifier ty + " (state: ReadState) : Result<" + sourceName ty + " * ReadState, BinaryError> = result {\n        let! state = enterRead state\n"
+        let header = "    " + prefix + " read_" + identifier ty + " (state: ReadState) : Result<" + sourceName ty + " * ReadState, BinaryError> = result {\n"
         let readFields indent (fields: PropertyInfo array) =
             fields |> Array.mapi(fun i field -> indent + "let! a" + string i + ", state = " + reader 0 field.PropertyType + " state\n") |> String.concat ""
         if FSharpType.IsRecord(ty, flags) then
             let fields = FSharpType.GetRecordFields(ty, flags)
             let values = fields |> Array.mapi(fun i field -> quoted field.Name + " = a" + string i) |> String.concat "; "
-            header + readFields "        " fields + "        return ({ " + values + " } : " + sourceName ty + "), leaveRead state\n    }\n"
+            header + "        let! state = enterReadFields " + string fields.Length + " state\n" + readFields "        " fields + "        return! finishRead ({ " + values + " } : " + sourceName ty + ") state\n    }\n"
         else
             let cases = FSharpType.GetUnionCases(ty, flags) |> Array.sortBy _.Tag |> Array.map(fun case ->
                 let fields = case.GetFields()
                 let values = fields |> Array.mapi(fun i _ -> "a" + string i)
                 let value = caseName ty case.Name + (if fields.Length = 0 then "" else "(" + String.concat ", " values + ")")
-                "            | " + string case.Tag + " -> result {\n" + readFields "                " fields + "                return " + value + ", leaveRead state\n              }\n")
-            header + "        let! tag, state = readTag state\n        return!\n            match tag with\n" + String.concat "" cases +
+                "            | " + string case.Tag + " -> result {\n" + readFields "                " fields + "                return! finishRead (" + value + ") state\n              }\n")
+            let maximum = 1 + (FSharpType.GetUnionCases(ty, flags) |> Array.map(fun case -> case.GetFields().Length) |> Array.max)
+            header + "        let! state = enterReadCases " + string maximum + " state\n        let! tag, state = readTag state\n        return!\n            match tag with\n" + String.concat "" cases +
             "            | _ -> malformed state \"Unknown " + ty.FullName + " case\"\n    }\n"
     String.concat "\n" [
         "// Generated by tools/GenerateBinary.fsx. Every reachable record field and union case is explicit."
         "namespace Fidelity.PSG"
         "module internal BinaryGenerated ="
-        "    open BinaryRuntime"
+        "    open BinaryIndexed"
         "    [<Literal>]"
-        "    let Format = 1u"
+        "    let Format = 2u"
         "    [<Literal>]"
         "    let Schema = " + string schema
         "    [<Literal>]"
         "    let Fingerprint = \"" + fingerprint + "\""
         "    [<Literal>]"
         "    let NamedTypes = " + string types.Length
+        "    [<Literal>]"
+        "    let RevisionFields = " + string (FSharpType.GetRecordFields(revision, flags).Length)
+        "    [<Literal>]"
+        "    let RevisionNodesField = " + string (FSharpType.GetRecordFields(revision, flags) |> Array.findIndex(fun field -> field.Name = "Nodes"))
         types |> Array.mapi(fun i ty -> writeDefinition (i = 0) ty) |> String.concat "\n"
         types |> Array.mapi(fun i ty -> readDefinition (i = 0) ty) |> String.concat "\n"
         "    let writeRevision = write_" + identifier revision
         "    let readRevision = read_" + identifier revision
+        "    let writeOccurrenceDelivery = write_" + identifier delivery
+        "    let readOccurrenceDelivery = read_" + identifier delivery
         "" ]

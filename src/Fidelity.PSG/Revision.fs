@@ -115,6 +115,8 @@ type RevisionHeader = {
 type Revision = {
     Header: RevisionHeader
     Nodes: Map<NodeId, SemanticNode>
+    /// Source-owned entry, traversal, positional and binding-use accounts.
+    SourceReadings: WitnessSourceReadings
     /// The entire edge set of the graph: the structural and reference relations each node's
     /// kind implies, in node order, followed by every relation that saturation wrote.
     /// A reader plans its traversal from this set. It never adds to it.
@@ -131,6 +133,8 @@ type Revision = {
     Demand: ExplicitDemandProjection
     /// Every proof obligation the graph carries, in discharge order.
     Obligations: ObligationInfo list
+    /// Current claim facts without retaining their analysis SemanticNode bodies.
+    CurrentClaims: Map<NodeId, ObligationInfo>
     /// Per obligation node, the ordered sources of each relation that constrains it.
     ObligationSources: Map<NodeId, NodeId list list>
     /// The design-time discharge of `Obligations`, in SMT-LIB, as the producer transcribes it.
@@ -184,13 +188,14 @@ module ExplicitDemandProjection =
 module Revision =
     /// The version of the contract declared by this library.
     [<Literal>]
-    let Schema = 12
+    let Schema = 15
 
     /// The published form of a program with nothing in it, from a producer that
     /// declares no platform width.
     let empty (producer: string) : Revision =
         { Header = { Schema = Schema; Producer = producer }
           Nodes = Map.empty
+          SourceReadings = WitnessSourceReadings.empty
           Edges = []
           DeclarationRoots = []
           ModuleClassifications = Map.empty
@@ -204,6 +209,7 @@ module Revision =
           Foreign = ForeignStorageProjection.empty
           Demand = ExplicitDemandProjection.empty
           Obligations = []
+          CurrentClaims = Map.empty
           ObligationSources = Map.empty
           ObligationQuery = "" }
 

@@ -248,10 +248,15 @@ module internal BinaryRuntime =
                     | Ok(value, state) -> loop (remaining - 1UL) state (value :: accumulated)
             return! loop count state []
     }
-    let writeArray writer state values = writeList writer state (Array.toList values)
+    let writeArray writer (state: WriteState) values =
+        if isNull values then Error (BinaryError.Malformed(state.Offset, "Null array"))
+        elif Array.length values > state.Limits.MaxCollectionLength then Error (BinaryError.LimitExceeded("MaxCollectionLength", state.Offset))
+        else writeList writer state (Array.toList values)
     let readArray reader state = readList reader state |> Result.map (fun (values, state) -> List.toArray values, state)
 
-    let writeSet writer state values = writeList writer state (Set.toList values)
+    let writeSet writer (state: WriteState) values =
+        if Set.count values > state.Limits.MaxCollectionLength then Error (BinaryError.LimitExceeded("MaxCollectionLength", state.Offset))
+        else writeList writer state (Set.toList values)
     let readSet reader state = result {
         let! values, state = readList reader state
         let rec ordered = function
@@ -260,12 +265,13 @@ module internal BinaryRuntime =
         if not (ordered values) then return! malformed state "Set members are duplicated or not in canonical order"
         else return Set.ofList values, state
     }
-    let writeMap keyWriter valueWriter state values =
+    let writeMap keyWriter valueWriter (state: WriteState) values =
         let writeEntry state (key, value) = result {
             let! state = keyWriter state key
             return! valueWriter state value
         }
-        writeList writeEntry state (Map.toList values)
+        if Map.count values > state.Limits.MaxCollectionLength then Error (BinaryError.LimitExceeded("MaxCollectionLength", state.Offset))
+        else writeList writeEntry state (Map.toList values)
     let readMap keyReader valueReader state =
         let readEntry state = result {
             let! key, state = keyReader state

@@ -7,6 +7,15 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Build.fs" />
+    <Compile Include="ScopedPublicationTests.fs" />
+    <Compile Include="LiveOccurrenceSectionTests.fs" />
+    <Compile Include="OccurrenceBinaryTests.fs" />
+    <Compile Include="../../tools/BinaryGeneration.fs" Link="BinaryGeneration.fs" />
+    <Compile Include="BinaryTests.fs" />
+    <Compile Include="BinaryShapeTests.fs" />
+    <Compile Include="MappedRevisionTests.fs" />
+    <Compile Include="../../tools/JsonGeneration.fs" Link="JsonGeneration.fs" />
+    <Compile Include="JsonInspectionTests.fs" />
     <Compile Include="EmptyTests.fs" />
     <Compile Include="IntegrityTests.fs" />
     <Compile Include="GeneratedTests.fs" />
@@ -18,5 +27,7 @@
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" PrivateAssets="all" />
     <ProjectReference Include="../../src/Fidelity.PSG/Fidelity.PSG.fsproj" />
+    <ProjectReference Include="../../src/Fidelity.PSG.Hosting/Fidelity.PSG.Hosting.fsproj" />
+    <ProjectReference Include="../../src/Fidelity.PSG.Json/Fidelity.PSG.Json.fsproj" />
   </ItemGroup>
 </Project>

@@ -4,6 +4,12 @@ The published form of the Program Semantic Graph (PSG) of the Clef language.
 
 The Clef Compiler Service builds the graph, elaborates it and saturates it. When it is done, it publishes one revision. A revision is an immutable value that holds every fact about the program that a later stage may read. This library declares the types of that value.
 
+Incremental consumers use source-authorized demanded scopes, retaining settled
+content and applying affected changes against an exact base. The retained compiler
+corpus is not a service payload. Scope selection and complete support validation
+belong to Baker; the contract provides data and structural checks. See the
+[scoped delivery contract](docs/Scoped_Publication.md).
+
 ## Who produces a revision
 
 The Clef Compiler Service, in the clef repository:
@@ -65,6 +71,9 @@ Each rule was measured against revisions the compiler service publishes before i
 | `src/Fidelity.PSG` | The contract |
 | `src/Fidelity.PSG/Integrity.fs` | The structural rules |
 | `src/Fidelity.PSG/IntegrityNamed.fs` | Every position that holds an identity. Generated. |
+| `src/Fidelity.PSG/Binary.fs` | Indexed binary images and the shared read-only reader |
+| `src/Fidelity.PSG.Hosting` | Optional .NET adapter owning a read-only memory mapping |
+| `tools/GenerateBinary.fsx` | Generates typed codecs from the complete revision contract |
 | `tools/GenerateIntegrity.fsx` | Generates the list of positions from the compiled contract |
 | `tests/Fidelity.PSG.Tests` | Tests of the empty revision, the structural rules and the generated list |
 | `build/Contract.targets` | The rules of the contract, checked before every compile |
@@ -84,6 +93,24 @@ dotnet fsi tools/GenerateIntegrity.fsx src/Fidelity.PSG/bin/Debug/net10.0/Fideli
 
 The second command is run after any change to a contract type.
 
-## State
+## Binary images
 
-A revision is an immutable value in memory. Its binary layout is not built. Node identity is the producer's counter value and is not yet stable across revisions. The Alex repository's `docs` state the open decisions.
+`Binary.encode limits revision` produces one complete position-independent image.
+`Binary.decode limits bytes` reads it through the same generated reader used by
+`Binary.openSource limits source`, where the host supplies a stable BAREWire
+`ByteSource`. Every record and collection has an offset directory; a node can be
+read by identity without scanning preceding node payloads.
+
+`openSource` checks the envelope and sorted node index. `Binary.tryNode` reads one
+node; malformed sibling payloads can still exist. `Binary.readRevision` reads all
+stored fields and checks complete structural integrity. None of these operations
+discharges proofs or grants current-source or execution authority. Those decisions
+remain with the compiler and orchestrator.
+
+The host keeps source bytes stable and owns their lifetime. The optional
+`Fidelity.PSG.Hosting.MappedRevision` adapter opens a read-only mapping; the core
+contract opens no file. See [the image format and limits](docs/Binary_Images.md).
+
+Node identity is preserved exactly. It remains the producer's counter value and
+is not yet stable across revisions; schema and producer names do not create a
+cross-revision identity.

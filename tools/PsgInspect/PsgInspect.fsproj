@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="FSharp.Core" Version="10.1.401" />
+    <ProjectReference Include="../../src/Fidelity.PSG.Json/Fidelity.PSG.Json.fsproj" />
+    <ProjectReference Include="../../src/Fidelity.PSG.Hosting/Fidelity.PSG.Hosting.fsproj" />
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+</Project>

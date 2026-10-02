@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Explicit .NET hosting boundary. The portable contract does not reference
+       this assembly, open files, or own mapped-memory lifetimes. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="FSharp.Core" Version="10.1.401" />
+    <ProjectReference Include="../Fidelity.PSG/Fidelity.PSG.fsproj" />
+    <Compile Include="MappedRevision.fs" />
+  </ItemGroup>
+</Project>

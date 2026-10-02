@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Optional inspection dependency: the core PSG contract never references this project. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
+    <FidelityDataProject Condition="'$(FidelityDataProject)' == ''">$(MSBuildThisFileDirectory)../../../Fidelity.Data/src/Fidelity.Data/Fidelity.Data.fsproj</FidelityDataProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="FSharp.Core" Version="10.1.401" />
+    <ProjectReference Include="../Fidelity.PSG/Fidelity.PSG.fsproj" />
+    <ProjectReference Include="$(FidelityDataProject)" />
+    <Compile Include="JsonRuntime.fs" />
+    <Compile Include="JsonGenerated.fs" />
+    <Compile Include="Inspection.fs" />
+  </ItemGroup>
+</Project>

@@ -20,3 +20,5 @@ type BinaryError =
     | SchemaMismatch of expected: int * actual: int
     | ContractMismatch
     | InvalidRevision of IntegrityViolation list
+    | InvalidOccurrenceDelivery of OccurrenceDeliveryViolation list
+    | SourceUnavailable of offset: uint64 * reason: string

@@ -20,7 +20,9 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="AssemblyInfo.fs" />
     <Compile Include="Identity.fs" />
+    <Compile Include="ScopedPublication.fs" />
     <Compile Include="Participant.fs" />
     <Compile Include="Numeric.fs" />
     <Compile Include="Dimension.fs" />
@@ -30,10 +32,19 @@
     <Compile Include="Edges.fs" />
     <Compile Include="Codata.fs" />
     <Compile Include="Node.fs" />
+    <Compile Include="LiveOccurrenceSection.fs" />
+    <Compile Include="WitnessSourceReadings.fs" />
     <Compile Include="Empty.fs" />
     <Compile Include="Revision.fs" />
+    <Compile Include="RevisionNavigation.fs" />
     <Compile Include="IntegrityNamed.fs" />
     <Compile Include="Integrity.fs" />
+    <Compile Include="BinaryTypes.fs" />
+    <Compile Include="BinaryRuntime.fs" />
+    <Compile Include="BinaryIndexed.fs" />
+    <Compile Include="BinaryGenerated.fs" />
+    <Compile Include="Binary.fs" />
+    <Compile Include="OccurrenceBinary.fs" />
   </ItemGroup>
 
   <ItemGroup>
