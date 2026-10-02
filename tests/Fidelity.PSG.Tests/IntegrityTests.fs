@@ -1241,6 +1241,105 @@ let ``hardware clock provenance cannot authorize an executable numeric operand``
     Assert.Contains(Integrity.check changed, fun violation ->
         violation.Part = "Emission.Numeric.Operations.Operands.Actual" && violation.Node = Some(NodeId 57))
 
+let private spatialDeclarationFacts hardware =
+    let initial = if hardware then hardwareClockFacts else kernelStepFacts
+    let root = if hardware then DeclRoot.HardwareModule else DeclRoot.KernelModule
+    let shell = node 86 (SemanticKind.Binding("spatial", false, false, Some root)) [9000]
+    let nodes = initial.Nodes.Add(shell.Id, shell)
+    let source = (covered {initial with Nodes = nodes}).SourceReadings
+    let port = source.Ports[shell.Id, OccurrencePort.StructuralChild]
+    let source =
+        {source with
+            Ports = source.Ports.Add((shell.Id, OccurrencePort.StructuralChild), {port with Positions = Map.empty})
+            Children = source.Children.Add(shell.Id, [{Ordinal = 0; Traversal = ChildTraversal.SourceOmitted(SupportKey.WholeOwningAnalysisRegion "spatial-owner", NodeId 9000)}])
+            Entries = source.Entries |> List.map (fun entry -> if entry.Focus = shell.Id then {entry with Reason = SourceEntryReason.SpatialRoot} else entry)}
+    let spatial = initial.Emission.Spatial
+    let spatial =
+        if hardware then
+            let plan = spatial.Hardware[NodeId 1]
+            {spatial with Hardware = Map.ofList [shell.Id, {plan with Site = shell.Id}]; Required = Set.singleton shell.Id}
+        else
+            let plan = spatial.Kernels[NodeId 1]
+            {spatial with Kernels = Map.ofList [shell.Id, {plan with Site = shell.Id; Ingress = {plan.Ingress with Site = shell.Id}}]
+                          Required = Set.singleton shell.Id}
+    {initial with Nodes = nodes; SourceReadings = source; Emission = {initial.Emission with Spatial = spatial}}
+
+[<Theory>]
+[<InlineData(true)>]
+[<InlineData(false)>]
+let ``a specialized declaration shell uses its exact spatial plan without ordinary value facts`` hardware =
+    let stated = spatialDeclarationFacts hardware
+    Assert.Empty(Integrity.check stated)
+    Assert.False(stated.Nodes.ContainsKey(NodeId 9000))
+    Assert.False(stated.Emission.Callable.ValueShapes.ContainsKey(NodeId 86))
+    Assert.False(stated.Emission.Callable.AliasTargets.ContainsKey(NodeId 86))
+    Assert.False(stated.Emission.Callable.Supports.ContainsKey(NodeId 86))
+    Assert.False(stated.Emission.Numeric.SourceTypes.ContainsKey(NodeId 86))
+    Assert.False(stated.Emission.Numeric.OccurrenceRepresentations.ContainsKey(NodeId 86))
+
+[<Theory>]
+[<InlineData(true, true)>]
+[<InlineData(true, false)>]
+[<InlineData(false, true)>]
+[<InlineData(false, false)>]
+let ``generic value facts cannot replace a missing or mismatching specialized declaration plan`` hardware mismatch =
+    let initial = spatialDeclarationFacts hardware
+    let generic = (covered initial).Emission
+    let stated = {initial with Emission = generic}
+    let spatial = stated.Emission.Spatial
+    let spatial =
+        if hardware then
+            {spatial with Hardware = if mismatch then Map.ofList [NodeId 86, {spatial.Hardware[NodeId 86] with Site = NodeId 1}] else Map.empty}
+        else
+            {spatial with Kernels = if mismatch then Map.ofList [NodeId 86, {spatial.Kernels[NodeId 86] with Site = NodeId 1}] else Map.empty}
+    let changed = {stated with Emission = {stated.Emission with Spatial = spatial}}
+    let part = if hardware then "Nodes (HardwareModule declaration)" else "Nodes (KernelModule declaration)"
+    let violation = within part (Integrity.check changed)
+    Assert.Equal(Some(NodeId 86), violation.Node)
+
+[<Theory>]
+[<InlineData(true, true)>]
+[<InlineData(true, false)>]
+[<InlineData(false, true)>]
+[<InlineData(false, false)>]
+let ``ordinary binding and other declaration roots retain ordinary mandatory value facts`` hardware otherRoot =
+    let stated = spatialDeclarationFacts hardware
+    let shell = stated.Nodes[NodeId 86]
+    let root = if otherRoot then Some DeclRoot.EntryPoint else None
+    let changed = {stated with Nodes = stated.Nodes.Add(shell.Id, {shell with Kind = SemanticKind.Binding("ordinary", false, false, root)})}
+    let missing = Integrity.check changed |> List.filter (fun violation -> violation.Node = Some shell.Id && violation.Part.StartsWith("Nodes"))
+    Assert.Equal(5, missing.Length)
+    for table in ["Emission.Callable.ValueShapes"; "Emission.Callable.AliasTargets"; "Emission.Callable.Supports";
+                  "Emission.Numeric.SourceTypes"; "Emission.Numeric.OccurrenceRepresentations"] do
+        Assert.Contains(missing, fun violation -> violation.Reason.Contains table)
+
+[<Theory>]
+[<InlineData(true)>]
+[<InlineData(false)>]
+let ``a matching specialized declaration plan still has to satisfy its own structural facts`` hardware =
+    let stated = spatialDeclarationFacts hardware
+    let spatial = stated.Emission.Spatial
+    let spatial =
+        if hardware then
+            {spatial with Hardware = Map.ofList [NodeId 86, {spatial.Hardware[NodeId 86] with ClockPath = Set.empty}]}
+        else
+            let plan = spatial.Kernels[NodeId 86]
+            {spatial with Kernels = Map.ofList [NodeId 86, {plan with Ingress = {plan.Ingress with Site = NodeId 1}}]}
+    let changed = {stated with Emission = {stated.Emission with Spatial = spatial}}
+    let part = if hardware then "Emission.Spatial.Hardware.ClockReference" else "Emission.Spatial.Kernels.Ingress"
+    Assert.Contains(Integrity.check changed, fun violation -> violation.Part = part)
+
+[<Theory>]
+[<InlineData(true)>]
+[<InlineData(false)>]
+let ``a specialized declaration does not waive actual kernel operand body or carrier requirements`` body =
+    let stated = spatialDeclarationFacts false
+    let changed =
+        if body then {stated with Nodes = stated.Nodes.Remove(NodeId 3)}
+        else {stated with Emission = {stated.Emission with Numeric = {stated.Emission.Numeric with Values = stated.Emission.Numeric.Values.Remove(NodeId 3)}}}
+    let part = "Emission.Spatial.Kernels.Steps.Operation.Operands." + (if body then "Actual" else "Carrier")
+    Assert.Contains(Integrity.check changed, fun violation -> violation.Part = part && violation.Node = Some(NodeId 3))
+
 let private startupContextFacts =
     let initializer : StartupInitializerWitness = {Module = NodeId 50; Binding = NodeId 2; Initializer = NodeId 2; Ordinal = 0}
     let startup : StartupWitness =

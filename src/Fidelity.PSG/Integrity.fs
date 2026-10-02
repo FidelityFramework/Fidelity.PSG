@@ -44,8 +44,23 @@ module Integrity =
     /// named, so a published revision satisfies every one of them.
     let related (revision: Revision) : (string * NodeId list * string * Set<NodeId>) list =
         let held = revision.Nodes |> Map.toList
-        let every = held |> List.map fst
-        let reachable = held |> List.filter (fun (_, node) -> node.IsReachable) |> List.map fst
+        let spatial = revision.Emission.Spatial
+        let hardwareDeclarations =
+            held |> List.choose (fun (id, node) ->
+                match node.Kind with SemanticKind.Binding(_, _, _, Some DeclRoot.HardwareModule) -> Some id | _ -> None)
+        let kernelDeclarations =
+            held |> List.choose (fun (id, node) ->
+                match node.Kind with SemanticKind.Binding(_, _, _, Some DeclRoot.KernelModule) -> Some id | _ -> None)
+        let hardwareSites = spatial.Hardware |> Map.filter (fun id row -> row.Site = id) |> rows
+        let kernelSites = spatial.Kernels |> Map.filter (fun id row -> row.Site = id) |> rows
+        let specializedDeclaration id (node: SemanticNode) =
+            match node.Kind with
+            | SemanticKind.Binding(_, _, _, Some DeclRoot.HardwareModule) -> hardwareSites.Contains id
+            | SemanticKind.Binding(_, _, _, Some DeclRoot.KernelModule) -> kernelSites.Contains id
+            | _ -> false
+        let values = held |> List.filter (fun (id, node) -> not (specializedDeclaration id node))
+        let every = values |> List.map fst
+        let reachable = values |> List.filter (fun (_, node) -> node.IsReachable) |> List.map fst
         let callable = revision.Emission.Callable
         let branchCalls =
             held |> List.choose (fun (id, node) ->
@@ -54,7 +69,6 @@ module Integrity =
         let storage = revision.Emission.Storage
         let numeric = revision.Emission.Numeric
         let memory = revision.Emission.Memory
-        let spatial = revision.Emission.Spatial
         let thunks =
             storage.Lazies |> Map.toList |> List.map (fun (_, contract) -> contract.Layout.Thunk) |> Set.ofList
         let lazyDeclarations =
@@ -62,13 +76,17 @@ module Integrity =
             |> Map.toList
             |> List.filter (fun (_, declaration) -> declaration.Context = LambdaContext.LazyThunk)
             |> List.map (fun (_, declaration) -> declaration.Implementation)
-        [ // A row for every node held.
+        [ // Ordinary value readings exclude only exact specialized declaration
+          // shells. Their matching spatial plan remains mandatory and is
+          // validated independently; it grants no operand or signature facts.
           "Nodes", every, "Emission.Callable.ValueShapes", rows callable.ValueShapes
           "Nodes", every, "Emission.Callable.AliasTargets", rows callable.AliasTargets
           "Nodes", every, "Emission.Callable.Supports", rows callable.Supports
           // A row for every reachable node.
           "Nodes (reachable)", reachable, "Emission.Numeric.SourceTypes", rows numeric.SourceTypes
           "Nodes (reachable)", reachable, "Emission.Numeric.OccurrenceRepresentations", rows numeric.OccurrenceRepresentations
+          "Nodes (HardwareModule declaration)", hardwareDeclarations, "Emission.Spatial.Hardware (matching Site)", hardwareSites
+          "Nodes (KernelModule declaration)", kernelDeclarations, "Emission.Spatial.Kernels (matching Site)", kernelSites
           // A row for every site a projection declares as required.
           "Emission.Numeric.Required", Set.toList numeric.Required,
             "Emission.Numeric.Values or Emission.Numeric.Unresolved", Set.union (rows numeric.Values) (rows numeric.Unresolved)
