@@ -136,3 +136,12 @@ let ``occurrence codec enforces byte bounds before mapping any body`` () =
 let ``stable host byte source uses the same scoped reading`` () =
     let view = OccurrenceBinary.openSource limits (initial |> encode |> ByteSource.ofArray) |> take
     Assert.Equal<OccurrenceDelivery>(initial, OccurrenceBinary.readDelivery view |> take)
+
+[<Fact>]
+let ``standalone node reference readings include kind fields outside structural children`` () =
+    let node = { Build.node 2 (SemanticKind.Application(NodeId 17, [NodeId 23])) [3] with Parent = Some(NodeId 1) }
+    Assert.Equal<Set<NodeId>>(Set.ofList [NodeId 1; NodeId 2; NodeId 3; NodeId 17; NodeId 23],
+                             IntegrityNamed.nodeReferences node |> Set.ofList)
+    let header = { Identity = NodeId 40; Name = "Module"; Ports = Map.ofList [OccurrencePort.ModuleDeclaration,
+                       { Extent = 20; Stamp = "source-selected-port"; Positions = Map.ofList [7, NodeId 2] }] }
+    Assert.Equal<Set<NodeId>>(Set.ofList [NodeId 40; NodeId 2], IntegrityNamed.contextHeaderReferences header |> Set.ofList)

@@ -1361,6 +1361,12 @@ module IntegrityNamed =
         @ (value.ContextHeaders |> Map.toList |> List.collect (fun (k0, h0) -> [ k0 ] @ (idsOfSourceContextHeader h0)))
         @ (value.BindingUses |> Map.toList |> List.collect (fun (k0, h0) -> [ k0 ] @ (idsOfBindingUseContract h0)))
 
+    /// Every stored node identity, including the body's own identity and context handles.
+    let nodeReferences (node: SemanticNode) : NodeId list = idsOfSemanticNode node
+
+    /// Every stored identity in a declaration context header and its sparse ports.
+    let contextHeaderReferences (header: SourceContextHeader) : NodeId list = idsOfSourceContextHeader header
+
     let private group0 (revision: Revision) : (string * NodeId list) list =
         [ "Nodes", (revision.Nodes |> Map.toList |> List.collect (fun (key, _) -> [ key ]))
           "Nodes.Id", (revision.Nodes |> Map.toList |> List.collect (fun (_, row) -> [ row.Id ]))

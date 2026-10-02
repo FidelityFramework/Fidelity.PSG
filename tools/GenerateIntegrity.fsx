@@ -185,6 +185,12 @@ let text =
       ""
       reached |> List.mapi (fun index ty -> definition (index = 0) ty) |> String.concat "\n\n"
       ""
+      "    /// Every stored node identity, including the body's own identity and context handles."
+      "    let nodeReferences (node: SemanticNode) : NodeId list = idsOfSemanticNode node"
+      ""
+      "    /// Every stored identity in a declaration context header and its sparse ports."
+      "    let contextHeaderReferences (header: SourceContextHeader) : NodeId list = idsOfSourceContextHeader header"
+      ""
       // The parts are listed in groups. One list of every part is more than the
       // compiler accepts as a single expression.
       entries
