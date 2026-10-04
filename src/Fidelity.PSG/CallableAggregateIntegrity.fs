@@ -161,6 +161,10 @@ module internal CallableAggregateIntegrity =
             | _ -> None
         let liveWrite (row: CallableAggregateValue) (slot: CallableAggregateSlot) held =
             match revision.Nodes.TryFind row.Occurrence with
+            | Some { Kind = SemanticKind.TupleExpr values } when row.Operation = CallableAggregateOperation.Construct ->
+                match slot.Path with
+                | [CallableAggregatePathStep.RecordField ordinal] -> List.tryItem ordinal values
+                | _ -> None
             | Some { Kind = SemanticKind.RecordExpr(fields, _) } when row.Operation = CallableAggregateOperation.Construct ->
                 recordField slot held |> Option.bind (fun name ->
                     match fields |> List.filter (fst >> (=) name) with
@@ -179,6 +183,44 @@ module internal CallableAggregateIntegrity =
                         match node.Kind with SemanticKind.TupleExpr fields -> List.tryItem ordinal fields | _ -> None)
                 | _ -> None
             | _ -> None
+        // The producer gives an ordered path, not a bag of candidate origins.
+        // Read each stored edge and its exact supplying row; never search for
+        // a constructor or recover a formation from an implementation symbol.
+        let inheritedWrite (row: CallableAggregateValue) (slot: CallableAggregateSlot) held =
+            match revision.Nodes.TryFind row.Occurrence, recordField slot held, List.rev row.FormationInputs with
+            | Some {Kind = SemanticKind.RecordExpr(fields, Some copy)}, Some name, value :: construction :: reversedPath
+                when row.Operation = CallableAggregateOperation.Construct && row.Value = Some value &&
+                     (fields |> List.forall (fst >> (<>) name)) ->
+                let path = List.rev (construction :: reversedPath)
+                let edge (source, target) =
+                    match revision.Nodes.TryFind source with
+                    | Some node ->
+                        match node.Kind, node.Children with
+                        | SemanticKind.VarRef(_, Some actual), [] -> actual = target
+                        | SemanticKind.Binding(_, false, _, _), [actual] -> actual = target
+                        | SemanticKind.TypeAnnotation(actual, ty), [child] ->
+                            actual = target && child = actual && ty = slot.AggregateType
+                        | SemanticKind.Sequential sources, children -> sources = children && List.tryLast sources = Some target
+                        | SemanticKind.EagerExpr actual, [child] -> actual = target && child = actual
+                        | SemanticKind.RecordExpr(members, Some actual), _ ->
+                            actual = target && (members |> List.forall (fst >> (<>) name))
+                        | _ -> false
+                    | None -> false
+                let matching =
+                    callable.AggregateValues.TryFind construction |> Option.defaultValue []
+                    |> List.filter (fun source -> source.Slot = row.Slot && source.Operation = CallableAggregateOperation.Construct)
+                path.Head = copy && path.Length = (List.distinct path).Length &&
+                not (List.contains row.Occurrence path) &&
+                (path |> List.forall (fun source -> sourceType source = Some slot.AggregateType)) &&
+                (path |> List.pairwise |> List.forall edge) &&
+                (match matching with
+                 | [source] ->
+                     source.Aggregate = construction && source.Value = row.Value && liveWrite source slot held = row.Value &&
+                     source.Alternatives = row.Alternatives && source.Selector = row.Selector &&
+                     source.SelectedAlternative = row.SelectedAlternative && source.Tag = row.Tag &&
+                     source.Bytes = row.Bytes && source.Alignment = row.Alignment
+                 | _ -> false)
+            | _ -> false
         let nominalConstructor = function
             | TypeIdentity.Application(constructor, _) | TypeIdentity.Union(constructor, _) -> Some constructor
             | _ -> None
@@ -310,7 +352,8 @@ module internal CallableAggregateIntegrity =
                               yield failure "I1" site "The published component pieces overlap or exceed their declared placement."
                       | _ -> yield failure "I1" site "The callable field/payload is absent or represented as ordinary code data."
                       if (row.Operation = CallableAggregateOperation.Construct || row.Operation = CallableAggregateOperation.Assign) &&
-                         not row.Alternatives.IsEmpty && (row.Value.IsNone || liveWrite row slot held <> row.Value) then
+                         not row.Alternatives.IsEmpty && (row.Value.IsNone ||
+                             (liveWrite row slot held <> row.Value && not (inheritedWrite row slot held))) then
                           yield failure "I5" site "The callable write differs from its live constructor operand."
                   | _ -> yield failure "I1" site "The aggregate has no published component representation."
                   let count = row.Alternatives.Length
@@ -433,6 +476,12 @@ module internal CallableAggregateIntegrity =
                 (account.Carriers |> List.collect _.Lifetime) @
                 (account.Contracts |> List.collect _.Participants)
             let participantNodes = participants |> List.map _.Node |> List.distinct
+            let directNodes = Set.ofList participantNodes
+            let inactivity =
+                revision.Emission.Ordinary.Inactivity |> Map.toList
+                |> List.filter (fun (implementation, proof) ->
+                    (account.Carriers |> List.exists (fun carrier -> carrier.Implementation = implementation)) ||
+                    not (Set.intersect directNodes proof.Excluded).IsEmpty)
             let premiseNodes = account.Contracts |> List.collect (fun contract -> Map.keys contract.SourcePremises |> Seq.toList) |> Set.ofList
             let sources = participantNodes |> List.choose (fun id ->
                 (if premiseNodes.Contains id then None else revision.Nodes.TryFind id) |> Option.map (fun node ->
@@ -456,7 +505,8 @@ module internal CallableAggregateIntegrity =
               if account.Slots <> (slots |> List.choose callable.AggregateSlots.TryFind) ||
                  account.Carriers <> (carriers |> List.choose callable.Carriers.TryFind) ||
                  account.Contracts <> (contracts |> List.choose callable.Contracts.TryFind) ||
-                 account.Flows <> flows || account.Joins <> joins || account.Symbols <> symbols then
+                 account.Flows <> flows || account.Joins <> joins || account.Symbols <> symbols ||
+                 account.Inactivity <> inactivity then
                   yield failure "I6" site "The account differs from the complete current slot, carrier, contract or flow/join rows."
               if account.Participants <> participants || account.Sources <> sources || account.Claims <> claims then
                   yield failure "I6" site "The ordered dependency incidence or its published source/claim evidence is stale." ]

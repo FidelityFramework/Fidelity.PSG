@@ -336,6 +336,9 @@ type CallableAggregateValue = {
     Slot: NodeId
     Alternatives: CallableAggregateAlternative list
     Selector: CallableAggregateSelector option
+    /// An inherited record component holds the ordered copy-operand/immutable
+    /// transport path to its supplying constructor, then the stored callable.
+    /// Every edge is source-authored and retained in the dependency account.
     FormationInputs: NodeId list
     /// The actual value written by construction/assignment, never a guessed
     /// representative of the alternative family.
@@ -371,6 +374,21 @@ type CallableSymbolName =
 /// Exact immutable inputs to one selection. These are copied source rows, not
 /// a retained graph or a hash of deduplicated node identities. Structural
 /// validation compares every field against the current published tables.
+/// Complete source-owned zero-activation premise. Physical callable transport
+/// remains governed by its receiving contract; these rows exclude execution only.
+type OrdinaryInactivityProjection = {
+    Implementation: NodeId
+    Entry: NodeId
+    Body: NodeId
+    Parameters: NodeId list
+    Roots: Set<NodeId>
+    Excluded: Set<NodeId>
+    Calls: Set<NodeId>
+    Participants: Set<NodeId>
+    Uses: Map<NodeId, (EdgeClass * EdgeRole * int * NodeId list * NodeId) list>
+    SourcePremises: Map<NodeId, BoundarySourcePremise>
+}
+
 type CallableAggregateDependencyAccount = {
     Occurrence: NodeId
     Slots: CallableAggregateSlot list
@@ -384,6 +402,7 @@ type CallableAggregateDependencyAccount = {
     Claims: (NodeId * ObligationInfo) list
     /// Exact names of referenced implementations, including symbol-only code.
     Symbols: (NodeId * CallableSymbolName) list
+    Inactivity: (NodeId * OrdinaryInactivityProjection) list
 }
 
 /// A write updates the finite alternative discriminator and the actual
@@ -705,6 +724,7 @@ type OrdinaryDemandProjection = {
     Parameters: Map<NodeId, Set<NodeId>>
     Calls: Map<NodeId, OrdinaryCallProjection>
     DeferredOnly: Set<NodeId>
+    Inactivity: Map<NodeId, OrdinaryInactivityProjection>
 }
 
 /// Source-validated storage contracts. These are completed values, never lazy

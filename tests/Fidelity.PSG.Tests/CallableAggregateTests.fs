@@ -44,7 +44,7 @@ let private renewWithSlots slotIds revision =
     let symbols = implementations |> List.choose (fun id -> c.Symbols.TryFind id |> Option.map (fun symbol -> id, symbol))
     let account : CallableAggregateDependencyAccount =
         { Occurrence = NodeId 1; Slots = slots; Values = values; Carriers = carriers; Contracts = contracts
-          Flows = []; Joins = []; Participants = participants; Sources = sources; Claims = claims; Symbols = symbols }
+          Flows = []; Joins = []; Participants = participants; Sources = sources; Claims = claims; Symbols = symbols; Inactivity = [] }
     publish { c with AggregateDependencies = Map.ofList [NodeId 1, account] } revision
 
 let private renew revision = renewWithSlots [101] revision
@@ -274,6 +274,115 @@ let private elideSecond (row: CallableAggregateValue) =
         Alternatives = [row.Alternatives.Head]
         Selector = Some {Lower = 0; UpperExclusive = 1; Storage = None; Slot = None; ByteOffset = None}
         Participants = participants }
+
+// This fixture spells the only two construction rows independently: copy 1
+// inherits through reference 3 and immutable binding 4 from constructor 2.
+let private renewCopy revision =
+    let c = revision.Emission.Callable
+    let prior = c.AggregateDependencies[NodeId 1]
+    let account site values =
+        let participants =
+            (prior.Slots |> List.collect _.Participants) @
+            (values |> List.collect (fun (row: CallableAggregateValue) -> row.Participants)) @
+            (prior.Carriers |> List.collect _.Lifetime) @ (prior.Contracts |> List.collect _.Participants)
+        let sources =
+            participants |> List.map _.Node |> List.distinct |> List.choose (fun id ->
+                revision.Nodes.TryFind id |> Option.map (fun node ->
+                    {Node = id; Kind = node.Kind; Type = node.Type; Children = node.Children; Anchors = node.ObligationAnchors}))
+        {prior with Occurrence = site; Values = values; Participants = participants; Sources = sources}
+    let original = c.AggregateValues.TryFind(NodeId 2) |> Option.defaultValue []
+    let accounts =
+        [NodeId 1, account (NodeId 1) (c.AggregateValues[NodeId 1] @ original)] @
+        (if original.IsEmpty then [] else [NodeId 2, account (NodeId 2) original]) |> Map.ofList
+    publish {c with AggregateDependencies = accounts} revision
+
+let private copyFixture () =
+    let held = fixture false false false
+    let row = held.Emission.Callable.AggregateValues[NodeId 1] |> List.exactlyOne
+    let original =
+        {row with Occurrence = NodeId 2; Aggregate = NodeId 2
+                  Participants = row.Participants |> List.map (fun p ->
+                    {p with Group = NodeId 2
+                            Node = if p.Role = ParticipantRole.AggregateValue || p.Role = ParticipantRole.AggregateSource then NodeId 2 else p.Node})}
+    let inputs = [NodeId 3; NodeId 4; NodeId 2; NodeId 30]
+    let copy =
+        {row with FormationInputs = inputs
+                  Participants = (row.Participants |> List.filter (fun p -> p.Role <> ParticipantRole.AggregateInput)) @
+                                 (inputs |> List.mapi (fun ordinal id -> p ParticipantRole.AggregateInput ordinal 1 (NodeId.value id)))}
+    let nodes =
+        held.Nodes
+            .Add(NodeId 1, node 1 (SemanticKind.RecordExpr([], Some(NodeId 3))) [3])
+            .Add(NodeId 2, {held.Nodes[NodeId 1] with Id = NodeId 2})
+            .Add(NodeId 3, node 3 (SemanticKind.VarRef("holder", Some(NodeId 4))) [])
+            .Add(NodeId 4, node 4 (SemanticKind.Binding("holder", false, false, None)) [2])
+    let numeric =
+        {held.Emission.Numeric with
+            OccurrenceRepresentations = held.Emission.Numeric.OccurrenceRepresentations.Add(NodeId 2, held.Emission.Numeric.OccurrenceRepresentations[NodeId 1])}
+    {held with Nodes = nodes; Emission = {held.Emission with Numeric = numeric}}
+    |> publish {held.Emission.Callable with AggregateValues = Map.ofList [NodeId 1, [copy]; NodeId 2, [original]]}
+    |> renewCopy
+
+[<Theory>]
+[<InlineData(0)>]
+[<InlineData(1)>]
+let ``I5 tuple callable writes use the exact element ordinal`` ordinal =
+    let held = fixture false false false
+    let callableComponent =
+        match held.Emission.Numeric.OccurrenceRepresentations[NodeId 1] with
+        | Ok(ValueRepresentation.Record([_, value], _)) -> value
+        | other -> failwithf "%A" other
+    let elements, representation =
+        if ordinal = 0 then [NodeId 30; NodeId 31], ValueRepresentation.Record(["Item1", callableComponent; "Item2", ValueRepresentation.Scalar SettledSlot.Bool], None)
+        else [NodeId 31; NodeId 30], ValueRepresentation.Record(["Item1", ValueRepresentation.Scalar SettledSlot.Bool; "Item2", callableComponent], None)
+    let numeric = {held.Emission.Numeric with OccurrenceRepresentations = held.Emission.Numeric.OccurrenceRepresentations.Add(NodeId 1, Ok representation)}
+    let tuple =
+        {held with Nodes = held.Nodes.Add(NodeId 1, {held.Nodes[NodeId 1] with Kind = SemanticKind.TupleExpr elements; Children = elements})
+                   Emission = {held.Emission with Numeric = numeric}}
+        |> changeSlot (fun slot -> {slot with Path = [CallableAggregatePathStep.RecordField ordinal]}) |> renew
+    Assert.Empty(Integrity.callableAggregates tuple)
+    let swapped =
+        {tuple with Nodes = tuple.Nodes.Add(NodeId 1, {tuple.Nodes[NodeId 1] with Kind = SemanticKind.TupleExpr(List.rev elements); Children = List.rev elements})} |> renew
+    swapped |> failure "I5" "The callable write differs from its live constructor operand."
+
+[<Fact>]
+let ``I5 inherited callable copy retains its typed immutable source path`` () =
+    let held = copyFixture ()
+    Assert.Empty(Integrity.callableAggregates held)
+    Assert.Equal(2, held.Emission.Callable.AggregateDependencies[NodeId 1].Values.Length)
+    let changedNode id change = {held with Nodes = held.Nodes.Add(NodeId id, change held.Nodes[NodeId id])} |> renewCopy
+    // Renew the literal accounts so each refusal below exercises the path
+    // relation itself, rather than a stale-account comparison.
+    let changed =
+        [changedNode 3 (fun node -> {node with Kind = SemanticKind.VarRef("other", Some(NodeId 30))})
+         changedNode 4 (fun node -> {node with Kind = SemanticKind.Binding("holder", true, false, None)})
+         changedNode 4 (fun node -> {node with Type = boolType})
+         changedNode 1 (fun node -> {node with Kind = SemanticKind.RecordExpr(["invoke", NodeId 31], Some(NodeId 3))})]
+    for revision in changed do
+        revision |> failure "I5" "The callable write differs from its live constructor operand."
+    for inputs in [[NodeId 4; NodeId 2; NodeId 30]; [NodeId 3; NodeId 4; NodeId 3; NodeId 2; NodeId 30]] do
+        held |> changeRow (fun row ->
+            {row with FormationInputs = inputs
+                      Participants = (row.Participants |> List.filter (fun p -> p.Role <> ParticipantRole.AggregateInput)) @
+                                     (inputs |> List.mapi (fun ordinal id -> p ParticipantRole.AggregateInput ordinal 1 (NodeId.value id)))})
+        |> renewCopy |> failure "I5" "The callable write differs from its live constructor operand."
+    let omitted = publish {held.Emission.Callable with AggregateValues = held.Emission.Callable.AggregateValues.Remove(NodeId 2)} held |> renewCopy
+    omitted |> failure "I5" "The callable write differs from its live constructor operand."
+    let original = held.Emission.Callable.AggregateValues[NodeId 2] |> List.exactlyOne
+    let replaced =
+        {original with
+            Value = Some(NodeId 31)
+            SelectedAlternative = Some 1
+            Participants = original.Participants |> List.map (fun p ->
+                if p.Role = ParticipantRole.AggregateWrite then {p with Node = NodeId 31} else p)}
+    let replacedSource =
+        {held with Nodes = held.Nodes.Add(NodeId 2, {held.Nodes[NodeId 2] with Kind = SemanticKind.RecordExpr(["invoke", NodeId 31], None); Children = [NodeId 31]})}
+        |> publish {held.Emission.Callable with AggregateValues = held.Emission.Callable.AggregateValues.Add(NodeId 2, [replaced])}
+        |> renewCopy
+    // Both carriers have the same contract. The copy must still retain the
+    // exact written formation and selected ordinal of its supplying row.
+    Assert.Contains(Integrity.callableAggregates replacedSource, fun violation ->
+        violation.Part = "Emission.Callable.Aggregates.I5" && violation.Node = Some(NodeId 1) &&
+        violation.Reason = "The callable write differs from its live constructor operand.")
 
 [<Theory>]
 [<InlineData(false)>]

@@ -6,7 +6,7 @@ namespace Fidelity.PSG
 module Empty =
 
     let ordinary : OrdinaryDemandProjection =
-        { Parameters = Map.empty; Calls = Map.empty; DeferredOnly = Set.empty }
+        { Parameters = Map.empty; Calls = Map.empty; DeferredOnly = Set.empty; Inactivity = Map.empty }
 
     let callable : CallableEmissionProjection =
         { Branches = CallableBranchAuthority.empty

@@ -1098,7 +1098,8 @@ module Integrity =
                 ["Emission.Callable.Aggregate"; "Codata.CallableAggregate";
                  "Emission.Callable.Contracts"; "Codata.CallableContracts"]
                 |> List.exists (fun prefix -> part.StartsWith(prefix, System.StringComparison.Ordinal))
-            if explicitParts.Contains part || supportParts.Contains part || aggregatePart || part.StartsWith("SourceReadings.", System.StringComparison.Ordinal) then true
+            let inactivityPart = part.StartsWith("Emission.Ordinary.Inactivity", System.StringComparison.Ordinal)
+            if explicitParts.Contains part || supportParts.Contains part || aggregatePart || inactivityPart || part.StartsWith("SourceReadings.", System.StringComparison.Ordinal) then true
             else
                 match part with
                 | "Emission.Callable.Carriers.Contract" | "Codata.CallableCarriers.Contract" -> callable.Contracts.ContainsKey id
@@ -1197,6 +1198,13 @@ module Integrity =
                     match edge.Role with
                     | EdgeRole.Constrains ->
                         if revision.CurrentClaims.ContainsKey edge.Target then [] else [missingRow "Edges.Target" "CurrentClaims" edge.Target]
+                    | EdgeRole.OrdinaryInactiveImplementation ->
+                        match revision.Emission.Ordinary.Inactivity.TryFind edge.Target with
+                        | Some proof ->
+                            let expected = [proof.Entry; proof.Body] @ proof.Parameters @ Set.toList proof.Participants @ Set.toList proof.Excluded @ Set.toList proof.Calls
+                            if edge.Class = EdgeClass.Demand && edge.Ordinal = proof.Parameters.Length && edge.Sources = expected then []
+                            else [defect "Edges" edge.Target "The inactive execution relation differs from its typed source row."]
+                        | None -> [missingRow "Edges.Target" "Emission.Ordinary.Inactivity" edge.Target]
                     | EdgeRole.StringByteView view ->
                         [if edge.Target <> view.Site then yield defect "Edges.Target" edge.Target "The byte-view edge target differs from its typed site."
                          if not (body view.Site) then yield missingBody "Edges.Target" view.Site
@@ -1219,6 +1227,85 @@ module Integrity =
     let callableAggregates revision : IntegrityViolation list =
         CallableAggregateIntegrity.check revision
         |> List.map (fun (part, site, reason) -> { Part = part; Node = Some site; Reason = reason })
+
+    /// Stored agreement only. Source premises can describe dormant declarations
+    /// absent from executable Nodes; this reader never repeats their use census.
+    let ordinaryDemand (revision: Revision) : IntegrityViolation list =
+        let part = "Emission.Ordinary.Inactivity"
+        let defect site reason = { Part = part; Node = Some site; Reason = reason }
+        [ for KeyValue(site, proof) in revision.Emission.Ordinary.Inactivity do
+              let support =
+                  [proof.Implementation; proof.Entry; proof.Body] @ proof.Parameters @
+                  Set.toList proof.Roots @ Set.toList proof.Excluded @ Set.toList proof.Calls @
+                  Set.toList proof.Participants @
+                  (proof.Uses |> Map.toList |> List.collect (fun (source, uses) ->
+                      source :: (uses |> List.collect (fun (_, _, _, sources, target) -> target :: sources))))
+                  |> Set.ofList
+              if site <> proof.Implementation || site = proof.Entry || proof.Roots.Contains site ||
+                 proof.Excluded.Contains site || proof.Excluded.Contains proof.Entry ||
+                 List.contains proof.Body proof.Parameters ||
+                 (List.distinct proof.Parameters).Length <> proof.Parameters.Length ||
+                 not (Set.isSubset (Set.ofList proof.Parameters) proof.Excluded) ||
+                 not (Set.isSubset proof.Calls proof.Excluded) then
+                  yield defect site "The inactive implementation, entry, ordered formals or excluded execution sites disagree."
+              if (proof.Uses |> Map.keys |> Set.ofSeq) <> proof.Participants ||
+                 (proof.SourcePremises |> Map.keys |> Set.ofSeq) <> support then
+                  yield defect site "The inactive use inventory lacks its exact immutable source premises."
+              match proof.SourcePremises.TryFind site with
+              | Some premise when premise.Shape.Form = "lambda" && not premise.HasExtern &&
+                                  List.tryHead premise.Shape.Text = Some "RegularClosure" &&
+                                  List.tryHead premise.Shape.Numbers = Some(bigint proof.Parameters.Length) ->
+                  let head = proof.Parameters @ [proof.Body]
+                  let captures =
+                      match premise.Shape.Numbers with
+                      | _ :: count :: copiedCount :: flags when count >= 0I && count = copiedCount &&
+                                                               count <= bigint System.Int32.MaxValue &&
+                                                               bigint flags.Length = count * 2I &&
+                                                               (flags |> List.forall (fun flag -> flag = 0I || flag = 1I)) ->
+                          flags |> List.chunkBySize 2 |> List.sumBy (fun pair -> int pair[1]) |> Some
+                      | _ -> None
+                  let referencesAgree =
+                      match captures with
+                      | Some count -> premise.Shape.References.Length = head.Length + count &&
+                                      List.take head.Length premise.Shape.References = head
+                      | None -> false
+                  if not referencesAgree then
+                      yield defect site "The inactive source premise differs from its ordered formal/body and capture incidence."
+                  match revision.Nodes.TryFind site with
+                  | Some { Kind = SemanticKind.Lambda(parameters, body, captures, _, context) } ->
+                      let actualParameters = parameters |> List.map (fun (_, _, id) -> id)
+                      let references = actualParameters @ [body] @ (captures |> List.choose _.SourceNodeId)
+                      let numbers =
+                          [bigint parameters.Length; bigint captures.Length; bigint captures.Length] @
+                          (captures |> List.collect (fun capture ->
+                              [if capture.IsMutable then 1I else 0I; if capture.SourceNodeId.IsSome then 1I else 0I]))
+                      let text = string context :: (parameters |> List.map (fun (name, _, _) -> name)) @ (captures |> List.map _.Name)
+                      let types = (parameters |> List.map (fun (_, ty, _) -> ty)) @ (captures |> List.map _.Type)
+                      if context <> LambdaContext.RegularClosure || actualParameters <> proof.Parameters || body <> proof.Body ||
+                         premise.Shape.References <> references || premise.Shape.Numbers <> numbers ||
+                         premise.Shape.Text <> text || premise.EmbeddedTypes <> types then
+                          yield defect site "The inactive premise differs from its live ordinary implementation and ordered signature."
+                  | Some _ -> yield defect site "The inactive implementation no longer has a live lambda shape."
+                  | None -> ()
+              | _ -> yield defect site "An inactive row lacks an ordinary source implementation premise."
+              for formal in proof.Parameters do
+                  match proof.SourcePremises.TryFind formal with
+                  | Some premise when premise.Shape.Form = "pattern-binding" -> ()
+                  | _ -> yield defect site "An inactive formal lacks its typed source binding premise."
+              for call in proof.Calls do
+                  match proof.SourcePremises.TryFind call with
+                  | Some premise when premise.Shape.Form = "application" -> ()
+                  | _ -> yield defect site "An excluded invocation lacks its exact source application premise."
+              for KeyValue(source, uses) in proof.Uses do
+                  if uses <> (uses |> List.distinct |> List.sort) ||
+                     (uses |> List.exists (fun (cls, _, ordinal, sources, _) ->
+                         (cls <> EdgeClass.Structural && cls <> EdgeClass.Reference) || ordinal < 0 || not (List.contains source sources))) then
+                      yield defect site "The inactive use census has malformed or repeated typed incidence."
+              for KeyValue(id, premise) in proof.SourcePremises do
+                  match revision.Nodes.TryFind id with
+                  | Some node when node.Type <> premise.Shape.SourceType || node.Children <> premise.Shape.Children || node.Parent <> premise.Shape.Parent ->
+                      yield defect site "The inactive source premise differs from its live type or structural incidence."
+                  | _ -> () ]
 
     /// Every structural defect of the revision. The list is empty for a well-formed one.
     let check (revision: Revision) : IntegrityViolation list =
@@ -1253,7 +1340,7 @@ module Integrity =
                       Reason = sprintf "The row of node %d in %s differs from its row in %s." (NodeId.value identity) part other }))
         header @ misfiled @ absent @ unrelated @ disagreed @ sourceReadings revision @ claims revision @ regions revision @
         callableRows revision @ numericRows revision @ memoryRows revision @ programStorageRows revision @ spatialRows revision @ startupRows revision @
-        boundaryRows revision @ artifactAccounts revision @ branchScopes revision @ stored revision @ incidence revision @ callableAggregates revision
+        boundaryRows revision @ artifactAccounts revision @ branchScopes revision @ stored revision @ incidence revision @ callableAggregates revision @ ordinaryDemand revision
 
     /// The first violations as one reason, for a reader that refuses the revision.
     let describe (violations: IntegrityViolation list) : string =

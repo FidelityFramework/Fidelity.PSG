@@ -5,11 +5,11 @@ module internal BinaryGenerated =
     [<Literal>]
     let Format = 2u
     [<Literal>]
-    let Schema = 19
+    let Schema = 20
     [<Literal>]
-    let Fingerprint = "B8DF89ADA17BE1C25808052C8C9431B330331BA2C94D41517CD46136A4A4025C"
+    let Fingerprint = "10CEA46A8F1620B5EDAD843370B8BCE30B74E0155E4432532BABE0B38659ADDF"
     [<Literal>]
-    let NamedTypes = 270
+    let NamedTypes = 271
     [<Literal>]
     let RevisionFields = 17
     [<Literal>]
@@ -522,6 +522,7 @@ module internal BinaryGenerated =
         let! state = (writeList write_Fidelity_PSG_CallableAggregateSourceIncidence) state value.``Sources``
         let! state = (writeList (fun state (v1_0, v1_1) -> enterWrite state |> Result.bind (fun state -> write_Fidelity_PSG_NodeId state v1_0 |> Result.bind (fun state -> write_Fidelity_PSG_ObligationInfo state v1_1 |> Result.bind (fun state -> Ok(leaveWrite state)))))) state value.``Claims``
         let! state = (writeList (fun state (v1_0, v1_1) -> enterWrite state |> Result.bind (fun state -> write_Fidelity_PSG_NodeId state v1_0 |> Result.bind (fun state -> write_Fidelity_PSG_CallableSymbolName state v1_1 |> Result.bind (fun state -> Ok(leaveWrite state)))))) state value.``Symbols``
+        let! state = (writeList (fun state (v1_0, v1_1) -> enterWrite state |> Result.bind (fun state -> write_Fidelity_PSG_NodeId state v1_0 |> Result.bind (fun state -> write_Fidelity_PSG_OrdinaryInactivityProjection state v1_1 |> Result.bind (fun state -> Ok(leaveWrite state)))))) state value.``Inactivity``
         return leaveWrite state
     }
 
@@ -2098,24 +2099,28 @@ module internal BinaryGenerated =
                 let! state = writeTag state 165
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``OrdinaryBindingDemand``(a0) -> result {
+            | global.Fidelity.PSG.EdgeRole.``OrdinaryInactiveImplementation`` -> result {
                 let! state = writeTag state 166
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.EdgeRole.``OrdinaryBindingDemand``(a0) -> result {
+                let! state = writeTag state 167
                 let! state = write_Fidelity_PSG_BindingDemandEvidence state a0
                 return leaveWrite state
               }
             | global.Fidelity.PSG.EdgeRole.``OrdinaryBindingDemandPending``(a0, a1) -> result {
-                let! state = writeTag state 167
+                let! state = writeTag state 168
                 let! state = writeString state a0
                 let! state = write_Fidelity_PSG_BindingDemandEvidence state a1
                 return leaveWrite state
               }
             | global.Fidelity.PSG.EdgeRole.``OrdinaryBindingDemandHistory``(a0) -> result {
-                let! state = writeTag state 168
+                let! state = writeTag state 169
                 let! state = write_Fidelity_PSG_BindingDemandEvidence state a0
                 return leaveWrite state
               }
             | global.Fidelity.PSG.EdgeRole.``FiniteCellRange`` -> result {
-                let! state = writeTag state 169
+                let! state = writeTag state 170
                 return leaveWrite state
               }
     }
@@ -4169,6 +4174,22 @@ module internal BinaryGenerated =
         let! state = (writeMap write_Fidelity_PSG_NodeId (writeSet write_Fidelity_PSG_NodeId)) state value.``Parameters``
         let! state = (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_OrdinaryCallProjection) state value.``Calls``
         let! state = (writeSet write_Fidelity_PSG_NodeId) state value.``DeferredOnly``
+        let! state = (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_OrdinaryInactivityProjection) state value.``Inactivity``
+        return leaveWrite state
+    }
+
+    and write_Fidelity_PSG_OrdinaryInactivityProjection (state: WriteState) (value: global.Fidelity.PSG.OrdinaryInactivityProjection) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = write_Fidelity_PSG_NodeId state value.``Implementation``
+        let! state = write_Fidelity_PSG_NodeId state value.``Entry``
+        let! state = write_Fidelity_PSG_NodeId state value.``Body``
+        let! state = (writeList write_Fidelity_PSG_NodeId) state value.``Parameters``
+        let! state = (writeSet write_Fidelity_PSG_NodeId) state value.``Roots``
+        let! state = (writeSet write_Fidelity_PSG_NodeId) state value.``Excluded``
+        let! state = (writeSet write_Fidelity_PSG_NodeId) state value.``Calls``
+        let! state = (writeSet write_Fidelity_PSG_NodeId) state value.``Participants``
+        let! state = (writeMap write_Fidelity_PSG_NodeId (writeList (fun state (v2_0, v2_1, v2_2, v2_3, v2_4) -> enterWrite state |> Result.bind (fun state -> write_Fidelity_PSG_EdgeClass state v2_0 |> Result.bind (fun state -> write_Fidelity_PSG_EdgeRole state v2_1 |> Result.bind (fun state -> writeI32 state v2_2 |> Result.bind (fun state -> (writeList write_Fidelity_PSG_NodeId) state v2_3 |> Result.bind (fun state -> write_Fidelity_PSG_NodeId state v2_4 |> Result.bind (fun state -> Ok(leaveWrite state)))))))))) state value.``Uses``
+        let! state = (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_BoundarySourcePremise) state value.``SourcePremises``
         return leaveWrite state
     }
 
@@ -6782,7 +6803,7 @@ module internal BinaryGenerated =
     }
 
     and read_Fidelity_PSG_CallableAggregateDependencyAccount (state: ReadState) : Result<global.Fidelity.PSG.CallableAggregateDependencyAccount * ReadState, BinaryError> = result {
-        let! state = enterReadFields 11 state
+        let! state = enterReadFields 12 state
         let! a0, state = read_Fidelity_PSG_NodeId state
         let! a1, state = (readList read_Fidelity_PSG_CallableAggregateSlot) state
         let! a2, state = (readList read_Fidelity_PSG_CallableAggregateValue) state
@@ -6794,7 +6815,8 @@ module internal BinaryGenerated =
         let! a8, state = (readList read_Fidelity_PSG_CallableAggregateSourceIncidence) state
         let! a9, state = (readList (fun state -> enterReadFields 2 state |> Result.bind (fun state -> read_Fidelity_PSG_NodeId state |> Result.bind (fun (v1_0, state) -> read_Fidelity_PSG_ObligationInfo state |> Result.bind (fun (v1_1, state) -> finishRead (v1_0, v1_1) state))))) state
         let! a10, state = (readList (fun state -> enterReadFields 2 state |> Result.bind (fun state -> read_Fidelity_PSG_NodeId state |> Result.bind (fun (v1_0, state) -> read_Fidelity_PSG_CallableSymbolName state |> Result.bind (fun (v1_1, state) -> finishRead (v1_0, v1_1) state))))) state
-        return! finishRead ({ ``Occurrence`` = a0; ``Slots`` = a1; ``Values`` = a2; ``Carriers`` = a3; ``Contracts`` = a4; ``Flows`` = a5; ``Joins`` = a6; ``Participants`` = a7; ``Sources`` = a8; ``Claims`` = a9; ``Symbols`` = a10 } : global.Fidelity.PSG.CallableAggregateDependencyAccount) state
+        let! a11, state = (readList (fun state -> enterReadFields 2 state |> Result.bind (fun state -> read_Fidelity_PSG_NodeId state |> Result.bind (fun (v1_0, state) -> read_Fidelity_PSG_OrdinaryInactivityProjection state |> Result.bind (fun (v1_1, state) -> finishRead (v1_0, v1_1) state))))) state
+        return! finishRead ({ ``Occurrence`` = a0; ``Slots`` = a1; ``Values`` = a2; ``Carriers`` = a3; ``Contracts`` = a4; ``Flows`` = a5; ``Joins`` = a6; ``Participants`` = a7; ``Sources`` = a8; ``Claims`` = a9; ``Symbols`` = a10; ``Inactivity`` = a11 } : global.Fidelity.PSG.CallableAggregateDependencyAccount) state
     }
 
     and read_Fidelity_PSG_CallableAggregateEnvironmentPlacement (state: ReadState) : Result<global.Fidelity.PSG.CallableAggregateEnvironmentPlacement * ReadState, BinaryError> = result {
@@ -8181,19 +8203,22 @@ module internal BinaryGenerated =
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``OrdinaryUnusedActual``) state
               }
             | 166 -> result {
+                return! finishRead (global.Fidelity.PSG.EdgeRole.``OrdinaryInactiveImplementation``) state
+              }
+            | 167 -> result {
                 let! a0, state = read_Fidelity_PSG_BindingDemandEvidence state
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``OrdinaryBindingDemand``(a0)) state
               }
-            | 167 -> result {
+            | 168 -> result {
                 let! a0, state = readString state
                 let! a1, state = read_Fidelity_PSG_BindingDemandEvidence state
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``OrdinaryBindingDemandPending``(a0, a1)) state
               }
-            | 168 -> result {
+            | 169 -> result {
                 let! a0, state = read_Fidelity_PSG_BindingDemandEvidence state
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``OrdinaryBindingDemandHistory``(a0)) state
               }
-            | 169 -> result {
+            | 170 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``FiniteCellRange``) state
               }
             | _ -> malformed state "Unknown Fidelity.PSG.EdgeRole case"
@@ -10079,11 +10104,27 @@ module internal BinaryGenerated =
     }
 
     and read_Fidelity_PSG_OrdinaryDemandProjection (state: ReadState) : Result<global.Fidelity.PSG.OrdinaryDemandProjection * ReadState, BinaryError> = result {
-        let! state = enterReadFields 3 state
+        let! state = enterReadFields 4 state
         let! a0, state = (readMap read_Fidelity_PSG_NodeId (readSet read_Fidelity_PSG_NodeId)) state
         let! a1, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_OrdinaryCallProjection) state
         let! a2, state = (readSet read_Fidelity_PSG_NodeId) state
-        return! finishRead ({ ``Parameters`` = a0; ``Calls`` = a1; ``DeferredOnly`` = a2 } : global.Fidelity.PSG.OrdinaryDemandProjection) state
+        let! a3, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_OrdinaryInactivityProjection) state
+        return! finishRead ({ ``Parameters`` = a0; ``Calls`` = a1; ``DeferredOnly`` = a2; ``Inactivity`` = a3 } : global.Fidelity.PSG.OrdinaryDemandProjection) state
+    }
+
+    and read_Fidelity_PSG_OrdinaryInactivityProjection (state: ReadState) : Result<global.Fidelity.PSG.OrdinaryInactivityProjection * ReadState, BinaryError> = result {
+        let! state = enterReadFields 10 state
+        let! a0, state = read_Fidelity_PSG_NodeId state
+        let! a1, state = read_Fidelity_PSG_NodeId state
+        let! a2, state = read_Fidelity_PSG_NodeId state
+        let! a3, state = (readList read_Fidelity_PSG_NodeId) state
+        let! a4, state = (readSet read_Fidelity_PSG_NodeId) state
+        let! a5, state = (readSet read_Fidelity_PSG_NodeId) state
+        let! a6, state = (readSet read_Fidelity_PSG_NodeId) state
+        let! a7, state = (readSet read_Fidelity_PSG_NodeId) state
+        let! a8, state = (readMap read_Fidelity_PSG_NodeId (readList (fun state -> enterReadFields 5 state |> Result.bind (fun state -> read_Fidelity_PSG_EdgeClass state |> Result.bind (fun (v2_0, state) -> read_Fidelity_PSG_EdgeRole state |> Result.bind (fun (v2_1, state) -> readI32 state |> Result.bind (fun (v2_2, state) -> (readList read_Fidelity_PSG_NodeId) state |> Result.bind (fun (v2_3, state) -> read_Fidelity_PSG_NodeId state |> Result.bind (fun (v2_4, state) -> finishRead (v2_0, v2_1, v2_2, v2_3, v2_4) state))))))))) state
+        let! a9, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_BoundarySourcePremise) state
+        return! finishRead ({ ``Implementation`` = a0; ``Entry`` = a1; ``Body`` = a2; ``Parameters`` = a3; ``Roots`` = a4; ``Excluded`` = a5; ``Calls`` = a6; ``Participants`` = a7; ``Uses`` = a8; ``SourcePremises`` = a9 } : global.Fidelity.PSG.OrdinaryInactivityProjection) state
     }
 
     and read_Fidelity_PSG_OrdinaryOmission (state: ReadState) : Result<global.Fidelity.PSG.OrdinaryOmission * ReadState, BinaryError> = result {
