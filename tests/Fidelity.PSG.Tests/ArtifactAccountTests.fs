@@ -311,9 +311,26 @@ let private admittedResidence =
          ReservationClaim = reservation.Claim; AuthorityInputs = [NodeId 900; NodeId 900]; BindingPath = [NodeId 1; NodeId 4; NodeId 2]
          LayoutClaims = []; DeclarationInputs = [NodeId 901; NodeId 901]}
     let parameters = original.Emission.Callable.Calls[NodeId 4].Parameters
+    // closure-representation §2.4: "The ordinary calling contract preserves
+    // the arguments, result and environment convention"; each alternative
+    // conforms to "the slot's one receiving contract or a source-settled adapter."
+    // A settled residence therefore publishes a real receiving contract, not
+    // the pending convention used by an unused carrier-only fixture.
+    let contract : CallableContract =
+        {Identity = NodeId 43; Kind = CallableKind.OrdinaryFlatClosure; Convention = CallableConvention.Ordinary
+         ParameterTypes = [boolType; boolType]; OmittedParameters = []
+         ParameterRepresentations = [0, ValueRepresentation.Scalar SettledSlot.Bool; 1, ValueRepresentation.Scalar SettledSlot.Bool]
+         ResultType = original.Emission.Numeric.SourceTypes[NodeId 8]
+         ResultRepresentation = ValueRepresentation.Scalar SettledSlot.Bool
+         EnvironmentBytes = Some 8; SourcePremises = Map.empty
+         Participants = [participant ParticipantRole.CallableContract 0 43 43
+                         participant ParticipantRole.CallableImplementation 0 43 5
+                         participant ParticipantRole.CalleeParameter 0 43 6
+                         participant ParticipantRole.CalleeParameter 1 43 7
+                         participant ParticipantRole.CalleeBody 0 43 8]}
     let carrier binding : CallableCarrier =
         {Occurrence = NodeId binding; Kind = CallableKind.OrdinaryFlatClosure; Formation = NodeId binding; EnvironmentValue = Some(NodeId binding)
-         Contract = Error "This residence fixture publishes no aggregate convention."; Lifetime = []
+         Contract = Ok contract.Identity; Lifetime = [participant ParticipantRole.CallableLifetime 0 binding 40]
          SourceType = unitType; Implementation = NodeId 5; Parameters = parameters
          ParameterShapes = [CallableValueShape.Data(NodeId 6); CallableValueShape.Data(NodeId 7)]; OmittedParameters = Set.empty
          Result = NodeId 8; ResultShape = CallableValueShape.Data(NodeId 8); Environment = Some {Owner = NodeId 1; Formal = NodeId 6}}
@@ -349,10 +366,18 @@ let private admittedResidence =
     let layout : EnvironmentLayout =
         {Owner = NodeId 1; Implementation = NodeId 5; Formal = NodeId 6
          Slots = []; Bytes = 8; Alignment = 8; Obligations = []}
+    let callable =
+        {original.Emission.Callable with
+            Contracts = Map.ofList [contract.Identity, contract]
+            Carriers = Map.ofList [NodeId 2, carrier 2; NodeId 10, carrier 10]
+            SignatureData = Map.ofList [NodeId 2, Set.ofList [NodeId 6; NodeId 7; NodeId 8]
+                                        NodeId 10, Set.ofList [NodeId 6; NodeId 7; NodeId 8]]
+            ProgramInstances = Map.ofList [NodeId 2, instance 2; NodeId 10, instance 10]}
     {original with
         Codata =
             {original.Codata with
                 ProgramStorage = storageInventory
+                CallableCarriers = callable.Carriers; CallableContracts = callable.Contracts
                 EnvironmentLayouts = Map.ofList [NodeId 1, layout]}
         SourceReadings =
             {original.SourceReadings with
@@ -362,7 +387,7 @@ let private admittedResidence =
         ObligationSources = sources |> List.map (fun (claim, participants) -> claim, [participants |> List.map (fun (p: Participant) -> p.Node)]) |> Map.ofList
         Emission =
             {original.Emission with
-                Callable = {original.Emission.Callable with ProgramInstances = Map.ofList [NodeId 2, instance 2; NodeId 10, instance 10]}
+                Callable = callable
                 Storage =
                     {original.Emission.Storage with
                         ProgramStorage = storageInventory; Startup = Some startup

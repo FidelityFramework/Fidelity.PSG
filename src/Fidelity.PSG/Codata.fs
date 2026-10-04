@@ -139,11 +139,35 @@ type CallableEnvironment = { Owner: NodeId; Formal: NodeId }
 [<RequireQualifiedAccess>]
 type CallableKind = OrdinaryFlatClosure | NativeEntry
 
+/// Exact source declaration resident in the containing compiled program image.
+type ProgramImageCodeLifetime = {
+    Module: NodeId
+    Binding: NodeId
+    Implementation: NodeId
+}
+
+[<RequireQualifiedAccess>]
+type CallableConversion = Identity of ValueRepresentation
+
+/// Portable scalar convention. This carries no foreign ABI/address authority.
+type CompilerOwnedCallableConvention = {
+    Target: BoundaryPlatformPremise
+    ParameterConversions: (int * CallableConversion) list
+    ResultConversion: CallableConversion
+    CodeLifetime: ProgramImageCodeLifetime
+}
+
+[<RequireQualifiedAccess>]
+type CallableConvention =
+    | Ordinary
+    | CompilerOwnedPortable of CompilerOwnedCallableConvention
+
 /// A receiving convention settled by the source owner. Identity is independent
 /// of source arrow equality and of any particular implementation symbol.
 type CallableContract = {
     Identity: NodeId
     Kind: CallableKind
+    Convention: CallableConvention
     ParameterTypes: TypeIdentity list
     /// Logical parameter positions omitted by this exact physical convention.
     OmittedParameters: int list
@@ -153,6 +177,9 @@ type CallableContract = {
     ResultRepresentation: ValueRepresentation
     /// The extent of the admitted flat environment view, not descriptor bytes.
     EnvironmentBytes: int option
+    /// Exact source-owned proof premises. These immutable facts authorize no
+    /// executable occurrence and are scoped to this contract's participants.
+    SourcePremises: Map<NodeId, BoundarySourcePremise>
     Participants: Participant list
 }
 

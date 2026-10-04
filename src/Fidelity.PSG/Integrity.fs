@@ -485,6 +485,21 @@ module Integrity =
               | Some declaration when declaration.Parameters <> carrier.Parameters || declaration.Result <> carrier.Result ->
                   yield defect "Emission.Callable.Carriers.Implementation" carrier.Implementation "The carrier signature differs from its stored declaration."
               | _ -> ()
+          // The embedded row has mixed executable, signature, contract and
+          // lifetime identities. Its exact canonical row owns those roles;
+          // flattening them into executable references loses that distinction.
+          for KeyValue(_, instance) in callable.ProgramInstances do
+              let carrier = instance.Carrier
+              yield! need "Emission.Callable.ProgramInstances.Carrier"
+                  "Emission.Callable.Carriers with the exact callable carrier" carrier.Occurrence
+                  (callable.Carriers.TryFind carrier.Occurrence = Some carrier)
+              match carrier.Contract with
+              | Ok identity ->
+                  yield! need "Emission.Callable.ProgramInstances.Carrier.Contract"
+                      "Emission.Callable.Contracts" identity (callable.Contracts.ContainsKey identity)
+              | Error _ ->
+                  yield defect "Emission.Callable.ProgramInstances.Carrier.Contract" carrier.Occurrence
+                      "An initialized program instance has no settled receiving contract."
           for KeyValue(site, call) in callable.Calls do
               if site <> call.Site then yield defect "Emission.Callable.Calls.Site" site "A call is filed under a different site."
               yield! implementation "Emission.Callable.Calls.Implementation" call.Implementation
@@ -1052,6 +1067,9 @@ module Integrity =
                          "Emission.Spatial.Hardware.ClockReference"
                          "Emission.Spatial.Hardware.ResetDeclaration"; "Emission.Spatial.Hardware.ClockPath"
                          "Emission.Storage.Startup.Initializers"
+                         // callableRows checks the complete embedded row
+                         // against its canonical carrier and exact contract.
+                         "Emission.Callable.ProgramInstances.Carrier"
                          "Emission.Boundary.IntrinsicWriteImports.Scope"
                          "Emission.Boundary.Calls.Arguments"; "Emission.Boundary.IntrinsicWriteProofs (values)"
                          "Emission.Boundary.Imports.DeclarationFacts" ]

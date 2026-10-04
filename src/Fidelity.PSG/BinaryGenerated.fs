@@ -5,11 +5,11 @@ module internal BinaryGenerated =
     [<Literal>]
     let Format = 2u
     [<Literal>]
-    let Schema = 17
+    let Schema = 18
     [<Literal>]
-    let Fingerprint = "E7DD6A92B7F79FF75CD39D384C16CCEB3E2B931878F94441649581DA797ADA3C"
+    let Fingerprint = "6F9021CC426417F8F26F1840BEEB0F5A3D5FAECFA51910AD7D8C513283384E78"
     [<Literal>]
-    let NamedTypes = 266
+    let NamedTypes = 270
     [<Literal>]
     let RevisionFields = 17
     [<Literal>]
@@ -737,14 +737,42 @@ module internal BinaryGenerated =
         let! state = enterWrite state
         let! state = write_Fidelity_PSG_NodeId state value.``Identity``
         let! state = write_Fidelity_PSG_CallableKind state value.``Kind``
+        let! state = write_Fidelity_PSG_CallableConvention state value.``Convention``
         let! state = (writeList write_Fidelity_PSG_TypeIdentity) state value.``ParameterTypes``
         let! state = (writeList writeI32) state value.``OmittedParameters``
         let! state = (writeList (fun state (v1_0, v1_1) -> enterWrite state |> Result.bind (fun state -> writeI32 state v1_0 |> Result.bind (fun state -> write_Fidelity_PSG_ValueRepresentation state v1_1 |> Result.bind (fun state -> Ok(leaveWrite state)))))) state value.``ParameterRepresentations``
         let! state = write_Fidelity_PSG_TypeIdentity state value.``ResultType``
         let! state = write_Fidelity_PSG_ValueRepresentation state value.``ResultRepresentation``
         let! state = (writeOption writeI32) state value.``EnvironmentBytes``
+        let! state = (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_BoundarySourcePremise) state value.``SourcePremises``
         let! state = (writeList write_Fidelity_PSG_Participant) state value.``Participants``
         return leaveWrite state
+    }
+
+    and write_Fidelity_PSG_CallableConvention (state: WriteState) (value: global.Fidelity.PSG.CallableConvention) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        return!
+            match value with
+            | global.Fidelity.PSG.CallableConvention.``Ordinary`` -> result {
+                let! state = writeTag state 0
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.CallableConvention.``CompilerOwnedPortable``(a0) -> result {
+                let! state = writeTag state 1
+                let! state = write_Fidelity_PSG_CompilerOwnedCallableConvention state a0
+                return leaveWrite state
+              }
+    }
+
+    and write_Fidelity_PSG_CallableConversion (state: WriteState) (value: global.Fidelity.PSG.CallableConversion) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        return!
+            match value with
+            | global.Fidelity.PSG.CallableConversion.``Identity``(a0) -> result {
+                let! state = writeTag state 0
+                let! state = write_Fidelity_PSG_ValueRepresentation state a0
+                return leaveWrite state
+              }
     }
 
     and write_Fidelity_PSG_CallableEmissionCall (state: WriteState) (value: global.Fidelity.PSG.CallableEmissionCall) : Result<WriteState, BinaryError> = result {
@@ -1131,6 +1159,15 @@ module internal BinaryGenerated =
         let! state = (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_FunctionPointerPlan) state value.``FunctionPointers``
         let! state = (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_MmioAccessEvidence) state value.``Mmio``
         let! state = write_Fidelity_PSG_ProgramStorageInventory state value.``ProgramStorage``
+        return leaveWrite state
+    }
+
+    and write_Fidelity_PSG_CompilerOwnedCallableConvention (state: WriteState) (value: global.Fidelity.PSG.CompilerOwnedCallableConvention) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = write_Fidelity_PSG_BoundaryPlatformPremise state value.``Target``
+        let! state = (writeList (fun state (v1_0, v1_1) -> enterWrite state |> Result.bind (fun state -> writeI32 state v1_0 |> Result.bind (fun state -> write_Fidelity_PSG_CallableConversion state v1_1 |> Result.bind (fun state -> Ok(leaveWrite state)))))) state value.``ParameterConversions``
+        let! state = write_Fidelity_PSG_CallableConversion state value.``ResultConversion``
+        let! state = write_Fidelity_PSG_ProgramImageCodeLifetime state value.``CodeLifetime``
         return leaveWrite state
     }
 
@@ -4662,6 +4699,14 @@ module internal BinaryGenerated =
               }
     }
 
+    and write_Fidelity_PSG_ProgramImageCodeLifetime (state: WriteState) (value: global.Fidelity.PSG.ProgramImageCodeLifetime) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = write_Fidelity_PSG_NodeId state value.``Module``
+        let! state = write_Fidelity_PSG_NodeId state value.``Binding``
+        let! state = write_Fidelity_PSG_NodeId state value.``Implementation``
+        return leaveWrite state
+    }
+
     and write_Fidelity_PSG_ProgramInitializationOrderAccount (state: WriteState) (value: global.Fidelity.PSG.ProgramInitializationOrderAccount) : Result<WriteState, BinaryError> = result {
         let! state = enterWrite state
         let! state = write_Fidelity_PSG_NodeId state value.``Binding``
@@ -6959,17 +7004,46 @@ module internal BinaryGenerated =
     }
 
     and read_Fidelity_PSG_CallableContract (state: ReadState) : Result<global.Fidelity.PSG.CallableContract * ReadState, BinaryError> = result {
-        let! state = enterReadFields 9 state
+        let! state = enterReadFields 11 state
         let! a0, state = read_Fidelity_PSG_NodeId state
         let! a1, state = read_Fidelity_PSG_CallableKind state
-        let! a2, state = (readList read_Fidelity_PSG_TypeIdentity) state
-        let! a3, state = (readList readI32) state
-        let! a4, state = (readList (fun state -> enterReadFields 2 state |> Result.bind (fun state -> readI32 state |> Result.bind (fun (v1_0, state) -> read_Fidelity_PSG_ValueRepresentation state |> Result.bind (fun (v1_1, state) -> finishRead (v1_0, v1_1) state))))) state
-        let! a5, state = read_Fidelity_PSG_TypeIdentity state
-        let! a6, state = read_Fidelity_PSG_ValueRepresentation state
-        let! a7, state = (readOption readI32) state
-        let! a8, state = (readList read_Fidelity_PSG_Participant) state
-        return! finishRead ({ ``Identity`` = a0; ``Kind`` = a1; ``ParameterTypes`` = a2; ``OmittedParameters`` = a3; ``ParameterRepresentations`` = a4; ``ResultType`` = a5; ``ResultRepresentation`` = a6; ``EnvironmentBytes`` = a7; ``Participants`` = a8 } : global.Fidelity.PSG.CallableContract) state
+        let! a2, state = read_Fidelity_PSG_CallableConvention state
+        let! a3, state = (readList read_Fidelity_PSG_TypeIdentity) state
+        let! a4, state = (readList readI32) state
+        let! a5, state = (readList (fun state -> enterReadFields 2 state |> Result.bind (fun state -> readI32 state |> Result.bind (fun (v1_0, state) -> read_Fidelity_PSG_ValueRepresentation state |> Result.bind (fun (v1_1, state) -> finishRead (v1_0, v1_1) state))))) state
+        let! a6, state = read_Fidelity_PSG_TypeIdentity state
+        let! a7, state = read_Fidelity_PSG_ValueRepresentation state
+        let! a8, state = (readOption readI32) state
+        let! a9, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_BoundarySourcePremise) state
+        let! a10, state = (readList read_Fidelity_PSG_Participant) state
+        return! finishRead ({ ``Identity`` = a0; ``Kind`` = a1; ``Convention`` = a2; ``ParameterTypes`` = a3; ``OmittedParameters`` = a4; ``ParameterRepresentations`` = a5; ``ResultType`` = a6; ``ResultRepresentation`` = a7; ``EnvironmentBytes`` = a8; ``SourcePremises`` = a9; ``Participants`` = a10 } : global.Fidelity.PSG.CallableContract) state
+    }
+
+    and read_Fidelity_PSG_CallableConvention (state: ReadState) : Result<global.Fidelity.PSG.CallableConvention * ReadState, BinaryError> = result {
+        let! state = enterReadCases 2 state
+        let! tag, state = readTag state
+        return!
+            match tag with
+            | 0 -> result {
+                return! finishRead (global.Fidelity.PSG.CallableConvention.``Ordinary``) state
+              }
+            | 1 -> result {
+                let! a0, state = read_Fidelity_PSG_CompilerOwnedCallableConvention state
+                return! finishRead (global.Fidelity.PSG.CallableConvention.``CompilerOwnedPortable``(a0)) state
+              }
+            | _ -> malformed state "Unknown Fidelity.PSG.CallableConvention case"
+    }
+
+    and read_Fidelity_PSG_CallableConversion (state: ReadState) : Result<global.Fidelity.PSG.CallableConversion * ReadState, BinaryError> = result {
+        let! state = enterReadCases 2 state
+        let! tag, state = readTag state
+        return!
+            match tag with
+            | 0 -> result {
+                let! a0, state = read_Fidelity_PSG_ValueRepresentation state
+                return! finishRead (global.Fidelity.PSG.CallableConversion.``Identity``(a0)) state
+              }
+            | _ -> malformed state "Unknown Fidelity.PSG.CallableConversion case"
     }
 
     and read_Fidelity_PSG_CallableEmissionCall (state: ReadState) : Result<global.Fidelity.PSG.CallableEmissionCall * ReadState, BinaryError> = result {
@@ -7345,6 +7419,15 @@ module internal BinaryGenerated =
         let! a35, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_MmioAccessEvidence) state
         let! a36, state = read_Fidelity_PSG_ProgramStorageInventory state
         return! finishRead ({ ``WitnessSegmentation`` = a0; ``Escapes`` = a1; ``Curry`` = a2; ``Meets`` = a3; ``ReturnMeets`` = a4; ``Closures`` = a5; ``EnvironmentLayouts`` = a6; ``EnvironmentDestinations`` = a7; ``EnvironmentOrigins`` = a8; ``LazyLayouts`` = a9; ``LazyOrigins`` = a10; ``LazyDestinations`` = a11; ``KnownCallables`` = a12; ``CallableContracts`` = a13; ``CallableCarriers`` = a14; ``CallableJoins`` = a15; ``CallableFlows`` = a16; ``CallableAggregateSlots`` = a17; ``CallableAggregateValues`` = a18; ``CallableAggregateDependencies`` = a19; ``CallableBranches`` = a20; ``MutableCallableStorage`` = a21; ``ContinuationFrames`` = a22; ``SequenceOrigins`` = a23; ``SequenceFlows`` = a24; ``SequenceFamilies`` = a25; ``SequenceTemplateCopies`` = a26; ``ContinuationStorage`` = a27; ``ContinuationRegions`` = a28; ``SequenceInitializers`` = a29; ``SequenceDestinations`` = a30; ``SequenceCurrentReads`` = a31; ``Pins`` = a32; ``DeclarationRootLambdas`` = a33; ``FunctionPointers`` = a34; ``Mmio`` = a35; ``ProgramStorage`` = a36 } : global.Fidelity.PSG.Codata) state
+    }
+
+    and read_Fidelity_PSG_CompilerOwnedCallableConvention (state: ReadState) : Result<global.Fidelity.PSG.CompilerOwnedCallableConvention * ReadState, BinaryError> = result {
+        let! state = enterReadFields 4 state
+        let! a0, state = read_Fidelity_PSG_BoundaryPlatformPremise state
+        let! a1, state = (readList (fun state -> enterReadFields 2 state |> Result.bind (fun state -> readI32 state |> Result.bind (fun (v1_0, state) -> read_Fidelity_PSG_CallableConversion state |> Result.bind (fun (v1_1, state) -> finishRead (v1_0, v1_1) state))))) state
+        let! a2, state = read_Fidelity_PSG_CallableConversion state
+        let! a3, state = read_Fidelity_PSG_ProgramImageCodeLifetime state
+        return! finishRead ({ ``Target`` = a0; ``ParameterConversions`` = a1; ``ResultConversion`` = a2; ``CodeLifetime`` = a3 } : global.Fidelity.PSG.CompilerOwnedCallableConvention) state
     }
 
     and read_Fidelity_PSG_ConstructorIdentity (state: ReadState) : Result<global.Fidelity.PSG.ConstructorIdentity * ReadState, BinaryError> = result {
@@ -10432,6 +10515,14 @@ module internal BinaryGenerated =
                 return! finishRead (global.Fidelity.PSG.PredicateStatus.``Pending``) state
               }
             | _ -> malformed state "Unknown Fidelity.PSG.PredicateStatus case"
+    }
+
+    and read_Fidelity_PSG_ProgramImageCodeLifetime (state: ReadState) : Result<global.Fidelity.PSG.ProgramImageCodeLifetime * ReadState, BinaryError> = result {
+        let! state = enterReadFields 3 state
+        let! a0, state = read_Fidelity_PSG_NodeId state
+        let! a1, state = read_Fidelity_PSG_NodeId state
+        let! a2, state = read_Fidelity_PSG_NodeId state
+        return! finishRead ({ ``Module`` = a0; ``Binding`` = a1; ``Implementation`` = a2 } : global.Fidelity.PSG.ProgramImageCodeLifetime) state
     }
 
     and read_Fidelity_PSG_ProgramInitializationOrderAccount (state: ReadState) : Result<global.Fidelity.PSG.ProgramInitializationOrderAccount * ReadState, BinaryError> = result {

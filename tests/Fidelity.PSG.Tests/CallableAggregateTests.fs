@@ -31,7 +31,8 @@ let private renewWithSlots slotIds revision =
         (carriers |> List.collect _.Lifetime) @ (contracts |> List.collect _.Participants)
     let sources =
         participants |> List.map _.Node |> List.distinct |> List.choose (fun id ->
-            revision.Nodes.TryFind id |> Option.map (fun node ->
+            let premise = contracts |> List.exists (fun contract -> contract.SourcePremises.ContainsKey id)
+            (if premise then None else revision.Nodes.TryFind id) |> Option.map (fun node ->
                 { Node = id; Kind = node.Kind; Type = node.Type; Children = node.Children; Anchors = node.ObligationAnchors }))
     let claims = participants |> List.map _.Node |> List.distinct |> List.choose (fun id ->
         revision.CurrentClaims.TryFind id |> Option.map (fun claim -> id, claim))
@@ -42,22 +43,80 @@ let private renewWithSlots slotIds revision =
 
 let private renew revision = renewWithSlots [101] revision
 
+let private nativeTarget : BoundaryPlatformPremise =
+    { Id = "native-entry-contract-control"; Description = None; LibraryPath = None
+      SourcePaths = Set.singleton "contract-test.clef"; Architecture = Some "x86_64"; OS = Some "linux"
+      RuntimeClaim = Some RuntimeModel.Libc; Substrate = Some SubstrateKind.CPU
+      Dimensions = Map.ofList ["Register", 64; "Pointer", 64]
+      Representations = Map.empty; EndpointReturns = Map.empty }
+
+// Independent source evidence: declarations describe residence, never a C
+// address or a fabricated lifetime obligation. The exact parent/membership
+// pair is intentional; presence of three arbitrary nodes proves nothing.
+let private nativeResidencePremises () =
+    let fnType = TypeIdentity.Function(boolType, boolType)
+    let premise shape embedded : BoundarySourcePremise =
+        { Shape = shape; EmbeddedTypes = embedded; ConstructorFacts = []; Reachable = true; Range = None
+          ExternLibrary = None; ExternSymbol = None; HasExtern = false; Metadata = Map.empty }
+    // Startup clears executable module children; lexical Member incidence
+    // remains in References and does not make the declaration executable.
+    let scope =
+        premise
+            { Form = "module"; Text = ["NativeLibrary"]; Numbers = []; References = [NodeId 401]
+              Children = []; Parent = None; SourceType = unitType } []
+    Map.ofList [
+        NodeId 400, {scope with Reachable = false}
+        NodeId 401, premise
+            { Form = "binding"; Text = ["callback"; "no-declaration-root"]; Numbers = [0I; 0I]
+              References = [NodeId 10]; Children = [NodeId 10]; Parent = Some(NodeId 400); SourceType = fnType } []
+        NodeId 10, premise
+            { Form = "lambda"; Text = ["RegularClosure"; "argument"]; Numbers = [1I; 0I; 0I]
+              References = [NodeId 41; NodeId 11]; Children = [NodeId 41; NodeId 11]
+              Parent = Some(NodeId 401); SourceType = fnType } [boolType]
+    ]
+
 let private fixture union captured native =
     let kind = if native then CallableKind.NativeEntry else CallableKind.OrdinaryFlatClosure
-    let fnType = TypeIdentity.Function(unitType, unitType)
+    let fnType =
+        if native then
+            let constructor : ConstructorIdentity =
+                { Declaration = {Module = []; Name = "FnPtr"}; Parameters = []; NativeKind = Some NTUKind.NTUfnptr }
+            TypeIdentity.Application(constructor, [TypeIdentity.Function(boolType, boolType)])
+        else TypeIdentity.Function(unitType, unitType)
+    let nativeLifetime =
+        [p ParticipantRole.CallableLifetime 0 100 400; p ParticipantRole.CallableLifetime 1 100 401
+         p ParticipantRole.CallableLifetime 2 100 10]
     let carrier occurrence environment : CallableCarrier =
         { Occurrence = NodeId occurrence; Kind = kind; Formation = NodeId occurrence
           EnvironmentValue = environment |> Option.map NodeId; Contract = Ok(NodeId 100)
-          Lifetime = if captured || native then [p ParticipantRole.CallableLifetime 0 occurrence 90] else []
-          SourceType = fnType; Implementation = NodeId 10; Parameters = []; ParameterShapes = []
+          Lifetime = if native then nativeLifetime elif captured then [p ParticipantRole.CallableLifetime 0 occurrence 90] else []
+          SourceType = fnType; Implementation = NodeId 10
+          Parameters = if native then ["argument", boolType, NodeId 41] else []
+          ParameterShapes = if native then [CallableValueShape.Data(NodeId 41)] else []
           OmittedParameters = Set.empty; Result = NodeId 11; ResultShape = CallableValueShape.Data(NodeId 11)
           Environment = if captured then Some {Owner = NodeId 40; Formal = NodeId 41} else None }
     let carriers = [carrier 30 (if captured then Some 20 else None); carrier 31 (if captured then Some 21 else None)]
+    let physical = ValueRepresentation.Scalar SettledSlot.Bool
+    let convention =
+        if native then
+            CallableConvention.CompilerOwnedPortable {
+                Target = nativeTarget; ParameterConversions = [0, CallableConversion.Identity physical]
+                ResultConversion = CallableConversion.Identity physical
+                CodeLifetime = {Module = NodeId 400; Binding = NodeId 401; Implementation = NodeId 10} }
+        else CallableConvention.Ordinary
     let contract : CallableContract =
-        { Identity = NodeId 100; Kind = kind; ParameterTypes = []; OmittedParameters = []; ParameterRepresentations = []
-          ResultType = unitType; ResultRepresentation = ValueRepresentation.Scalar SettledSlot.Bool
+        { Identity = NodeId 100; Kind = kind; Convention = convention
+          ParameterTypes = if native then [boolType] else []
+          OmittedParameters = []; ParameterRepresentations = if native then [0, physical] else []
+          ResultType = if native then boolType else unitType
+          ResultRepresentation = physical
           EnvironmentBytes = if captured then Some 16 else None
-          Participants = [p ParticipantRole.CallableContract 0 100 100] }
+          SourcePremises = if native then nativeResidencePremises () else Map.empty
+          Participants =
+              [p ParticipantRole.CallableContract 0 100 100] @
+              (if native then
+                   [p ParticipantRole.Source 0 100 400; p ParticipantRole.Source 1 100 401; p ParticipantRole.Source 2 100 10] @ nativeLifetime
+               else []) }
     let slot : CallableAggregateSlot =
         { Identity = NodeId 101; AggregateType = unitType; Declaration = None; DeclarationFacts = []
           Path = if union then [CallableAggregatePathStep.UnionPayload(0, 0)] else [CallableAggregatePathStep.RecordField 0]
@@ -98,6 +157,17 @@ let private fixture union captured native =
     let nodes =
         [node 1 aggregateKind [30]; node 5 (SemanticKind.DUGetTag(NodeId 1, unitType)) [1]] @
         ([6;10;11;20;21;30;31;40;41;90;91] |> List.map (fun id -> node id (SemanticKind.Literal NativeLiteral.Unit) []))
+    let nodes =
+        if not native then nodes else
+        nodes |> List.map (fun value ->
+            match value.Id with
+            | NodeId 10 ->
+                {value with Type = TypeIdentity.Function(boolType, boolType); Parent = Some(NodeId 401)
+                            Kind = SemanticKind.Lambda(["argument", boolType, NodeId 41], NodeId 11, [], Some "callback", LambdaContext.RegularClosure)
+                            Children = [NodeId 41; NodeId 11]}
+            | NodeId 11 -> {value with Type = boolType; Kind = SemanticKind.Literal(NativeLiteral.Bool true); Parent = Some(NodeId 10)}
+            | NodeId 41 -> {value with Type = boolType; Kind = SemanticKind.PatternBinding "argument"; Parent = Some(NodeId 10)}
+            | _ -> value)
     let data = ValueRepresentation.Record(["selector", ValueRepresentation.Scalar(SettledSlot.Integer(8, None))], Some([0], row.Bytes, row.Alignment))
     let heldComponent = ValueRepresentation.CallableComponent(NodeId 101, data)
     let representation =
@@ -106,12 +176,21 @@ let private fixture union captured native =
     let initial = revision nodes
     let c =
         { initial.Emission.Callable with
+            Declarations =
+                if native then
+                    Map.ofList [NodeId 10,
+                        {Lookup = NodeId 10; Implementation = NodeId 10; Parameters = ["argument", boolType, NodeId 41]
+                         Result = NodeId 11; Context = LambdaContext.RegularClosure; Captures = []
+                         Name = CallableSymbolName.ModuleBinding("NativeLibrary", "callback"); Parent = Some(NodeId 401)
+                         Participants = Set.ofList [NodeId 10; NodeId 11; NodeId 41]}]
+                else initial.Emission.Callable.Declarations
             Contracts = Map.ofList [NodeId 100, contract]
             Carriers = carriers |> List.map (fun row -> row.Occurrence, row) |> Map.ofList
             AggregateSlots = Map.ofList [NodeId 101, slot]
             AggregateValues = Map.ofList [NodeId 1, [row]] }
     let env : EnvironmentLayout = { Owner = NodeId 40; Implementation = NodeId 10; Formal = NodeId 41; Slots = []; Bytes = 16; Alignment = 8; Obligations = [] }
     { initial with
+        Platform = if native then {Register = Ok 64; Pointer = Ok 64} else initial.Platform
         Codata = { initial.Codata with EnvironmentLayouts = Map.ofList [NodeId 40, env] }
         Emission = { initial.Emission with Numeric = {initial.Emission.Numeric with OccurrenceRepresentations = initial.Emission.Numeric.OccurrenceRepresentations.Add(NodeId 1, Ok representation)} } }
     |> publish c |> renew
@@ -123,6 +202,17 @@ let private changeRow change revision =
 let private changeSlot change revision =
     let c = revision.Emission.Callable
     publish {c with AggregateSlots = c.AggregateSlots.Add(NodeId 101, change c.AggregateSlots[NodeId 101])} revision
+
+let private changeContract change revision =
+    let c = revision.Emission.Callable
+    publish {c with Contracts = c.Contracts.Add(NodeId 100, change c.Contracts[NodeId 100])} revision
+
+let private changeNativeConvention change revision =
+    revision |> changeContract (fun contract ->
+        match contract.Convention with
+        | CallableConvention.CompilerOwnedPortable convention ->
+            {contract with Convention = CallableConvention.CompilerOwnedPortable(change convention)}
+        | _ -> failwith "Expected the independent native fixture's portable convention.")
 
 let private nominalFixture union =
     let held = fixture union false false
@@ -256,6 +346,84 @@ let ``I5 missing duplicate and changed formation incidence is rejected`` union =
     held |> changeRow (fun row -> {row with Participants = row.Participants |> List.filter (fun p -> p.Role <> ParticipantRole.CallableFormation)}) |> failure "I5"
     let missing = {held with Nodes = held.Nodes.Remove(NodeId 30)}
     missing |> failure "I5"
+
+[<Fact>]
+let ``I5 implementation evidence accepts an explicit symbol without importing its body`` () =
+    let held = fixture false false false
+    let c = held.Emission.Callable
+    let contract = {c.Contracts[NodeId 100] with Participants = c.Contracts[NodeId 100].Participants @ [p ParticipantRole.CallableImplementation 0 100 10]}
+    let symbols = c.Symbols.Add(NodeId 10, CallableSymbolName.ModuleBinding("Library", "callback"))
+    let bodyFree =
+        {held with Nodes = held.Nodes.Remove(NodeId 10)}
+        |> publish {c with Contracts = c.Contracts.Add(NodeId 100, contract); Symbols = symbols}
+        |> renew
+    Assert.Empty(Integrity.callableAggregates bodyFree)
+    Assert.False(bodyFree.Nodes.ContainsKey(NodeId 10))
+    let absent = bodyFree.Emission.Callable
+    publish {absent with Symbols = absent.Symbols.Remove(NodeId 10)} bodyFree |> failure "I5"
+
+[<Theory>]
+[<InlineData(false)>]
+[<InlineData(true)>]
+let ``I5 a symbol never substitutes for a contract body or formal occurrence`` formal =
+    let held = fixture false false false
+    let role, id = if formal then ParticipantRole.CalleeParameter, 41 else ParticipantRole.CalleeBody, 11
+    let c = held.Emission.Callable
+    let contract = {c.Contracts[NodeId 100] with Participants = c.Contracts[NodeId 100].Participants @ [p role 0 100 id]}
+    let admitted = publish {c with Contracts = c.Contracts.Add(NodeId 100, contract)} held |> renew
+    Assert.Empty(Integrity.callableAggregates admitted)
+    let absent = admitted.Emission.Callable
+    {admitted with Nodes = admitted.Nodes.Remove(NodeId id)}
+    |> publish {absent with Symbols = absent.Symbols.Add(NodeId id, CallableSymbolName.RootBinding "not-a-body")}
+    |> renew
+    |> failure "I5"
+
+let private withSourcePremise () =
+    let held = fixture false false false
+    let premise : BoundarySourcePremise =
+        { Shape = { Form = "representation-declaration"; Text = ["boolean"]; Numbers = []
+                    References = []; Children = []; Parent = None; SourceType = unitType }
+          EmbeddedTypes = []; ConstructorFacts = []; Reachable = false; Range = None
+          ExternLibrary = None; ExternSymbol = None; HasExtern = false; Metadata = Map.empty }
+    let c = held.Emission.Callable
+    let contract =
+        {c.Contracts[NodeId 100] with
+            Participants = c.Contracts[NodeId 100].Participants @ [p ParticipantRole.Source 0 100 200]
+            SourcePremises = Map.ofList [NodeId 200, premise]}
+    publish {c with Contracts = c.Contracts.Add(NodeId 100, contract)} held |> renew
+
+[<Fact>]
+let ``I5 metadata premises require exact contract ownership and cannot borrow sibling evidence`` () =
+    let held = withSourcePremise ()
+    Assert.Empty(Integrity.callableAggregates held)
+    Assert.False(held.Nodes.ContainsKey(NodeId 200))
+    let c = held.Emission.Callable
+    let contract = c.Contracts[NodeId 100]
+    let missing = {contract with SourcePremises = Map.empty}
+    publish {c with Contracts = c.Contracts.Add(NodeId 100, missing)} held |> failure "I5"
+    let extra = {contract with SourcePremises = contract.SourcePremises.Add(NodeId 201, contract.SourcePremises[NodeId 200])}
+    publish {c with Contracts = c.Contracts.Add(NodeId 100, extra)} held |> failure "I5"
+    let sibling =
+        {contract with Identity = NodeId 102
+                       Participants = [p ParticipantRole.CallableContract 0 102 102; p ParticipantRole.Source 0 102 200]}
+    publish {c with Contracts = c.Contracts.Add(NodeId 100, missing).Add(NodeId 102, sibling)} held |> failure "I5"
+
+[<Fact>]
+let ``I6 changed premise with identical physical results invalidates the earlier dependency account`` () =
+    let held = withSourcePremise ()
+    let c = held.Emission.Callable
+    let contract = c.Contracts[NodeId 100]
+    let premise = contract.SourcePremises[NodeId 200]
+    let changed =
+        {contract with SourcePremises = contract.SourcePremises.Add(NodeId 200, {premise with Metadata = Map.ofList ["source-version", (["changed"], [], [], None)]})}
+    let next = publish {c with Contracts = c.Contracts.Add(NodeId 100, changed)} held
+    Assert.Equal(contract.ResultRepresentation, changed.ResultRepresentation)
+    Assert.Equal<(int * ValueRepresentation) list>(contract.ParameterRepresentations, changed.ParameterRepresentations)
+    next |> failure "I6"
+    let renewed = renew next
+    Assert.Empty(Integrity.callableAggregates renewed)
+    Assert.NotEqual<CallableAggregateDependencyAccount>(c.AggregateDependencies[NodeId 1], renewed.Emission.Callable.AggregateDependencies[NodeId 1])
+    publish {renewed.Emission.Callable with AggregateDependencies = c.AggregateDependencies} renewed |> failure "I6"
 
 [<Fact>]
 let ``I5 union tag and payload evidence must match the current constructor`` () =
@@ -521,3 +689,207 @@ let ``I5 one declaration identity cannot carry conflicting canonical slot facts`
     publish {c with AggregateSlots = c.AggregateSlots.Add(NodeId 102, {second with DeclarationFacts = [changed]})} held
     |> renewWithSlots [101; 102]
     |> failure "I5"
+
+let private nativeSingleton width =
+    let held =
+        fixture false false true
+        |> changeRow (fun row -> {elideSecond row with Bytes = 0; Alignment = 1})
+        |> changeNativeConvention (fun convention ->
+            {convention with Target = {convention.Target with Dimensions = Map.ofList ["Register", width; "Pointer", width]}})
+    let heldComponent = ValueRepresentation.CallableComponent(NodeId 101, ValueRepresentation.Record([], Some([], 0, 1)))
+    let representation = ValueRepresentation.Record(["invoke", heldComponent], Some([0], 0, 1))
+    let numeric =
+        {held.Emission.Numeric with
+            OccurrenceRepresentations = held.Emission.Numeric.OccurrenceRepresentations.Add(NodeId 1, Ok representation)}
+    {held with
+        Platform = {Register = Ok width; Pointer = Ok width}
+        Emission = {held.Emission with Numeric = numeric}}
+    |> renew
+
+[<Theory>]
+[<InlineData(32)>]
+[<InlineData(64)>]
+let ``native singleton retains portable convention and program residence without code storage`` width =
+    let held = nativeSingleton width
+    Assert.Empty(Integrity.callableAggregates held)
+    let c = held.Emission.Callable
+    let carrier = c.Carriers[NodeId 30]
+    Assert.Equal(CallableKind.NativeEntry, carrier.Kind)
+    Assert.Equal(Ok(NodeId 100), carrier.Contract)
+    Assert.Equal<CallableEnvironment option>(None, carrier.Environment)
+    Assert.Equal<NodeId option>(None, carrier.EnvironmentValue)
+    Assert.Equal(0, c.AggregateValues[NodeId 1].Head.Bytes)
+    Assert.Empty(held.CurrentClaims)
+    Assert.False(held.Nodes.ContainsKey(NodeId 400))
+    Assert.False(held.Nodes.ContainsKey(NodeId 401))
+    Assert.Equal<Participant list>(
+        [p ParticipantRole.CallableLifetime 0 100 400; p ParticipantRole.CallableLifetime 1 100 401
+         p ParticipantRole.CallableLifetime 2 100 10], carrier.Lifetime)
+    match c.Contracts[NodeId 100].Convention with
+    | CallableConvention.CompilerOwnedPortable convention ->
+        Assert.Equal(width, convention.Target.Dimensions["Pointer"])
+        Assert.Equal<(int * CallableConversion) list>([0, CallableConversion.Identity(ValueRepresentation.Scalar SettledSlot.Bool)], convention.ParameterConversions)
+        Assert.Equal(CallableConversion.Identity(ValueRepresentation.Scalar SettledSlot.Bool), convention.ResultConversion)
+        Assert.Equal(NodeId 400, convention.CodeLifetime.Module)
+    | _ -> failwith "A native entry lost its compiler-owned receiving convention."
+
+[<Theory>]
+[<InlineData("missing")>]
+[<InlineData("ordinal")>]
+[<InlineData("duplicate")>]
+[<InlineData("parameter")>]
+[<InlineData("result")>]
+let ``I4 native identity conversions must match the exact physical signature`` mutation =
+    let held = nativeSingleton 64
+    Assert.Empty(Integrity.callableAggregates held)
+    held |> changeNativeConvention (fun convention ->
+        match mutation with
+        | "missing" -> {convention with ParameterConversions = []}
+        | "ordinal" -> {convention with ParameterConversions = [1, snd convention.ParameterConversions.Head]}
+        | "duplicate" -> {convention with ParameterConversions = convention.ParameterConversions @ convention.ParameterConversions}
+        | "parameter" -> {convention with ParameterConversions = [0, CallableConversion.Identity(ValueRepresentation.Scalar(SettledSlot.Integer(8, None)))]}
+        | "result" -> {convention with ResultConversion = CallableConversion.Identity(ValueRepresentation.Scalar SettledSlot.Unit)}
+        | _ -> failwith "Unknown conversion control.")
+    |> renew |> failure "I4"
+
+[<Fact>]
+let ``I4 internally matching pointer representations do not authorize the scalar native convention`` () =
+    let held = nativeSingleton 64
+    Assert.Empty(Integrity.callableAggregates held)
+    let pointer = ValueRepresentation.Scalar(SettledSlot.Pointer 1)
+    let changed =
+        held
+        |> changeContract (fun contract -> {contract with ParameterRepresentations = [0, pointer]})
+        |> changeNativeConvention (fun convention -> {convention with ParameterConversions = [0, CallableConversion.Identity pointer]})
+    let numeric =
+        {changed.Emission.Numeric with
+            OccurrenceRepresentations = changed.Emission.Numeric.OccurrenceRepresentations.Add(NodeId 41, Ok pointer)}
+    {changed with Emission = {changed.Emission with Numeric = numeric}}
+    |> renew |> failure "I4"
+
+[<Fact>]
+let ``I4 native target and callable kind cannot be substituted`` () =
+    let held = nativeSingleton 64
+    Assert.Empty(Integrity.callableAggregates held)
+    held |> changeNativeConvention (fun convention ->
+        {convention with Target = {convention.Target with Dimensions = convention.Target.Dimensions.Add("Pointer", 32)}})
+    |> renew |> failure "I4"
+    held |> changeNativeConvention (fun convention ->
+        {convention with Target = {convention.Target with Dimensions = convention.Target.Dimensions.Remove "Register"}})
+    |> renew |> failure "I4"
+    held |> changeContract (fun contract -> {contract with Convention = CallableConvention.Ordinary})
+    |> renew |> failure "I4"
+    // Change both kind fields together: equal signatures still cannot give an
+    // ordinary carrier authority to use a native-entry convention.
+    let c = held.Emission.Callable
+    let substituted =
+        {c with
+            Contracts = c.Contracts.Add(NodeId 100, {c.Contracts[NodeId 100] with Kind = CallableKind.OrdinaryFlatClosure})
+            Carriers = c.Carriers |> Map.map (fun _ carrier -> {carrier with Kind = CallableKind.OrdinaryFlatClosure})}
+    publish substituted held
+    |> renew |> failure "I4"
+
+[<Fact>]
+let ``I3 native receiving convention preserves explicit environment absence`` () =
+    let held = nativeSingleton 64
+    Assert.Empty(Integrity.callableAggregates held)
+    held |> changeContract (fun contract -> {contract with EnvironmentBytes = Some 0})
+    |> renew |> failure "I3"
+    let c = held.Emission.Callable
+    let captured = {c.Carriers[NodeId 30] with Environment = Some {Owner = NodeId 40; Formal = NodeId 41}; EnvironmentValue = Some(NodeId 20)}
+    publish {c with Carriers = c.Carriers.Add(NodeId 30, captured)} held |> renew |> failure "I3"
+
+[<Theory>]
+[<InlineData("empty")>]
+[<InlineData("unrelated")>]
+[<InlineData("ordinal")>]
+[<InlineData("group")>]
+let ``I3 native lifetime requires the exact contract owned residence vector`` mutation =
+    let held = nativeSingleton 64
+    Assert.Empty(Integrity.callableAggregates held)
+    let c = held.Emission.Callable
+    let carrier = c.Carriers[NodeId 30]
+    let lifetime =
+        match mutation with
+        | "empty" -> []
+        | "unrelated" -> [p ParticipantRole.CallableLifetime 0 100 90]
+        | "ordinal" -> carrier.Lifetime |> List.map (fun participant -> {participant with Ordinal = 2 - participant.Ordinal})
+        | "group" -> carrier.Lifetime |> List.map (fun participant -> {participant with Group = NodeId 1})
+        | _ -> failwith "Unknown lifetime control."
+    publish {c with Carriers = c.Carriers.Add(NodeId 30, {carrier with Lifetime = lifetime})} held
+    |> renew |> failure "I3"
+
+[<Theory>]
+[<InlineData("parent")>]
+[<InlineData("membership")>]
+[<InlineData("duplicate-member")>]
+[<InlineData("binding-child")>]
+[<InlineData("capture")>]
+let ``I3 native residence checks current declaration incidence not just node presence`` mutation =
+    let held = nativeSingleton 64
+    Assert.Empty(Integrity.callableAggregates held)
+    held |> changeContract (fun contract ->
+        let node, change : NodeId * (BoundaryDeclarationFact -> BoundaryDeclarationFact) =
+            match mutation with
+            | "parent" -> NodeId 401, fun shape -> {shape with Parent = Some(NodeId 90)}
+            | "membership" -> NodeId 400, fun shape -> {shape with References = []}
+            | "duplicate-member" -> NodeId 400, fun shape -> {shape with References = [NodeId 401; NodeId 401]}
+            | "binding-child" -> NodeId 401, fun shape -> {shape with Children = [NodeId 11]}
+            | "capture" -> NodeId 10, fun shape -> {shape with Text = ["RegularClosure"; "argument"; "captured"]; Numbers = [1I; 1I; 1I; 0I; 0I]}
+            | _ -> failwith "Unknown residence control."
+        let premise = contract.SourcePremises[node]
+        {contract with SourcePremises = contract.SourcePremises.Add(node, {premise with Shape = change premise.Shape})})
+    |> renew |> failure "I3"
+
+[<Fact>]
+let ``I3 native module membership distinguishes lexical members from attached children`` () =
+    let held = nativeSingleton 64
+    Assert.Empty(Integrity.callableAggregates held)
+    let withModuleIncidence references =
+        held |> changeContract (fun contract ->
+            let scope = contract.SourcePremises[NodeId 400]
+            let shape = {scope.Shape with References = references; Children = [NodeId 401]}
+            {contract with SourcePremises = contract.SourcePremises.Add(NodeId 400, {scope with Shape = shape})})
+        |> renew
+    // Before Startup, both the kind's Reference/Member edge and the attached
+    // structural child occur. The member prefix authorizes the declaration.
+    let beforeStartup = withModuleIncidence [NodeId 401; NodeId 401]
+    Assert.Empty(Integrity.callableAggregates beforeStartup)
+    Assert.False(beforeStartup.Nodes.ContainsKey(NodeId 400))
+    Assert.False(beforeStartup.Nodes.ContainsKey(NodeId 401))
+    // A structural attachment alone is not lexical module membership.
+    withModuleIncidence [NodeId 401] |> failure "I3"
+
+[<Fact>]
+let ``I6 changed native residence preserves the result but withdraws the old dependency account`` () =
+    let held = nativeSingleton 64
+    Assert.Empty(Integrity.callableAggregates held)
+    let c = held.Emission.Callable
+    let oldAccount = c.AggregateDependencies[NodeId 1]
+    let moveParticipant (participant: Participant) =
+        if participant.Node = NodeId 400 then {participant with Node = NodeId 402} else participant
+    let changed =
+        held
+        |> changeNativeConvention (fun convention -> {convention with CodeLifetime = {convention.CodeLifetime with Module = NodeId 402}})
+        |> changeContract (fun contract ->
+            let binding = contract.SourcePremises[NodeId 401]
+            let premises =
+                contract.SourcePremises
+                |> Map.remove (NodeId 400)
+                |> Map.add (NodeId 402) contract.SourcePremises[NodeId 400]
+                |> Map.add (NodeId 401) {binding with Shape = {binding.Shape with Parent = Some(NodeId 402)}}
+            {contract with
+                Participants = contract.Participants |> List.map moveParticipant
+                SourcePremises = premises})
+    let callable =
+        {changed.Emission.Callable with
+            Carriers = c.Carriers |> Map.map (fun _ carrier -> {carrier with Lifetime = List.map moveParticipant carrier.Lifetime})}
+    let changed = publish callable changed
+    Assert.Equal(held.Nodes[NodeId 11], changed.Nodes[NodeId 11])
+    Assert.Equal(held.Emission.Numeric, changed.Emission.Numeric)
+    Assert.Equal(c.Carriers[NodeId 30].Implementation, changed.Emission.Callable.Carriers[NodeId 30].Implementation)
+    changed |> failure "I6"
+    let fresh = renew changed
+    Assert.Empty(Integrity.callableAggregates fresh)
+    Assert.NotEqual<CallableAggregateDependencyAccount>(oldAccount, fresh.Emission.Callable.AggregateDependencies[NodeId 1])
+    publish {fresh.Emission.Callable with AggregateDependencies = Map.ofList [NodeId 1, oldAccount]} fresh |> failure "I6"

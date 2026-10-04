@@ -27,8 +27,18 @@ module internal CallableAggregateIntegrity =
                           |> Option.exists (fun fact -> fact.Identity = participant.Node)
                       | ParticipantRole.CallableContract -> callable.Contracts.ContainsKey participant.Node
                       | ParticipantRole.CallableCarrier -> callable.Carriers.ContainsKey participant.Node
-                      | ParticipantRole.CallableLifetime
-                      | ParticipantRole.Source -> revision.CurrentClaims.ContainsKey participant.Node || revision.Nodes.ContainsKey participant.Node
+                      | ParticipantRole.CallableImplementation ->
+                          revision.Nodes.ContainsKey participant.Node || callable.Symbols.ContainsKey participant.Node
+                      | ParticipantRole.Source ->
+                          match callable.Contracts.TryFind participant.Group with
+                          | Some contract ->
+                              contract.SourcePremises.ContainsKey participant.Node || revision.CurrentClaims.ContainsKey participant.Node
+                          | None -> revision.CurrentClaims.ContainsKey participant.Node || revision.Nodes.ContainsKey participant.Node
+                      | ParticipantRole.CallableLifetime ->
+                          match callable.Contracts.TryFind participant.Group with
+                          | Some ({ Convention = CallableConvention.CompilerOwnedPortable _ } as contract) ->
+                              contract.SourcePremises.ContainsKey participant.Node
+                          | _ -> revision.CurrentClaims.ContainsKey participant.Node || revision.Nodes.ContainsKey participant.Node
                       | _ -> revision.Nodes.ContainsKey participant.Node
                   if not present then yield failure "I5" site "A participant lacks its exact published row or source occurrence."
                   if not (revision.Nodes.ContainsKey participant.Group || callable.AggregateSlots.ContainsKey participant.Group || callable.Contracts.ContainsKey participant.Group) then
@@ -36,6 +46,68 @@ module internal CallableAggregateIntegrity =
         let sourceType id =
             revision.Nodes.TryFind id |> Option.map _.Type
             |> Option.orElseWith (fun () -> revision.Emission.Numeric.SourceTypes.TryFind id)
+        let lifetimeParticipants identity (lifetime: ProgramImageCodeLifetime) =
+            [lifetime.Module; lifetime.Binding; lifetime.Implementation]
+            |> List.mapi (fun ordinal node ->
+                { Node = node; Role = ParticipantRole.CallableLifetime; Ordinal = ordinal; Group = identity })
+        let scalar = function
+            | ValueRepresentation.Scalar(SettledSlot.Integer(bits, _) | SettledSlot.Real bits) -> bits > 0
+            | ValueRepresentation.Scalar(SettledSlot.Bool | SettledSlot.Char) -> true
+            | _ -> false
+        let conventionChecks (contract: CallableContract) =
+            let site = contract.Identity
+            [ match contract.Kind, contract.Convention with
+              | CallableKind.OrdinaryFlatClosure, CallableConvention.Ordinary -> ()
+              | CallableKind.NativeEntry, CallableConvention.CompilerOwnedPortable convention ->
+                  let expected = contract.ParameterRepresentations |> List.map (fun (ordinal, representation) -> ordinal, CallableConversion.Identity representation)
+                  if convention.ParameterConversions <> expected ||
+                     convention.ResultConversion <> CallableConversion.Identity contract.ResultRepresentation ||
+                     not contract.OmittedParameters.IsEmpty || contract.EnvironmentBytes.IsSome ||
+                     (contract.ParameterRepresentations |> List.map fst) <> [0 .. contract.ParameterTypes.Length - 1] ||
+                     (contract.ParameterRepresentations |> List.exists (snd >> scalar >> not)) || not (scalar contract.ResultRepresentation) then
+                      yield failure "I4" site "The compiler-owned portable convention lacks exact scalar identity conversions or explicit environment absence."
+                  let dimension name declared =
+                      match convention.Target.Dimensions.TryFind name, declared with
+                      | Some expected, Ok actual when expected > 0 && expected = actual -> true
+                      | _ -> false
+                  if not (dimension "Pointer" revision.Platform.Pointer && dimension "Register" revision.Platform.Register) then
+                      yield failure "I4" site "The compiler-owned convention differs from the published target dimensions."
+                  let lifetime = convention.CodeLifetime
+                  let expectedLifetime = lifetimeParticipants site lifetime
+                  if (contract.Participants |> List.filter (fun p -> p.Role = ParticipantRole.CallableLifetime)) <> expectedLifetime then
+                      yield failure "I3" site "The program-image lifetime has no exact ordered declaration participants."
+                  match contract.SourcePremises.TryFind lifetime.Module,
+                        contract.SourcePremises.TryFind lifetime.Binding,
+                        contract.SourcePremises.TryFind lifetime.Implementation,
+                        callable.Declarations.TryFind lifetime.Implementation with
+                  | Some scope, Some binding, Some implementation, Some declaration ->
+                      let containsOnce id values = values |> List.filter ((=) id) |> List.length = 1
+                      // A module premise records lexical Member incidence,
+                      // followed by its attached Children. Startup may clear
+                      // executable children while retaining lexical members.
+                      // Decode that stored sequence; a child alone is not
+                      // evidence of program-image declaration membership.
+                      let memberCount = scope.Shape.References.Length - scope.Shape.Children.Length
+                      let hasMember =
+                          memberCount >= 0 &&
+                          List.skip memberCount scope.Shape.References = scope.Shape.Children &&
+                          containsOnce lifetime.Binding (List.take memberCount scope.Shape.References)
+                      if scope.Shape.Form <> "module" ||
+                         not hasMember ||
+                         binding.Shape.Form <> "binding" || binding.Shape.Parent <> Some lifetime.Module ||
+                         binding.Shape.Children <> [lifetime.Implementation] ||
+                         (match binding.Shape.Numbers with [mutableFlag; recursive] -> mutableFlag <> 0I || (recursive <> 0I && recursive <> 1I) | _ -> true) ||
+                         binding.HasExtern || implementation.HasExtern ||
+                         implementation.Shape.Form <> "lambda" || not implementation.Reachable ||
+                         implementation.Shape.Numbers <> [bigint declaration.Parameters.Length; 0I; 0I] ||
+                         implementation.Shape.Text <> (string declaration.Context :: (declaration.Parameters |> List.map (fun (name, _, _) -> name))) ||
+                         declaration.Implementation <> lifetime.Implementation ||
+                         declaration.Context <> LambdaContext.RegularClosure || not declaration.Captures.IsEmpty ||
+                         (declaration.Parameters |> List.map (fun (_, ty, _) -> ty)) <> contract.ParameterTypes ||
+                         sourceType declaration.Result <> Some contract.ResultType then
+                          yield failure "I3" site "The compiler-owned entry lacks its exact immutable module-binding-lambda residence."
+                  | _ -> yield failure "I3" site "The compiler-owned code lifetime lacks its declaration premises."
+              | _ -> yield failure "I4" site "The callable kind and receiving convention disagree." ]
         let rec componentAt path representation =
             match path, representation with
             | [], ValueRepresentation.CallableComponent(slot, data) -> Some(slot, data)
@@ -133,6 +205,14 @@ module internal CallableAggregateIntegrity =
                           | Some layout when layout.Formal = environment.Formal && layout.Implementation = carrier.Implementation && layout.Bytes = bytes -> ()
                           | _ -> yield failure "I3" site "The carrier differs from its exact environment layout."
                       | _ -> yield failure "I3" site "The contract and carrier disagree on explicit environment absence."
+                      match carrier.Kind, contract.Convention with
+                      | CallableKind.NativeEntry, CallableConvention.CompilerOwnedPortable convention ->
+                          if convention.CodeLifetime.Implementation <> carrier.Implementation ||
+                             carrier.Lifetime <> lifetimeParticipants identity convention.CodeLifetime then
+                              yield failure "I3" site "The native carrier has no exact program-image lifetime support."
+                      | CallableKind.NativeEntry, _ ->
+                          yield failure "I4" site "A native carrier lacks a compiler-owned portable convention."
+                      | _ -> ()
               if (Option.isSome carrier.Environment || carrier.Kind = CallableKind.NativeEntry) && carrier.Lifetime.IsEmpty then
                   yield failure "I3" site "A retained environment or native entry has no lifetime participants."
               yield! vector site carrier.Lifetime ]
@@ -286,8 +366,9 @@ module internal CallableAggregateIntegrity =
                 (account.Carriers |> List.collect _.Lifetime) @
                 (account.Contracts |> List.collect _.Participants)
             let participantNodes = participants |> List.map _.Node |> List.distinct
+            let premiseNodes = account.Contracts |> List.collect (fun contract -> Map.keys contract.SourcePremises |> Seq.toList) |> Set.ofList
             let sources = participantNodes |> List.choose (fun id ->
-                revision.Nodes.TryFind id |> Option.map (fun node ->
+                (if premiseNodes.Contains id then None else revision.Nodes.TryFind id) |> Option.map (fun node ->
                     { Node = id; Kind = node.Kind; Type = node.Type; Children = node.Children; Anchors = node.ObligationAnchors }))
             let claims = participantNodes |> List.choose (fun id -> revision.CurrentClaims.TryFind id |> Option.map (fun claim -> id, claim))
             [ if account.Occurrence <> site || not valuesCurrent ||
@@ -323,6 +404,12 @@ module internal CallableAggregateIntegrity =
               if key <> contract.Identity then yield failure "I4" key "A callable contract is filed under another identity."
               yield! vector key contract.Participants
               yield! exact key ParticipantRole.CallableContract 0 key key contract.Participants
+              yield! conventionChecks contract
+              for KeyValue(source, premise) in contract.SourcePremises do
+                  let owners = contract.Participants |> List.filter (fun participant ->
+                      participant.Role = ParticipantRole.Source && participant.Group = key && participant.Node = source)
+                  if owners.Length <> 1 || System.String.IsNullOrWhiteSpace premise.Shape.Form then
+                      yield failure "I5" key "A source premise lacks its exact contract-owned participant or immutable source form."
           for KeyValue(key, carrier) in callable.Carriers do
               yield! vector key carrier.Lifetime
               match carrier.Contract with

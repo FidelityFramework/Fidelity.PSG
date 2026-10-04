@@ -1368,6 +1368,116 @@ let ``startup module and executable action roles remain distinct`` role =
     let part = if role = "module" then "Emission.Storage.Startup.Initializers.Module" else "Emission.Storage.Startup.Initializers.Action"
     Assert.Contains(Integrity.check revision, fun violation -> violation.Part = part && violation.Node = Some(NodeId 9000))
 
+// A source-authored instance copies a carrier whose code/signature are already
+// held by their typed tables. The receiving contract is a row identity, not a
+// live executable body. This fixture independently states the startup account.
+let private programInstanceFacts =
+    let carrier : CallableCarrier =
+        { Occurrence = NodeId 2; Kind = CallableKind.OrdinaryFlatClosure; Formation = NodeId 2
+          EnvironmentValue = None; Contract = Ok(NodeId 7000); Lifetime = []
+          SourceType = TypeIdentity.Function(boolType, boolType); Implementation = NodeId 70
+          Parameters = ["argument", boolType, NodeId 100]; ParameterShapes = [CallableValueShape.Data(NodeId 100)]
+          OmittedParameters = Set.empty; Result = NodeId 101; ResultShape = CallableValueShape.Data(NodeId 101)
+          Environment = None }
+    let physical = ValueRepresentation.Scalar SettledSlot.Bool
+    let contract : CallableContract =
+        { Identity = NodeId 7000; Kind = CallableKind.OrdinaryFlatClosure; Convention = CallableConvention.Ordinary
+          ParameterTypes = [boolType]; OmittedParameters = []; ParameterRepresentations = [0, physical]
+          ResultType = boolType; ResultRepresentation = physical; EnvironmentBytes = None; SourcePremises = Map.empty
+          Participants = [{Node = NodeId 7000; Role = ParticipantRole.CallableContract; Ordinal = 0; Group = NodeId 7000}] }
+    let instance : CallableProgramInstance =
+        {Carrier = carrier; Allocation = None; Participants = Set.singleton(NodeId 2)}
+    let callable =
+        {scopedFacts.Emission.Callable with
+            Carriers = Map.ofList [NodeId 2, carrier]; Contracts = Map.ofList [NodeId 7000, contract]
+            SignatureData = scopedFacts.Emission.Callable.SignatureData.Add(NodeId 2, Set.ofList [NodeId 100; NodeId 101])
+            ProgramInstances = Map.ofList [NodeId 2, instance]}
+    let claim =
+        {scopedFacts.CurrentClaims[NodeId 404] with
+            Kind = "program-initialization-order"; Body = ObligationBody.ProgramInitializationOrder(0, 1, [])}
+    let order : ProgramInitializationOrderAccount =
+        {Binding = NodeId 2; Claim = NodeId 404
+         Participants =
+             [ParticipantRole.InitializationBinding; ParticipantRole.InitializationEntry
+              ParticipantRole.InitializationSpine; ParticipantRole.InitializationValue]
+             |> List.map (fun role -> {Node = NodeId 2; Role = role; Ordinal = 0; Group = NodeId 2})}
+    let storage =
+        {scopedFacts.Emission.Storage with
+            Startup = startupContextFacts.Emission.Storage.Startup
+            ProgramInitializationOrders = Map.ofList [NodeId 2, order]}
+    {scopedFacts with
+        CurrentClaims = Map.ofList [NodeId 404, claim]; Obligations = [claim]
+        ObligationSources = Map.ofList [NodeId 404, [[NodeId 2; NodeId 2; NodeId 2; NodeId 2]]]
+        Emission = {scopedFacts.Emission with Callable = callable; Storage = storage}
+        Codata = {scopedFacts.Codata with CallableCarriers = callable.Carriers; CallableContracts = callable.Contracts}}
+
+let private changeInstanceCallable change revision =
+    let callable = change revision.Emission.Callable
+    {revision with Emission = {revision.Emission with Callable = callable}
+                   Codata = {revision.Codata with CallableCarriers = callable.Carriers; CallableContracts = callable.Contracts}}
+
+[<Fact>]
+let ``an embedded program carrier retains typed contract and signature identities without their bodies`` () =
+    let held = programInstanceFacts
+    for id in [NodeId 70; NodeId 100; NodeId 101; NodeId 7000] do
+        Assert.False(held.Nodes.ContainsKey id)
+    Assert.True(held.Emission.Callable.Contracts.ContainsKey(NodeId 7000))
+    Assert.Equal(held.Emission.Callable.Carriers[NodeId 2], held.Emission.Callable.ProgramInstances[NodeId 2].Carrier)
+    Assert.Contains(Integrity.named held, fun (part, ids) ->
+        part = "Emission.Callable.ProgramInstances.Carrier" && List.contains (NodeId 7000) ids)
+    Assert.Empty(Integrity.check held)
+
+[<Theory>]
+[<InlineData("stale contract")>]
+[<InlineData("changed formation")>]
+[<InlineData("missing canonical")>]
+let ``an embedded program carrier must be the exact current canonical row`` mutation =
+    let held = programInstanceFacts
+    let changed = held |> changeInstanceCallable (fun callable ->
+        let instance = callable.ProgramInstances[NodeId 2]
+        match mutation with
+        | "missing canonical" -> {callable with Carriers = Map.empty}
+        | "stale contract" ->
+            let alternate =
+                {callable.Contracts[NodeId 7000] with
+                    Identity = NodeId 7001
+                    Participants = [{Node = NodeId 7001; Role = ParticipantRole.CallableContract; Ordinal = 0; Group = NodeId 7001}]}
+            {callable with Contracts = callable.Contracts.Add(NodeId 7001, alternate)
+                           ProgramInstances = callable.ProgramInstances.Add(NodeId 2, {instance with Carrier = {instance.Carrier with Contract = Ok(NodeId 7001)}})}
+        | _ ->
+            {callable with ProgramInstances = callable.ProgramInstances.Add(NodeId 2, {instance with Carrier = {instance.Carrier with Formation = NodeId 70}})})
+    let violation = within "Emission.Callable.ProgramInstances.Carrier" (Integrity.check changed)
+    Assert.Equal(Some(NodeId 2), violation.Node)
+    Assert.Contains("exact callable carrier", violation.Reason)
+
+[<Theory>]
+[<InlineData(false)>]
+[<InlineData(true)>]
+let ``an embedded program carrier requires a contract row even when that identity has an executable body`` bodyPresent =
+    let held = programInstanceFacts
+    let identity = if bodyPresent then NodeId 2 else NodeId 7000
+    Assert.Equal(bodyPresent, held.Nodes.ContainsKey identity)
+    let changed = held |> changeInstanceCallable (fun callable ->
+        let carrier = {callable.Carriers[NodeId 2] with Contract = Ok identity}
+        let instance = {callable.ProgramInstances[NodeId 2] with Carrier = carrier}
+        {callable with Contracts = Map.empty; Carriers = Map.ofList [NodeId 2, carrier]
+                       ProgramInstances = Map.ofList [NodeId 2, instance]})
+    let violation = within "Emission.Callable.ProgramInstances.Carrier.Contract" (Integrity.check changed)
+    Assert.Equal(Some identity, violation.Node)
+    Assert.Contains("Emission.Callable.Contracts", violation.Reason)
+
+[<Fact>]
+let ``matching pending canonical and embedded carriers do not authorize a program instance`` () =
+    let changed = programInstanceFacts |> changeInstanceCallable (fun callable ->
+        let carrier = {callable.Carriers[NodeId 2] with Contract = Error "The receiving convention is not settled."}
+        let instance = {callable.ProgramInstances[NodeId 2] with Carrier = carrier}
+        {callable with Contracts = Map.empty; Carriers = Map.ofList [NodeId 2, carrier]
+                       ProgramInstances = Map.ofList [NodeId 2, instance]})
+    Assert.Equal(changed.Emission.Callable.Carriers[NodeId 2], changed.Emission.Callable.ProgramInstances[NodeId 2].Carrier)
+    let violation = within "Emission.Callable.ProgramInstances.Carrier.Contract" (Integrity.check changed)
+    Assert.Equal(Some(NodeId 2), violation.Node)
+    Assert.Contains("no settled receiving contract", violation.Reason)
+
 let private intrinsicContextFacts =
     let imported : IntrinsicWriteImport =
         {Identity = NodeId 2; Scope = NodeId 50; Symbol = "write"; Fd = BoundaryScalar.Integer(32, true)
