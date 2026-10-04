@@ -618,7 +618,9 @@ let private branchAuthorityRevision : Revision =
         { Scope = CallableBranchScope.WholeRevision; Observations = Map.ofList [one, observation]
           CarrierUses = Set.singleton one; FlowUses = Set.singleton two; CallUses = Set.singleton one }
     let carrier : CallableCarrier =
-        { Occurrence = one; SourceType = boolType; Implementation = two; Parameters = []
+        { Occurrence = one; Kind = CallableKind.OrdinaryFlatClosure; Formation = one; EnvironmentValue = None
+          Contract = Error "This branch-authority fixture publishes no aggregate convention."; Lifetime = []
+          SourceType = boolType; Implementation = two; Parameters = []
           ParameterShapes = []; OmittedParameters = Set.empty; Result = two
           ResultShape = CallableValueShape.Data two; Environment = None }
     let flow : CallableFlow =
@@ -810,7 +812,9 @@ let ``a current claim cannot replace a signature representation row`` () =
     // Identity 404 has a current claim and grouped source account, but no
     // representation. Naming it in a signature does not turn a claim into data.
     let carrier : CallableCarrier =
-        { Occurrence = NodeId 2; SourceType = boolType; Implementation = NodeId 70
+        { Occurrence = NodeId 2; Kind = CallableKind.OrdinaryFlatClosure; Formation = NodeId 2; EnvironmentValue = None
+          Contract = Error "This signature-row fixture publishes no aggregate convention."; Lifetime = []
+          SourceType = boolType; Implementation = NodeId 70
           Parameters = ["argument", boolType, NodeId 100]; ParameterShapes = [CallableValueShape.Data(NodeId 404)]
           OmittedParameters = Set.empty; Result = NodeId 101; ResultShape = CallableValueShape.Data(NodeId 101); Environment = None }
     let callable =

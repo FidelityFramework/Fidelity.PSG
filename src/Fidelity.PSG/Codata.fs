@@ -134,6 +134,28 @@ type KnownCallable = { Implementation: NodeId; EnvironmentOwner: NodeId }
 /// in EnvironmentLayouts; this relation identifies its actual leading formal.
 type CallableEnvironment = { Owner: NodeId; Formal: NodeId }
 
+/// Ordinary closure storage and native code lifetime are different contracts,
+/// including when neither callable carries an ordinary environment.
+[<RequireQualifiedAccess>]
+type CallableKind = OrdinaryFlatClosure | NativeEntry
+
+/// A receiving convention settled by the source owner. Identity is independent
+/// of source arrow equality and of any particular implementation symbol.
+type CallableContract = {
+    Identity: NodeId
+    Kind: CallableKind
+    ParameterTypes: TypeIdentity list
+    /// Logical parameter positions omitted by this exact physical convention.
+    OmittedParameters: int list
+    /// Exactly the non-omitted logical ordinals, with settled physical forms.
+    ParameterRepresentations: (int * ValueRepresentation) list
+    ResultType: TypeIdentity
+    ResultRepresentation: ValueRepresentation
+    /// The extent of the admitted flat environment view, not descriptor bytes.
+    EnvironmentBytes: int option
+    Participants: Participant list
+}
+
 /// A physical boundary retains each value participant. Callable components
 /// refer to that occurrence's settled carrier, so code/environment expansion
 /// cannot be guessed from the source type or a different formation's layout.
@@ -146,6 +168,13 @@ type CallableValueShape = Data of NodeId | Callable of NodeId | Sequence of Node
 /// None denotes code alone, never an invented empty environment.
 type CallableCarrier = {
     Occurrence: NodeId
+    Kind: CallableKind
+    Formation: NodeId
+    /// Exact actual environment occurrence. Absence is explicit for closed code.
+    EnvironmentValue: NodeId option
+    /// Pending native entry settlement remains explicit; it cannot be selected.
+    Contract: Result<NodeId, string>
+    Lifetime: Participant list
     SourceType: TypeIdentity
     Implementation: NodeId
     Parameters: (string * TypeIdentity * NodeId) list
@@ -187,6 +216,137 @@ type CallableFlow = {
     Alternatives: NodeId list
     Dependencies: Map<NodeId, NodeId list>
     Calls: CallableFlowCall list
+}
+
+/// Resolved declaration identity and ordinal at each nested aggregate step.
+[<RequireQualifiedAccess>]
+type CallableAggregatePathStep =
+    | RecordField of ordinal: int
+    | UnionPayload of caseOrdinal: int * payloadOrdinal: int
+
+/// Exact nominal declaration metadata supporting a callable component. Only
+/// record/union definitions are admitted. This contains no declaration member
+/// identities, executable body, compiler cells or retained graph metadata.
+[<RequireQualifiedAccess>]
+type CallableAggregateDeclarationDefinition =
+    | RecordDef of fields: (string * TypeIdentity) list
+    | UnionDef of cases: (string * (string option * TypeIdentity) list) list
+
+type CallableAggregateDeclarationFact = {
+    Identity: NodeId
+    DeclaredType: TypeIdentity
+    Definition: CallableAggregateDeclarationDefinition
+}
+
+type CallableAggregateSlot = {
+    Identity: NodeId
+    AggregateType: TypeIdentity
+    /// Builtin nominal types may have no source declaration occurrence. Their
+    /// exact instantiated AggregateType remains mandatory source identity.
+    Declaration: NodeId option
+    /// Ordered like this slot's AggregateDeclaration participants. The source
+    /// re-observes these facts; their identities authorize only that role.
+    DeclarationFacts: CallableAggregateDeclarationFact list
+    Path: CallableAggregatePathStep list
+    SourceType: TypeIdentity
+    /// An all-absent union slot carries no callable from which a convention
+    /// could be admitted. Pending is valid only while every payload is absent.
+    Contract: Result<NodeId, string>
+    Participants: Participant list
+}
+
+/// Physical placement is published, never chosen by a witness from family size.
+/// The logical domain is independent of the physical integer carrier's capacity.
+type CallableAggregateSelector = {
+    Lower: int
+    UpperExclusive: int
+    Storage: NodeId option
+    Slot: SettledSlot option
+    ByteOffset: int option
+}
+
+[<RequireQualifiedAccess>]
+type CallableAggregateEnvironmentSource = EnvironmentValue | CallableEnvironmentView
+
+type CallableAggregateEnvironmentPlacement = {
+    Source: CallableAggregateEnvironmentSource
+    Value: NodeId
+    Owner: NodeId
+    ViewBytes: int
+    ByteOffset: int
+    StorageBytes: int
+    Alignment: int
+    Adaptation: NodeId option
+}
+
+type CallableAggregateAlternative = {
+    Ordinal: int
+    Carrier: NodeId
+    Formation: NodeId
+    EnvironmentValue: NodeId option
+    Contract: NodeId
+    Adapter: NodeId option
+    EnvironmentPlacement: CallableAggregateEnvironmentPlacement option
+}
+
+/// The exact constructor and selected tag/payload occurrences. A payloadless
+/// case has no callable alternative and no selector; it is not a null callable.
+type CallableAggregateTag = {
+    Constructor: NodeId
+    TagRead: NodeId option
+    CaseOrdinal: int
+    PayloadOrdinal: int option
+    Payload: NodeId option
+    Participants: Participant list
+}
+
+[<RequireQualifiedAccess>]
+type CallableAggregateOperation = Construct | Project | Assign | Snapshot
+
+type CallableAggregateValue = {
+    Occurrence: NodeId
+    Aggregate: NodeId
+    Slot: NodeId
+    Alternatives: CallableAggregateAlternative list
+    Selector: CallableAggregateSelector option
+    FormationInputs: NodeId list
+    /// The actual value written by construction/assignment, never a guessed
+    /// representative of the alternative family.
+    Value: NodeId option
+    SelectedAlternative: int option
+    Operation: CallableAggregateOperation
+    Frontier: NodeId option
+    Tag: CallableAggregateTag option
+    Bytes: int
+    Alignment: int
+    /// Ordered exact source incidence; repeated nodes retain their own roles.
+    Participants: Participant list
+}
+
+/// A copied participant's exact stored source shape, used only for structural
+/// currency checks. This is not an independently retained analysis graph.
+type CallableAggregateSourceIncidence = {
+    Node: NodeId
+    Kind: SemanticKind
+    Type: TypeIdentity
+    Children: NodeId list
+    Anchors: string list
+}
+
+/// Exact immutable inputs to one selection. These are copied source rows, not
+/// a retained graph or a hash of deduplicated node identities. Structural
+/// validation compares every field against the current published tables.
+type CallableAggregateDependencyAccount = {
+    Occurrence: NodeId
+    Slots: CallableAggregateSlot list
+    Values: CallableAggregateValue list
+    Carriers: CallableCarrier list
+    Contracts: CallableContract list
+    Flows: CallableFlow list
+    Joins: CallableJoin list
+    Participants: Participant list
+    Sources: CallableAggregateSourceIncidence list
+    Claims: (NodeId * ObligationInfo) list
 }
 
 /// A write updates the finite alternative discriminator and the actual
@@ -474,10 +634,14 @@ module CallableBranchAuthority =
 /// contract, and the immutable leaf emission model additionally freezes types.
 type CallableEmissionProjection = {
     Branches: CallableBranchAuthority
+    Contracts: Map<NodeId, CallableContract>
     Carriers: Map<NodeId, CallableCarrier>
     Joins: Map<NodeId, CallableJoin>
     Flows: Map<NodeId, CallableFlow>
     MutableStorage: Map<NodeId, MutableCallableStorage>
+    AggregateSlots: Map<NodeId, CallableAggregateSlot>
+    AggregateValues: Map<NodeId, CallableAggregateValue list>
+    AggregateDependencies: Map<NodeId, CallableAggregateDependencyAccount>
     ValueShapes: Map<NodeId, CallableValueShape>
     SignatureData: Map<NodeId, Set<NodeId>>
     Calls: Map<NodeId, CallableEmissionCall>

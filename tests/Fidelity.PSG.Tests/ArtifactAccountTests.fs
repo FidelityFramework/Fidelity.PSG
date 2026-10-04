@@ -312,7 +312,9 @@ let private admittedResidence =
          LayoutClaims = []; DeclarationInputs = [NodeId 901; NodeId 901]}
     let parameters = original.Emission.Callable.Calls[NodeId 4].Parameters
     let carrier binding : CallableCarrier =
-        {Occurrence = NodeId binding; SourceType = unitType; Implementation = NodeId 5; Parameters = parameters
+        {Occurrence = NodeId binding; Kind = CallableKind.OrdinaryFlatClosure; Formation = NodeId binding; EnvironmentValue = Some(NodeId binding)
+         Contract = Error "This residence fixture publishes no aggregate convention."; Lifetime = []
+         SourceType = unitType; Implementation = NodeId 5; Parameters = parameters
          ParameterShapes = [CallableValueShape.Data(NodeId 6); CallableValueShape.Data(NodeId 7)]; OmittedParameters = Set.empty
          Result = NodeId 8; ResultShape = CallableValueShape.Data(NodeId 8); Environment = Some {Owner = NodeId 1; Formal = NodeId 6}}
     let instance binding : CallableProgramInstance =

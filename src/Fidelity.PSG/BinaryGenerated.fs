@@ -5,11 +5,11 @@ module internal BinaryGenerated =
     [<Literal>]
     let Format = 2u
     [<Literal>]
-    let Schema = 16
+    let Schema = 17
     [<Literal>]
-    let Fingerprint = "7D92113F623A60402739AE33757DD07F6CB54191BBE9B4A6231A1DF3D7FF1638"
+    let Fingerprint = "E7DD6A92B7F79FF75CD39D384C16CCEB3E2B931878F94441649581DA797ADA3C"
     [<Literal>]
-    let NamedTypes = 251
+    let NamedTypes = 266
     [<Literal>]
     let RevisionFields = 17
     [<Literal>]
@@ -473,6 +473,186 @@ module internal BinaryGenerated =
               }
     }
 
+    and write_Fidelity_PSG_CallableAggregateAlternative (state: WriteState) (value: global.Fidelity.PSG.CallableAggregateAlternative) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = writeI32 state value.``Ordinal``
+        let! state = write_Fidelity_PSG_NodeId state value.``Carrier``
+        let! state = write_Fidelity_PSG_NodeId state value.``Formation``
+        let! state = (writeOption write_Fidelity_PSG_NodeId) state value.``EnvironmentValue``
+        let! state = write_Fidelity_PSG_NodeId state value.``Contract``
+        let! state = (writeOption write_Fidelity_PSG_NodeId) state value.``Adapter``
+        let! state = (writeOption write_Fidelity_PSG_CallableAggregateEnvironmentPlacement) state value.``EnvironmentPlacement``
+        return leaveWrite state
+    }
+
+    and write_Fidelity_PSG_CallableAggregateDeclarationDefinition (state: WriteState) (value: global.Fidelity.PSG.CallableAggregateDeclarationDefinition) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        return!
+            match value with
+            | global.Fidelity.PSG.CallableAggregateDeclarationDefinition.``RecordDef``(a0) -> result {
+                let! state = writeTag state 0
+                let! state = (writeList (fun state (v1_0, v1_1) -> enterWrite state |> Result.bind (fun state -> writeString state v1_0 |> Result.bind (fun state -> write_Fidelity_PSG_TypeIdentity state v1_1 |> Result.bind (fun state -> Ok(leaveWrite state)))))) state a0
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.CallableAggregateDeclarationDefinition.``UnionDef``(a0) -> result {
+                let! state = writeTag state 1
+                let! state = (writeList (fun state (v1_0, v1_1) -> enterWrite state |> Result.bind (fun state -> writeString state v1_0 |> Result.bind (fun state -> (writeList (fun state (v3_0, v3_1) -> enterWrite state |> Result.bind (fun state -> (writeOption writeString) state v3_0 |> Result.bind (fun state -> write_Fidelity_PSG_TypeIdentity state v3_1 |> Result.bind (fun state -> Ok(leaveWrite state)))))) state v1_1 |> Result.bind (fun state -> Ok(leaveWrite state)))))) state a0
+                return leaveWrite state
+              }
+    }
+
+    and write_Fidelity_PSG_CallableAggregateDeclarationFact (state: WriteState) (value: global.Fidelity.PSG.CallableAggregateDeclarationFact) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = write_Fidelity_PSG_NodeId state value.``Identity``
+        let! state = write_Fidelity_PSG_TypeIdentity state value.``DeclaredType``
+        let! state = write_Fidelity_PSG_CallableAggregateDeclarationDefinition state value.``Definition``
+        return leaveWrite state
+    }
+
+    and write_Fidelity_PSG_CallableAggregateDependencyAccount (state: WriteState) (value: global.Fidelity.PSG.CallableAggregateDependencyAccount) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = write_Fidelity_PSG_NodeId state value.``Occurrence``
+        let! state = (writeList write_Fidelity_PSG_CallableAggregateSlot) state value.``Slots``
+        let! state = (writeList write_Fidelity_PSG_CallableAggregateValue) state value.``Values``
+        let! state = (writeList write_Fidelity_PSG_CallableCarrier) state value.``Carriers``
+        let! state = (writeList write_Fidelity_PSG_CallableContract) state value.``Contracts``
+        let! state = (writeList write_Fidelity_PSG_CallableFlow) state value.``Flows``
+        let! state = (writeList write_Fidelity_PSG_CallableJoin) state value.``Joins``
+        let! state = (writeList write_Fidelity_PSG_Participant) state value.``Participants``
+        let! state = (writeList write_Fidelity_PSG_CallableAggregateSourceIncidence) state value.``Sources``
+        let! state = (writeList (fun state (v1_0, v1_1) -> enterWrite state |> Result.bind (fun state -> write_Fidelity_PSG_NodeId state v1_0 |> Result.bind (fun state -> write_Fidelity_PSG_ObligationInfo state v1_1 |> Result.bind (fun state -> Ok(leaveWrite state)))))) state value.``Claims``
+        return leaveWrite state
+    }
+
+    and write_Fidelity_PSG_CallableAggregateEnvironmentPlacement (state: WriteState) (value: global.Fidelity.PSG.CallableAggregateEnvironmentPlacement) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = write_Fidelity_PSG_CallableAggregateEnvironmentSource state value.``Source``
+        let! state = write_Fidelity_PSG_NodeId state value.``Value``
+        let! state = write_Fidelity_PSG_NodeId state value.``Owner``
+        let! state = writeI32 state value.``ViewBytes``
+        let! state = writeI32 state value.``ByteOffset``
+        let! state = writeI32 state value.``StorageBytes``
+        let! state = writeI32 state value.``Alignment``
+        let! state = (writeOption write_Fidelity_PSG_NodeId) state value.``Adaptation``
+        return leaveWrite state
+    }
+
+    and write_Fidelity_PSG_CallableAggregateEnvironmentSource (state: WriteState) (value: global.Fidelity.PSG.CallableAggregateEnvironmentSource) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        return!
+            match value with
+            | global.Fidelity.PSG.CallableAggregateEnvironmentSource.``EnvironmentValue`` -> result {
+                let! state = writeTag state 0
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.CallableAggregateEnvironmentSource.``CallableEnvironmentView`` -> result {
+                let! state = writeTag state 1
+                return leaveWrite state
+              }
+    }
+
+    and write_Fidelity_PSG_CallableAggregateOperation (state: WriteState) (value: global.Fidelity.PSG.CallableAggregateOperation) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        return!
+            match value with
+            | global.Fidelity.PSG.CallableAggregateOperation.``Construct`` -> result {
+                let! state = writeTag state 0
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.CallableAggregateOperation.``Project`` -> result {
+                let! state = writeTag state 1
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.CallableAggregateOperation.``Assign`` -> result {
+                let! state = writeTag state 2
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.CallableAggregateOperation.``Snapshot`` -> result {
+                let! state = writeTag state 3
+                return leaveWrite state
+              }
+    }
+
+    and write_Fidelity_PSG_CallableAggregatePathStep (state: WriteState) (value: global.Fidelity.PSG.CallableAggregatePathStep) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        return!
+            match value with
+            | global.Fidelity.PSG.CallableAggregatePathStep.``RecordField``(a0) -> result {
+                let! state = writeTag state 0
+                let! state = writeI32 state a0
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.CallableAggregatePathStep.``UnionPayload``(a0, a1) -> result {
+                let! state = writeTag state 1
+                let! state = writeI32 state a0
+                let! state = writeI32 state a1
+                return leaveWrite state
+              }
+    }
+
+    and write_Fidelity_PSG_CallableAggregateSelector (state: WriteState) (value: global.Fidelity.PSG.CallableAggregateSelector) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = writeI32 state value.``Lower``
+        let! state = writeI32 state value.``UpperExclusive``
+        let! state = (writeOption write_Fidelity_PSG_NodeId) state value.``Storage``
+        let! state = (writeOption write_Fidelity_PSG_SettledSlot) state value.``Slot``
+        let! state = (writeOption writeI32) state value.``ByteOffset``
+        return leaveWrite state
+    }
+
+    and write_Fidelity_PSG_CallableAggregateSlot (state: WriteState) (value: global.Fidelity.PSG.CallableAggregateSlot) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = write_Fidelity_PSG_NodeId state value.``Identity``
+        let! state = write_Fidelity_PSG_TypeIdentity state value.``AggregateType``
+        let! state = (writeOption write_Fidelity_PSG_NodeId) state value.``Declaration``
+        let! state = (writeList write_Fidelity_PSG_CallableAggregateDeclarationFact) state value.``DeclarationFacts``
+        let! state = (writeList write_Fidelity_PSG_CallableAggregatePathStep) state value.``Path``
+        let! state = write_Fidelity_PSG_TypeIdentity state value.``SourceType``
+        let! state = (writeResult write_Fidelity_PSG_NodeId writeString) state value.``Contract``
+        let! state = (writeList write_Fidelity_PSG_Participant) state value.``Participants``
+        return leaveWrite state
+    }
+
+    and write_Fidelity_PSG_CallableAggregateSourceIncidence (state: WriteState) (value: global.Fidelity.PSG.CallableAggregateSourceIncidence) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = write_Fidelity_PSG_NodeId state value.``Node``
+        let! state = write_Fidelity_PSG_SemanticKind state value.``Kind``
+        let! state = write_Fidelity_PSG_TypeIdentity state value.``Type``
+        let! state = (writeList write_Fidelity_PSG_NodeId) state value.``Children``
+        let! state = (writeList writeString) state value.``Anchors``
+        return leaveWrite state
+    }
+
+    and write_Fidelity_PSG_CallableAggregateTag (state: WriteState) (value: global.Fidelity.PSG.CallableAggregateTag) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = write_Fidelity_PSG_NodeId state value.``Constructor``
+        let! state = (writeOption write_Fidelity_PSG_NodeId) state value.``TagRead``
+        let! state = writeI32 state value.``CaseOrdinal``
+        let! state = (writeOption writeI32) state value.``PayloadOrdinal``
+        let! state = (writeOption write_Fidelity_PSG_NodeId) state value.``Payload``
+        let! state = (writeList write_Fidelity_PSG_Participant) state value.``Participants``
+        return leaveWrite state
+    }
+
+    and write_Fidelity_PSG_CallableAggregateValue (state: WriteState) (value: global.Fidelity.PSG.CallableAggregateValue) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = write_Fidelity_PSG_NodeId state value.``Occurrence``
+        let! state = write_Fidelity_PSG_NodeId state value.``Aggregate``
+        let! state = write_Fidelity_PSG_NodeId state value.``Slot``
+        let! state = (writeList write_Fidelity_PSG_CallableAggregateAlternative) state value.``Alternatives``
+        let! state = (writeOption write_Fidelity_PSG_CallableAggregateSelector) state value.``Selector``
+        let! state = (writeList write_Fidelity_PSG_NodeId) state value.``FormationInputs``
+        let! state = (writeOption write_Fidelity_PSG_NodeId) state value.``Value``
+        let! state = (writeOption writeI32) state value.``SelectedAlternative``
+        let! state = write_Fidelity_PSG_CallableAggregateOperation state value.``Operation``
+        let! state = (writeOption write_Fidelity_PSG_NodeId) state value.``Frontier``
+        let! state = (writeOption write_Fidelity_PSG_CallableAggregateTag) state value.``Tag``
+        let! state = writeI32 state value.``Bytes``
+        let! state = writeI32 state value.``Alignment``
+        let! state = (writeList write_Fidelity_PSG_Participant) state value.``Participants``
+        return leaveWrite state
+    }
+
     and write_Fidelity_PSG_CallableBranchAlternative (state: WriteState) (value: global.Fidelity.PSG.CallableBranchAlternative) : Result<WriteState, BinaryError> = result {
         let! state = enterWrite state
         let! state = write_Fidelity_PSG_NodeId state value.``Constructor``
@@ -537,6 +717,11 @@ module internal BinaryGenerated =
     and write_Fidelity_PSG_CallableCarrier (state: WriteState) (value: global.Fidelity.PSG.CallableCarrier) : Result<WriteState, BinaryError> = result {
         let! state = enterWrite state
         let! state = write_Fidelity_PSG_NodeId state value.``Occurrence``
+        let! state = write_Fidelity_PSG_CallableKind state value.``Kind``
+        let! state = write_Fidelity_PSG_NodeId state value.``Formation``
+        let! state = (writeOption write_Fidelity_PSG_NodeId) state value.``EnvironmentValue``
+        let! state = (writeResult write_Fidelity_PSG_NodeId writeString) state value.``Contract``
+        let! state = (writeList write_Fidelity_PSG_Participant) state value.``Lifetime``
         let! state = write_Fidelity_PSG_TypeIdentity state value.``SourceType``
         let! state = write_Fidelity_PSG_NodeId state value.``Implementation``
         let! state = (writeList (fun state (v1_0, v1_1, v1_2) -> enterWrite state |> Result.bind (fun state -> writeString state v1_0 |> Result.bind (fun state -> write_Fidelity_PSG_TypeIdentity state v1_1 |> Result.bind (fun state -> write_Fidelity_PSG_NodeId state v1_2 |> Result.bind (fun state -> Ok(leaveWrite state))))))) state value.``Parameters``
@@ -545,6 +730,20 @@ module internal BinaryGenerated =
         let! state = write_Fidelity_PSG_NodeId state value.``Result``
         let! state = write_Fidelity_PSG_CallableValueShape state value.``ResultShape``
         let! state = (writeOption write_Fidelity_PSG_CallableEnvironment) state value.``Environment``
+        return leaveWrite state
+    }
+
+    and write_Fidelity_PSG_CallableContract (state: WriteState) (value: global.Fidelity.PSG.CallableContract) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = write_Fidelity_PSG_NodeId state value.``Identity``
+        let! state = write_Fidelity_PSG_CallableKind state value.``Kind``
+        let! state = (writeList write_Fidelity_PSG_TypeIdentity) state value.``ParameterTypes``
+        let! state = (writeList writeI32) state value.``OmittedParameters``
+        let! state = (writeList (fun state (v1_0, v1_1) -> enterWrite state |> Result.bind (fun state -> writeI32 state v1_0 |> Result.bind (fun state -> write_Fidelity_PSG_ValueRepresentation state v1_1 |> Result.bind (fun state -> Ok(leaveWrite state)))))) state value.``ParameterRepresentations``
+        let! state = write_Fidelity_PSG_TypeIdentity state value.``ResultType``
+        let! state = write_Fidelity_PSG_ValueRepresentation state value.``ResultRepresentation``
+        let! state = (writeOption writeI32) state value.``EnvironmentBytes``
+        let! state = (writeList write_Fidelity_PSG_Participant) state value.``Participants``
         return leaveWrite state
     }
 
@@ -577,10 +776,14 @@ module internal BinaryGenerated =
     and write_Fidelity_PSG_CallableEmissionProjection (state: WriteState) (value: global.Fidelity.PSG.CallableEmissionProjection) : Result<WriteState, BinaryError> = result {
         let! state = enterWrite state
         let! state = write_Fidelity_PSG_CallableBranchAuthority state value.``Branches``
+        let! state = (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_CallableContract) state value.``Contracts``
         let! state = (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_CallableCarrier) state value.``Carriers``
         let! state = (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_CallableJoin) state value.``Joins``
         let! state = (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_CallableFlow) state value.``Flows``
         let! state = (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_MutableCallableStorage) state value.``MutableStorage``
+        let! state = (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_CallableAggregateSlot) state value.``AggregateSlots``
+        let! state = (writeMap write_Fidelity_PSG_NodeId (writeList write_Fidelity_PSG_CallableAggregateValue)) state value.``AggregateValues``
+        let! state = (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_CallableAggregateDependencyAccount) state value.``AggregateDependencies``
         let! state = (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_CallableValueShape) state value.``ValueShapes``
         let! state = (writeMap write_Fidelity_PSG_NodeId (writeSet write_Fidelity_PSG_NodeId)) state value.``SignatureData``
         let! state = (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_CallableEmissionCall) state value.``Calls``
@@ -642,6 +845,20 @@ module internal BinaryGenerated =
         let! state = write_Fidelity_PSG_NodeId state value.``Read``
         let! state = (writeList write_Fidelity_PSG_NodeId) state value.``Alternatives``
         return leaveWrite state
+    }
+
+    and write_Fidelity_PSG_CallableKind (state: WriteState) (value: global.Fidelity.PSG.CallableKind) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        return!
+            match value with
+            | global.Fidelity.PSG.CallableKind.``OrdinaryFlatClosure`` -> result {
+                let! state = writeTag state 0
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.CallableKind.``NativeEntry`` -> result {
+                let! state = writeTag state 1
+                return leaveWrite state
+              }
     }
 
     and write_Fidelity_PSG_CallableProgramInstance (state: WriteState) (value: global.Fidelity.PSG.CallableProgramInstance) : Result<WriteState, BinaryError> = result {
@@ -890,9 +1107,13 @@ module internal BinaryGenerated =
         let! state = (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_NodeId) state value.``LazyOrigins``
         let! state = (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_NodeId) state value.``LazyDestinations``
         let! state = (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_KnownCallable) state value.``KnownCallables``
+        let! state = (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_CallableContract) state value.``CallableContracts``
         let! state = (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_CallableCarrier) state value.``CallableCarriers``
         let! state = (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_CallableJoin) state value.``CallableJoins``
         let! state = (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_CallableFlow) state value.``CallableFlows``
+        let! state = (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_CallableAggregateSlot) state value.``CallableAggregateSlots``
+        let! state = (writeMap write_Fidelity_PSG_NodeId (writeList write_Fidelity_PSG_CallableAggregateValue)) state value.``CallableAggregateValues``
+        let! state = (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_CallableAggregateDependencyAccount) state value.``CallableAggregateDependencies``
         let! state = write_Fidelity_PSG_CallableBranchAuthority state value.``CallableBranches``
         let! state = (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_MutableCallableStorage) state value.``MutableCallableStorage``
         let! state = (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_ContinuationFrame) state value.``ContinuationFrames``
@@ -4094,132 +4315,208 @@ module internal BinaryGenerated =
                 let! state = writeTag state 33
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``Site`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``CallableContract`` -> result {
                 let! state = writeTag state 34
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``Source`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``CallableCarrier`` -> result {
                 let! state = writeTag state 35
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``ExtentSource`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``CallableFormation`` -> result {
                 let! state = writeTag state 36
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``RepresentationDeclaration`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``CallableImplementation`` -> result {
                 let! state = writeTag state 37
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``Path`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``CallableEnvironment`` -> result {
                 let! state = writeTag state 38
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``Formal`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``CallableLifetime`` -> result {
                 let! state = writeTag state 39
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``ReachingCall`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``CallableAdapter`` -> result {
                 let! state = writeTag state 40
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``ReachingActual`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``AggregateSlot`` -> result {
                 let! state = writeTag state 41
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``OmittedCall`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``AggregateDeclaration`` -> result {
                 let! state = writeTag state 42
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``OmittedCallActual`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``AggregateConstruction`` -> result {
                 let! state = writeTag state 43
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``OmissionSite`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``AggregateValue`` -> result {
                 let! state = writeTag state 44
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``OmittedActual`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``AggregateSource`` -> result {
                 let! state = writeTag state 45
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``Callee`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``AggregateInput`` -> result {
                 let! state = writeTag state 46
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``CalleeBody`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``AggregateWrite`` -> result {
                 let! state = writeTag state 47
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``CalleeArgument`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``AggregateReadFrontier`` -> result {
                 let! state = writeTag state 48
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``CalleeParameter`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``AggregateSelector`` -> result {
                 let! state = writeTag state 49
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``Ingress`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``AggregateConstructor`` -> result {
                 let! state = writeTag state 50
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``Origin`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``AggregateTag`` -> result {
                 let! state = writeTag state 51
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``Construction`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``AggregatePayload`` -> result {
                 let! state = writeTag state 52
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``LazyStringOrigin`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``Site`` -> result {
                 let! state = writeTag state 53
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``CapturedStringOrigin`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``Source`` -> result {
                 let! state = writeTag state 54
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``BranchChoice`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``ExtentSource`` -> result {
                 let! state = writeTag state 55
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``BranchGuard`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``RepresentationDeclaration`` -> result {
                 let! state = writeTag state 56
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``BranchOperator`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``Path`` -> result {
                 let! state = writeTag state 57
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``BranchTagRead`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``Formal`` -> result {
                 let! state = writeTag state 58
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``BranchSubject`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``ReachingCall`` -> result {
                 let! state = writeTag state 59
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``BranchLiteral`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``ReachingActual`` -> result {
                 let! state = writeTag state 60
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``BranchTrueArm`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``OmittedCall`` -> result {
                 let! state = writeTag state 61
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``BranchFalseArm`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``OmittedCallActual`` -> result {
                 let! state = writeTag state 62
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``BranchSelectedArm`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``OmissionSite`` -> result {
                 let! state = writeTag state 63
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``BranchConstructor`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``OmittedActual`` -> result {
                 let! state = writeTag state 64
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``BranchPayload`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``Callee`` -> result {
                 let! state = writeTag state 65
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.ParticipantRole.``CalleeBody`` -> result {
+                let! state = writeTag state 66
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.ParticipantRole.``CalleeArgument`` -> result {
+                let! state = writeTag state 67
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.ParticipantRole.``CalleeParameter`` -> result {
+                let! state = writeTag state 68
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.ParticipantRole.``Ingress`` -> result {
+                let! state = writeTag state 69
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.ParticipantRole.``Origin`` -> result {
+                let! state = writeTag state 70
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.ParticipantRole.``Construction`` -> result {
+                let! state = writeTag state 71
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.ParticipantRole.``LazyStringOrigin`` -> result {
+                let! state = writeTag state 72
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.ParticipantRole.``CapturedStringOrigin`` -> result {
+                let! state = writeTag state 73
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.ParticipantRole.``BranchChoice`` -> result {
+                let! state = writeTag state 74
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.ParticipantRole.``BranchGuard`` -> result {
+                let! state = writeTag state 75
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.ParticipantRole.``BranchOperator`` -> result {
+                let! state = writeTag state 76
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.ParticipantRole.``BranchTagRead`` -> result {
+                let! state = writeTag state 77
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.ParticipantRole.``BranchSubject`` -> result {
+                let! state = writeTag state 78
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.ParticipantRole.``BranchLiteral`` -> result {
+                let! state = writeTag state 79
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.ParticipantRole.``BranchTrueArm`` -> result {
+                let! state = writeTag state 80
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.ParticipantRole.``BranchFalseArm`` -> result {
+                let! state = writeTag state 81
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.ParticipantRole.``BranchSelectedArm`` -> result {
+                let! state = writeTag state 82
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.ParticipantRole.``BranchConstructor`` -> result {
+                let! state = writeTag state 83
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.ParticipantRole.``BranchPayload`` -> result {
+                let! state = writeTag state 84
                 return leaveWrite state
               }
     }
@@ -5854,8 +6151,20 @@ module internal BinaryGenerated =
                 let! state = (writeOption (fun state (v1_0, v1_1, v1_2) -> enterWrite state |> Result.bind (fun state -> (writeList writeI32) state v1_0 |> Result.bind (fun state -> writeI32 state v1_1 |> Result.bind (fun state -> writeI32 state v1_2 |> Result.bind (fun state -> Ok(leaveWrite state))))))) state a1
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ValueRepresentation.``Tag``(a0) -> result {
+            | global.Fidelity.PSG.ValueRepresentation.``CallableComponent``(a0, a1) -> result {
                 let! state = writeTag state 3
+                let! state = write_Fidelity_PSG_NodeId state a0
+                let! state = write_Fidelity_PSG_ValueRepresentation state a1
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.ValueRepresentation.``Union``(a0, a1) -> result {
+                let! state = writeTag state 4
+                let! state = (writeList (fun state (v1_0, v1_1) -> enterWrite state |> Result.bind (fun state -> writeString state v1_0 |> Result.bind (fun state -> (writeList write_Fidelity_PSG_ValueRepresentation) state v1_1 |> Result.bind (fun state -> Ok(leaveWrite state)))))) state a0
+                let! state = (writeOption (fun state (v1_0, v1_1, v1_2) -> enterWrite state |> Result.bind (fun state -> writeI32 state v1_0 |> Result.bind (fun state -> writeI32 state v1_1 |> Result.bind (fun state -> writeI32 state v1_2 |> Result.bind (fun state -> Ok(leaveWrite state))))))) state a1
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.ValueRepresentation.``Tag``(a0) -> result {
+                let! state = writeTag state 5
                 let! state = writeI32 state a0
                 return leaveWrite state
               }
@@ -6390,6 +6699,184 @@ module internal BinaryGenerated =
             | _ -> malformed state "Unknown Fidelity.PSG.ByrefKind case"
     }
 
+    and read_Fidelity_PSG_CallableAggregateAlternative (state: ReadState) : Result<global.Fidelity.PSG.CallableAggregateAlternative * ReadState, BinaryError> = result {
+        let! state = enterReadFields 7 state
+        let! a0, state = readI32 state
+        let! a1, state = read_Fidelity_PSG_NodeId state
+        let! a2, state = read_Fidelity_PSG_NodeId state
+        let! a3, state = (readOption read_Fidelity_PSG_NodeId) state
+        let! a4, state = read_Fidelity_PSG_NodeId state
+        let! a5, state = (readOption read_Fidelity_PSG_NodeId) state
+        let! a6, state = (readOption read_Fidelity_PSG_CallableAggregateEnvironmentPlacement) state
+        return! finishRead ({ ``Ordinal`` = a0; ``Carrier`` = a1; ``Formation`` = a2; ``EnvironmentValue`` = a3; ``Contract`` = a4; ``Adapter`` = a5; ``EnvironmentPlacement`` = a6 } : global.Fidelity.PSG.CallableAggregateAlternative) state
+    }
+
+    and read_Fidelity_PSG_CallableAggregateDeclarationDefinition (state: ReadState) : Result<global.Fidelity.PSG.CallableAggregateDeclarationDefinition * ReadState, BinaryError> = result {
+        let! state = enterReadCases 2 state
+        let! tag, state = readTag state
+        return!
+            match tag with
+            | 0 -> result {
+                let! a0, state = (readList (fun state -> enterReadFields 2 state |> Result.bind (fun state -> readString state |> Result.bind (fun (v1_0, state) -> read_Fidelity_PSG_TypeIdentity state |> Result.bind (fun (v1_1, state) -> finishRead (v1_0, v1_1) state))))) state
+                return! finishRead (global.Fidelity.PSG.CallableAggregateDeclarationDefinition.``RecordDef``(a0)) state
+              }
+            | 1 -> result {
+                let! a0, state = (readList (fun state -> enterReadFields 2 state |> Result.bind (fun state -> readString state |> Result.bind (fun (v1_0, state) -> (readList (fun state -> enterReadFields 2 state |> Result.bind (fun state -> (readOption readString) state |> Result.bind (fun (v3_0, state) -> read_Fidelity_PSG_TypeIdentity state |> Result.bind (fun (v3_1, state) -> finishRead (v3_0, v3_1) state))))) state |> Result.bind (fun (v1_1, state) -> finishRead (v1_0, v1_1) state))))) state
+                return! finishRead (global.Fidelity.PSG.CallableAggregateDeclarationDefinition.``UnionDef``(a0)) state
+              }
+            | _ -> malformed state "Unknown Fidelity.PSG.CallableAggregateDeclarationDefinition case"
+    }
+
+    and read_Fidelity_PSG_CallableAggregateDeclarationFact (state: ReadState) : Result<global.Fidelity.PSG.CallableAggregateDeclarationFact * ReadState, BinaryError> = result {
+        let! state = enterReadFields 3 state
+        let! a0, state = read_Fidelity_PSG_NodeId state
+        let! a1, state = read_Fidelity_PSG_TypeIdentity state
+        let! a2, state = read_Fidelity_PSG_CallableAggregateDeclarationDefinition state
+        return! finishRead ({ ``Identity`` = a0; ``DeclaredType`` = a1; ``Definition`` = a2 } : global.Fidelity.PSG.CallableAggregateDeclarationFact) state
+    }
+
+    and read_Fidelity_PSG_CallableAggregateDependencyAccount (state: ReadState) : Result<global.Fidelity.PSG.CallableAggregateDependencyAccount * ReadState, BinaryError> = result {
+        let! state = enterReadFields 10 state
+        let! a0, state = read_Fidelity_PSG_NodeId state
+        let! a1, state = (readList read_Fidelity_PSG_CallableAggregateSlot) state
+        let! a2, state = (readList read_Fidelity_PSG_CallableAggregateValue) state
+        let! a3, state = (readList read_Fidelity_PSG_CallableCarrier) state
+        let! a4, state = (readList read_Fidelity_PSG_CallableContract) state
+        let! a5, state = (readList read_Fidelity_PSG_CallableFlow) state
+        let! a6, state = (readList read_Fidelity_PSG_CallableJoin) state
+        let! a7, state = (readList read_Fidelity_PSG_Participant) state
+        let! a8, state = (readList read_Fidelity_PSG_CallableAggregateSourceIncidence) state
+        let! a9, state = (readList (fun state -> enterReadFields 2 state |> Result.bind (fun state -> read_Fidelity_PSG_NodeId state |> Result.bind (fun (v1_0, state) -> read_Fidelity_PSG_ObligationInfo state |> Result.bind (fun (v1_1, state) -> finishRead (v1_0, v1_1) state))))) state
+        return! finishRead ({ ``Occurrence`` = a0; ``Slots`` = a1; ``Values`` = a2; ``Carriers`` = a3; ``Contracts`` = a4; ``Flows`` = a5; ``Joins`` = a6; ``Participants`` = a7; ``Sources`` = a8; ``Claims`` = a9 } : global.Fidelity.PSG.CallableAggregateDependencyAccount) state
+    }
+
+    and read_Fidelity_PSG_CallableAggregateEnvironmentPlacement (state: ReadState) : Result<global.Fidelity.PSG.CallableAggregateEnvironmentPlacement * ReadState, BinaryError> = result {
+        let! state = enterReadFields 8 state
+        let! a0, state = read_Fidelity_PSG_CallableAggregateEnvironmentSource state
+        let! a1, state = read_Fidelity_PSG_NodeId state
+        let! a2, state = read_Fidelity_PSG_NodeId state
+        let! a3, state = readI32 state
+        let! a4, state = readI32 state
+        let! a5, state = readI32 state
+        let! a6, state = readI32 state
+        let! a7, state = (readOption read_Fidelity_PSG_NodeId) state
+        return! finishRead ({ ``Source`` = a0; ``Value`` = a1; ``Owner`` = a2; ``ViewBytes`` = a3; ``ByteOffset`` = a4; ``StorageBytes`` = a5; ``Alignment`` = a6; ``Adaptation`` = a7 } : global.Fidelity.PSG.CallableAggregateEnvironmentPlacement) state
+    }
+
+    and read_Fidelity_PSG_CallableAggregateEnvironmentSource (state: ReadState) : Result<global.Fidelity.PSG.CallableAggregateEnvironmentSource * ReadState, BinaryError> = result {
+        let! state = enterReadCases 1 state
+        let! tag, state = readTag state
+        return!
+            match tag with
+            | 0 -> result {
+                return! finishRead (global.Fidelity.PSG.CallableAggregateEnvironmentSource.``EnvironmentValue``) state
+              }
+            | 1 -> result {
+                return! finishRead (global.Fidelity.PSG.CallableAggregateEnvironmentSource.``CallableEnvironmentView``) state
+              }
+            | _ -> malformed state "Unknown Fidelity.PSG.CallableAggregateEnvironmentSource case"
+    }
+
+    and read_Fidelity_PSG_CallableAggregateOperation (state: ReadState) : Result<global.Fidelity.PSG.CallableAggregateOperation * ReadState, BinaryError> = result {
+        let! state = enterReadCases 1 state
+        let! tag, state = readTag state
+        return!
+            match tag with
+            | 0 -> result {
+                return! finishRead (global.Fidelity.PSG.CallableAggregateOperation.``Construct``) state
+              }
+            | 1 -> result {
+                return! finishRead (global.Fidelity.PSG.CallableAggregateOperation.``Project``) state
+              }
+            | 2 -> result {
+                return! finishRead (global.Fidelity.PSG.CallableAggregateOperation.``Assign``) state
+              }
+            | 3 -> result {
+                return! finishRead (global.Fidelity.PSG.CallableAggregateOperation.``Snapshot``) state
+              }
+            | _ -> malformed state "Unknown Fidelity.PSG.CallableAggregateOperation case"
+    }
+
+    and read_Fidelity_PSG_CallableAggregatePathStep (state: ReadState) : Result<global.Fidelity.PSG.CallableAggregatePathStep * ReadState, BinaryError> = result {
+        let! state = enterReadCases 3 state
+        let! tag, state = readTag state
+        return!
+            match tag with
+            | 0 -> result {
+                let! a0, state = readI32 state
+                return! finishRead (global.Fidelity.PSG.CallableAggregatePathStep.``RecordField``(a0)) state
+              }
+            | 1 -> result {
+                let! a0, state = readI32 state
+                let! a1, state = readI32 state
+                return! finishRead (global.Fidelity.PSG.CallableAggregatePathStep.``UnionPayload``(a0, a1)) state
+              }
+            | _ -> malformed state "Unknown Fidelity.PSG.CallableAggregatePathStep case"
+    }
+
+    and read_Fidelity_PSG_CallableAggregateSelector (state: ReadState) : Result<global.Fidelity.PSG.CallableAggregateSelector * ReadState, BinaryError> = result {
+        let! state = enterReadFields 5 state
+        let! a0, state = readI32 state
+        let! a1, state = readI32 state
+        let! a2, state = (readOption read_Fidelity_PSG_NodeId) state
+        let! a3, state = (readOption read_Fidelity_PSG_SettledSlot) state
+        let! a4, state = (readOption readI32) state
+        return! finishRead ({ ``Lower`` = a0; ``UpperExclusive`` = a1; ``Storage`` = a2; ``Slot`` = a3; ``ByteOffset`` = a4 } : global.Fidelity.PSG.CallableAggregateSelector) state
+    }
+
+    and read_Fidelity_PSG_CallableAggregateSlot (state: ReadState) : Result<global.Fidelity.PSG.CallableAggregateSlot * ReadState, BinaryError> = result {
+        let! state = enterReadFields 8 state
+        let! a0, state = read_Fidelity_PSG_NodeId state
+        let! a1, state = read_Fidelity_PSG_TypeIdentity state
+        let! a2, state = (readOption read_Fidelity_PSG_NodeId) state
+        let! a3, state = (readList read_Fidelity_PSG_CallableAggregateDeclarationFact) state
+        let! a4, state = (readList read_Fidelity_PSG_CallableAggregatePathStep) state
+        let! a5, state = read_Fidelity_PSG_TypeIdentity state
+        let! a6, state = (readResult read_Fidelity_PSG_NodeId readString) state
+        let! a7, state = (readList read_Fidelity_PSG_Participant) state
+        return! finishRead ({ ``Identity`` = a0; ``AggregateType`` = a1; ``Declaration`` = a2; ``DeclarationFacts`` = a3; ``Path`` = a4; ``SourceType`` = a5; ``Contract`` = a6; ``Participants`` = a7 } : global.Fidelity.PSG.CallableAggregateSlot) state
+    }
+
+    and read_Fidelity_PSG_CallableAggregateSourceIncidence (state: ReadState) : Result<global.Fidelity.PSG.CallableAggregateSourceIncidence * ReadState, BinaryError> = result {
+        let! state = enterReadFields 5 state
+        let! a0, state = read_Fidelity_PSG_NodeId state
+        let! a1, state = read_Fidelity_PSG_SemanticKind state
+        let! a2, state = read_Fidelity_PSG_TypeIdentity state
+        let! a3, state = (readList read_Fidelity_PSG_NodeId) state
+        let! a4, state = (readList readString) state
+        return! finishRead ({ ``Node`` = a0; ``Kind`` = a1; ``Type`` = a2; ``Children`` = a3; ``Anchors`` = a4 } : global.Fidelity.PSG.CallableAggregateSourceIncidence) state
+    }
+
+    and read_Fidelity_PSG_CallableAggregateTag (state: ReadState) : Result<global.Fidelity.PSG.CallableAggregateTag * ReadState, BinaryError> = result {
+        let! state = enterReadFields 6 state
+        let! a0, state = read_Fidelity_PSG_NodeId state
+        let! a1, state = (readOption read_Fidelity_PSG_NodeId) state
+        let! a2, state = readI32 state
+        let! a3, state = (readOption readI32) state
+        let! a4, state = (readOption read_Fidelity_PSG_NodeId) state
+        let! a5, state = (readList read_Fidelity_PSG_Participant) state
+        return! finishRead ({ ``Constructor`` = a0; ``TagRead`` = a1; ``CaseOrdinal`` = a2; ``PayloadOrdinal`` = a3; ``Payload`` = a4; ``Participants`` = a5 } : global.Fidelity.PSG.CallableAggregateTag) state
+    }
+
+    and read_Fidelity_PSG_CallableAggregateValue (state: ReadState) : Result<global.Fidelity.PSG.CallableAggregateValue * ReadState, BinaryError> = result {
+        let! state = enterReadFields 14 state
+        let! a0, state = read_Fidelity_PSG_NodeId state
+        let! a1, state = read_Fidelity_PSG_NodeId state
+        let! a2, state = read_Fidelity_PSG_NodeId state
+        let! a3, state = (readList read_Fidelity_PSG_CallableAggregateAlternative) state
+        let! a4, state = (readOption read_Fidelity_PSG_CallableAggregateSelector) state
+        let! a5, state = (readList read_Fidelity_PSG_NodeId) state
+        let! a6, state = (readOption read_Fidelity_PSG_NodeId) state
+        let! a7, state = (readOption readI32) state
+        let! a8, state = read_Fidelity_PSG_CallableAggregateOperation state
+        let! a9, state = (readOption read_Fidelity_PSG_NodeId) state
+        let! a10, state = (readOption read_Fidelity_PSG_CallableAggregateTag) state
+        let! a11, state = readI32 state
+        let! a12, state = readI32 state
+        let! a13, state = (readList read_Fidelity_PSG_Participant) state
+        return! finishRead ({ ``Occurrence`` = a0; ``Aggregate`` = a1; ``Slot`` = a2; ``Alternatives`` = a3; ``Selector`` = a4; ``FormationInputs`` = a5; ``Value`` = a6; ``SelectedAlternative`` = a7; ``Operation`` = a8; ``Frontier`` = a9; ``Tag`` = a10; ``Bytes`` = a11; ``Alignment`` = a12; ``Participants`` = a13 } : global.Fidelity.PSG.CallableAggregateValue) state
+    }
+
     and read_Fidelity_PSG_CallableBranchAlternative (state: ReadState) : Result<global.Fidelity.PSG.CallableBranchAlternative * ReadState, BinaryError> = result {
         let! state = enterReadFields 3 state
         let! a0, state = read_Fidelity_PSG_NodeId state
@@ -6453,17 +6940,36 @@ module internal BinaryGenerated =
     }
 
     and read_Fidelity_PSG_CallableCarrier (state: ReadState) : Result<global.Fidelity.PSG.CallableCarrier * ReadState, BinaryError> = result {
+        let! state = enterReadFields 14 state
+        let! a0, state = read_Fidelity_PSG_NodeId state
+        let! a1, state = read_Fidelity_PSG_CallableKind state
+        let! a2, state = read_Fidelity_PSG_NodeId state
+        let! a3, state = (readOption read_Fidelity_PSG_NodeId) state
+        let! a4, state = (readResult read_Fidelity_PSG_NodeId readString) state
+        let! a5, state = (readList read_Fidelity_PSG_Participant) state
+        let! a6, state = read_Fidelity_PSG_TypeIdentity state
+        let! a7, state = read_Fidelity_PSG_NodeId state
+        let! a8, state = (readList (fun state -> enterReadFields 3 state |> Result.bind (fun state -> readString state |> Result.bind (fun (v1_0, state) -> read_Fidelity_PSG_TypeIdentity state |> Result.bind (fun (v1_1, state) -> read_Fidelity_PSG_NodeId state |> Result.bind (fun (v1_2, state) -> finishRead (v1_0, v1_1, v1_2) state)))))) state
+        let! a9, state = (readList read_Fidelity_PSG_CallableValueShape) state
+        let! a10, state = (readSet read_Fidelity_PSG_NodeId) state
+        let! a11, state = read_Fidelity_PSG_NodeId state
+        let! a12, state = read_Fidelity_PSG_CallableValueShape state
+        let! a13, state = (readOption read_Fidelity_PSG_CallableEnvironment) state
+        return! finishRead ({ ``Occurrence`` = a0; ``Kind`` = a1; ``Formation`` = a2; ``EnvironmentValue`` = a3; ``Contract`` = a4; ``Lifetime`` = a5; ``SourceType`` = a6; ``Implementation`` = a7; ``Parameters`` = a8; ``ParameterShapes`` = a9; ``OmittedParameters`` = a10; ``Result`` = a11; ``ResultShape`` = a12; ``Environment`` = a13 } : global.Fidelity.PSG.CallableCarrier) state
+    }
+
+    and read_Fidelity_PSG_CallableContract (state: ReadState) : Result<global.Fidelity.PSG.CallableContract * ReadState, BinaryError> = result {
         let! state = enterReadFields 9 state
         let! a0, state = read_Fidelity_PSG_NodeId state
-        let! a1, state = read_Fidelity_PSG_TypeIdentity state
-        let! a2, state = read_Fidelity_PSG_NodeId state
-        let! a3, state = (readList (fun state -> enterReadFields 3 state |> Result.bind (fun state -> readString state |> Result.bind (fun (v1_0, state) -> read_Fidelity_PSG_TypeIdentity state |> Result.bind (fun (v1_1, state) -> read_Fidelity_PSG_NodeId state |> Result.bind (fun (v1_2, state) -> finishRead (v1_0, v1_1, v1_2) state)))))) state
-        let! a4, state = (readList read_Fidelity_PSG_CallableValueShape) state
-        let! a5, state = (readSet read_Fidelity_PSG_NodeId) state
-        let! a6, state = read_Fidelity_PSG_NodeId state
-        let! a7, state = read_Fidelity_PSG_CallableValueShape state
-        let! a8, state = (readOption read_Fidelity_PSG_CallableEnvironment) state
-        return! finishRead ({ ``Occurrence`` = a0; ``SourceType`` = a1; ``Implementation`` = a2; ``Parameters`` = a3; ``ParameterShapes`` = a4; ``OmittedParameters`` = a5; ``Result`` = a6; ``ResultShape`` = a7; ``Environment`` = a8 } : global.Fidelity.PSG.CallableCarrier) state
+        let! a1, state = read_Fidelity_PSG_CallableKind state
+        let! a2, state = (readList read_Fidelity_PSG_TypeIdentity) state
+        let! a3, state = (readList readI32) state
+        let! a4, state = (readList (fun state -> enterReadFields 2 state |> Result.bind (fun state -> readI32 state |> Result.bind (fun (v1_0, state) -> read_Fidelity_PSG_ValueRepresentation state |> Result.bind (fun (v1_1, state) -> finishRead (v1_0, v1_1) state))))) state
+        let! a5, state = read_Fidelity_PSG_TypeIdentity state
+        let! a6, state = read_Fidelity_PSG_ValueRepresentation state
+        let! a7, state = (readOption readI32) state
+        let! a8, state = (readList read_Fidelity_PSG_Participant) state
+        return! finishRead ({ ``Identity`` = a0; ``Kind`` = a1; ``ParameterTypes`` = a2; ``OmittedParameters`` = a3; ``ParameterRepresentations`` = a4; ``ResultType`` = a5; ``ResultRepresentation`` = a6; ``EnvironmentBytes`` = a7; ``Participants`` = a8 } : global.Fidelity.PSG.CallableContract) state
     }
 
     and read_Fidelity_PSG_CallableEmissionCall (state: ReadState) : Result<global.Fidelity.PSG.CallableEmissionCall * ReadState, BinaryError> = result {
@@ -6493,36 +6999,40 @@ module internal BinaryGenerated =
     }
 
     and read_Fidelity_PSG_CallableEmissionProjection (state: ReadState) : Result<global.Fidelity.PSG.CallableEmissionProjection * ReadState, BinaryError> = result {
-        let! state = enterReadFields 28 state
+        let! state = enterReadFields 32 state
         let! a0, state = read_Fidelity_PSG_CallableBranchAuthority state
-        let! a1, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_CallableCarrier) state
-        let! a2, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_CallableJoin) state
-        let! a3, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_CallableFlow) state
-        let! a4, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_MutableCallableStorage) state
-        let! a5, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_CallableValueShape) state
-        let! a6, state = (readMap read_Fidelity_PSG_NodeId (readSet read_Fidelity_PSG_NodeId)) state
-        let! a7, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_CallableEmissionCall) state
-        let! a8, state = (readMap read_Fidelity_PSG_NodeId (readSet read_Fidelity_PSG_NodeId)) state
-        let! a9, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_CallableEmissionDeclaration) state
-        let! a10, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_CallableSymbolName) state
-        let! a11, state = (readSet read_Fidelity_PSG_NodeId) state
-        let! a12, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_NodeId) state
-        let! a13, state = (readSet read_Fidelity_PSG_NodeId) state
-        let! a14, state = (readSet read_Fidelity_PSG_NodeId) state
-        let! a15, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_CallableProgramInstance) state
-        let! a16, state = (readSet read_Fidelity_PSG_NodeId) state
+        let! a1, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_CallableContract) state
+        let! a2, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_CallableCarrier) state
+        let! a3, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_CallableJoin) state
+        let! a4, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_CallableFlow) state
+        let! a5, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_MutableCallableStorage) state
+        let! a6, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_CallableAggregateSlot) state
+        let! a7, state = (readMap read_Fidelity_PSG_NodeId (readList read_Fidelity_PSG_CallableAggregateValue)) state
+        let! a8, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_CallableAggregateDependencyAccount) state
+        let! a9, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_CallableValueShape) state
+        let! a10, state = (readMap read_Fidelity_PSG_NodeId (readSet read_Fidelity_PSG_NodeId)) state
+        let! a11, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_CallableEmissionCall) state
+        let! a12, state = (readMap read_Fidelity_PSG_NodeId (readSet read_Fidelity_PSG_NodeId)) state
+        let! a13, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_CallableEmissionDeclaration) state
+        let! a14, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_CallableSymbolName) state
+        let! a15, state = (readSet read_Fidelity_PSG_NodeId) state
+        let! a16, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_NodeId) state
         let! a17, state = (readSet read_Fidelity_PSG_NodeId) state
-        let! a18, state = (readMap read_Fidelity_PSG_NodeId readString) state
-        let! a19, state = (readSet read_Fidelity_PSG_NodeId) state
+        let! a18, state = (readSet read_Fidelity_PSG_NodeId) state
+        let! a19, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_CallableProgramInstance) state
         let! a20, state = (readSet read_Fidelity_PSG_NodeId) state
         let! a21, state = (readSet read_Fidelity_PSG_NodeId) state
-        let! a22, state = (readMap read_Fidelity_PSG_NodeId (readMap read_Fidelity_PSG_NodeId (readList readI32))) state
-        let! a23, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_NodeId) state
+        let! a22, state = (readMap read_Fidelity_PSG_NodeId readString) state
+        let! a23, state = (readSet read_Fidelity_PSG_NodeId) state
         let! a24, state = (readSet read_Fidelity_PSG_NodeId) state
         let! a25, state = (readSet read_Fidelity_PSG_NodeId) state
-        let! a26, state = (readSet read_Fidelity_PSG_NodeId) state
-        let! a27, state = (readMap read_Fidelity_PSG_NodeId (readSet read_Fidelity_PSG_NodeId)) state
-        return! finishRead ({ ``Branches`` = a0; ``Carriers`` = a1; ``Joins`` = a2; ``Flows`` = a3; ``MutableStorage`` = a4; ``ValueShapes`` = a5; ``SignatureData`` = a6; ``Calls`` = a7; ``Transports`` = a8; ``Declarations`` = a9; ``Symbols`` = a10; ``IntrinsicAliases`` = a11; ``DirectCallees`` = a12; ``ForeignCalls`` = a13; ``MutableRetentions`` = a14; ``ProgramInstances`` = a15; ``VoidCallbacks`` = a16; ``VoidPointers`` = a17; ``NativeEntries`` = a18; ``FunctionBindings`` = a19; ``DefinitionOnlyBindings`` = a20; ``DefinitionOnlyLambdas`` = a21; ``Arguments`` = a22; ``AliasTargets`` = a23; ``TakesEnvironment`` = a24; ``UnitNodes`` = a25; ``ClosedData`` = a26; ``Supports`` = a27 } : global.Fidelity.PSG.CallableEmissionProjection) state
+        let! a26, state = (readMap read_Fidelity_PSG_NodeId (readMap read_Fidelity_PSG_NodeId (readList readI32))) state
+        let! a27, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_NodeId) state
+        let! a28, state = (readSet read_Fidelity_PSG_NodeId) state
+        let! a29, state = (readSet read_Fidelity_PSG_NodeId) state
+        let! a30, state = (readSet read_Fidelity_PSG_NodeId) state
+        let! a31, state = (readMap read_Fidelity_PSG_NodeId (readSet read_Fidelity_PSG_NodeId)) state
+        return! finishRead ({ ``Branches`` = a0; ``Contracts`` = a1; ``Carriers`` = a2; ``Joins`` = a3; ``Flows`` = a4; ``MutableStorage`` = a5; ``AggregateSlots`` = a6; ``AggregateValues`` = a7; ``AggregateDependencies`` = a8; ``ValueShapes`` = a9; ``SignatureData`` = a10; ``Calls`` = a11; ``Transports`` = a12; ``Declarations`` = a13; ``Symbols`` = a14; ``IntrinsicAliases`` = a15; ``DirectCallees`` = a16; ``ForeignCalls`` = a17; ``MutableRetentions`` = a18; ``ProgramInstances`` = a19; ``VoidCallbacks`` = a20; ``VoidPointers`` = a21; ``NativeEntries`` = a22; ``FunctionBindings`` = a23; ``DefinitionOnlyBindings`` = a24; ``DefinitionOnlyLambdas`` = a25; ``Arguments`` = a26; ``AliasTargets`` = a27; ``TakesEnvironment`` = a28; ``UnitNodes`` = a29; ``ClosedData`` = a30; ``Supports`` = a31 } : global.Fidelity.PSG.CallableEmissionProjection) state
     }
 
     and read_Fidelity_PSG_CallableEnvironment (state: ReadState) : Result<global.Fidelity.PSG.CallableEnvironment * ReadState, BinaryError> = result {
@@ -6560,6 +7070,20 @@ module internal BinaryGenerated =
         let! a3, state = read_Fidelity_PSG_NodeId state
         let! a4, state = (readList read_Fidelity_PSG_NodeId) state
         return! finishRead ({ ``Occurrence`` = a0; ``SourceType`` = a1; ``Storage`` = a2; ``Read`` = a3; ``Alternatives`` = a4 } : global.Fidelity.PSG.CallableJoin) state
+    }
+
+    and read_Fidelity_PSG_CallableKind (state: ReadState) : Result<global.Fidelity.PSG.CallableKind * ReadState, BinaryError> = result {
+        let! state = enterReadCases 1 state
+        let! tag, state = readTag state
+        return!
+            match tag with
+            | 0 -> result {
+                return! finishRead (global.Fidelity.PSG.CallableKind.``OrdinaryFlatClosure``) state
+              }
+            | 1 -> result {
+                return! finishRead (global.Fidelity.PSG.CallableKind.``NativeEntry``) state
+              }
+            | _ -> malformed state "Unknown Fidelity.PSG.CallableKind case"
     }
 
     and read_Fidelity_PSG_CallableProgramInstance (state: ReadState) : Result<global.Fidelity.PSG.CallableProgramInstance * ReadState, BinaryError> = result {
@@ -6782,7 +7306,7 @@ module internal BinaryGenerated =
     }
 
     and read_Fidelity_PSG_Codata (state: ReadState) : Result<global.Fidelity.PSG.Codata * ReadState, BinaryError> = result {
-        let! state = enterReadFields 33 state
+        let! state = enterReadFields 37 state
         let! a0, state = (readOption read_Fidelity_PSG_WitnessSegmentation) state
         let! a1, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_EscapeKind) state
         let! a2, state = read_Fidelity_PSG_CurryInfo state
@@ -6796,27 +7320,31 @@ module internal BinaryGenerated =
         let! a10, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_NodeId) state
         let! a11, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_NodeId) state
         let! a12, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_KnownCallable) state
-        let! a13, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_CallableCarrier) state
-        let! a14, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_CallableJoin) state
-        let! a15, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_CallableFlow) state
-        let! a16, state = read_Fidelity_PSG_CallableBranchAuthority state
-        let! a17, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_MutableCallableStorage) state
-        let! a18, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_ContinuationFrame) state
-        let! a19, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_NodeId) state
-        let! a20, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_SequenceFlow) state
-        let! a21, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_SequenceFamily) state
-        let! a22, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_SequenceTemplateCopy) state
+        let! a13, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_CallableContract) state
+        let! a14, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_CallableCarrier) state
+        let! a15, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_CallableJoin) state
+        let! a16, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_CallableFlow) state
+        let! a17, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_CallableAggregateSlot) state
+        let! a18, state = (readMap read_Fidelity_PSG_NodeId (readList read_Fidelity_PSG_CallableAggregateValue)) state
+        let! a19, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_CallableAggregateDependencyAccount) state
+        let! a20, state = read_Fidelity_PSG_CallableBranchAuthority state
+        let! a21, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_MutableCallableStorage) state
+        let! a22, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_ContinuationFrame) state
         let! a23, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_NodeId) state
-        let! a24, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_ContinuationRegion) state
-        let! a25, state = (readMap read_Fidelity_PSG_NodeId (readList (fun state -> enterReadFields 2 state |> Result.bind (fun state -> read_Fidelity_PSG_NodeId state |> Result.bind (fun (v2_0, state) -> read_Fidelity_PSG_NodeId state |> Result.bind (fun (v2_1, state) -> finishRead (v2_0, v2_1) state)))))) state
-        let! a26, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_NodeId) state
-        let! a27, state = (readSet read_Fidelity_PSG_NodeId) state
-        let! a28, state = (readOption read_Fidelity_PSG_PinMapping) state
-        let! a29, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_DeclRoot) state
-        let! a30, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_FunctionPointerPlan) state
-        let! a31, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_MmioAccessEvidence) state
-        let! a32, state = read_Fidelity_PSG_ProgramStorageInventory state
-        return! finishRead ({ ``WitnessSegmentation`` = a0; ``Escapes`` = a1; ``Curry`` = a2; ``Meets`` = a3; ``ReturnMeets`` = a4; ``Closures`` = a5; ``EnvironmentLayouts`` = a6; ``EnvironmentDestinations`` = a7; ``EnvironmentOrigins`` = a8; ``LazyLayouts`` = a9; ``LazyOrigins`` = a10; ``LazyDestinations`` = a11; ``KnownCallables`` = a12; ``CallableCarriers`` = a13; ``CallableJoins`` = a14; ``CallableFlows`` = a15; ``CallableBranches`` = a16; ``MutableCallableStorage`` = a17; ``ContinuationFrames`` = a18; ``SequenceOrigins`` = a19; ``SequenceFlows`` = a20; ``SequenceFamilies`` = a21; ``SequenceTemplateCopies`` = a22; ``ContinuationStorage`` = a23; ``ContinuationRegions`` = a24; ``SequenceInitializers`` = a25; ``SequenceDestinations`` = a26; ``SequenceCurrentReads`` = a27; ``Pins`` = a28; ``DeclarationRootLambdas`` = a29; ``FunctionPointers`` = a30; ``Mmio`` = a31; ``ProgramStorage`` = a32 } : global.Fidelity.PSG.Codata) state
+        let! a24, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_SequenceFlow) state
+        let! a25, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_SequenceFamily) state
+        let! a26, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_SequenceTemplateCopy) state
+        let! a27, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_NodeId) state
+        let! a28, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_ContinuationRegion) state
+        let! a29, state = (readMap read_Fidelity_PSG_NodeId (readList (fun state -> enterReadFields 2 state |> Result.bind (fun state -> read_Fidelity_PSG_NodeId state |> Result.bind (fun (v2_0, state) -> read_Fidelity_PSG_NodeId state |> Result.bind (fun (v2_1, state) -> finishRead (v2_0, v2_1) state)))))) state
+        let! a30, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_NodeId) state
+        let! a31, state = (readSet read_Fidelity_PSG_NodeId) state
+        let! a32, state = (readOption read_Fidelity_PSG_PinMapping) state
+        let! a33, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_DeclRoot) state
+        let! a34, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_FunctionPointerPlan) state
+        let! a35, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_MmioAccessEvidence) state
+        let! a36, state = read_Fidelity_PSG_ProgramStorageInventory state
+        return! finishRead ({ ``WitnessSegmentation`` = a0; ``Escapes`` = a1; ``Curry`` = a2; ``Meets`` = a3; ``ReturnMeets`` = a4; ``Closures`` = a5; ``EnvironmentLayouts`` = a6; ``EnvironmentDestinations`` = a7; ``EnvironmentOrigins`` = a8; ``LazyLayouts`` = a9; ``LazyOrigins`` = a10; ``LazyDestinations`` = a11; ``KnownCallables`` = a12; ``CallableContracts`` = a13; ``CallableCarriers`` = a14; ``CallableJoins`` = a15; ``CallableFlows`` = a16; ``CallableAggregateSlots`` = a17; ``CallableAggregateValues`` = a18; ``CallableAggregateDependencies`` = a19; ``CallableBranches`` = a20; ``MutableCallableStorage`` = a21; ``ContinuationFrames`` = a22; ``SequenceOrigins`` = a23; ``SequenceFlows`` = a24; ``SequenceFamilies`` = a25; ``SequenceTemplateCopies`` = a26; ``ContinuationStorage`` = a27; ``ContinuationRegions`` = a28; ``SequenceInitializers`` = a29; ``SequenceDestinations`` = a30; ``SequenceCurrentReads`` = a31; ``Pins`` = a32; ``DeclarationRootLambdas`` = a33; ``FunctionPointers`` = a34; ``Mmio`` = a35; ``ProgramStorage`` = a36 } : global.Fidelity.PSG.Codata) state
     }
 
     and read_Fidelity_PSG_ConstructorIdentity (state: ReadState) : Result<global.Fidelity.PSG.ConstructorIdentity * ReadState, BinaryError> = result {
@@ -9622,99 +10150,156 @@ module internal BinaryGenerated =
                 return! finishRead (global.Fidelity.PSG.ParticipantRole.``EnvironmentAuthorityInput``) state
               }
             | 34 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``Site``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``CallableContract``) state
               }
             | 35 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``Source``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``CallableCarrier``) state
               }
             | 36 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``ExtentSource``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``CallableFormation``) state
               }
             | 37 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``RepresentationDeclaration``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``CallableImplementation``) state
               }
             | 38 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``Path``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``CallableEnvironment``) state
               }
             | 39 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``Formal``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``CallableLifetime``) state
               }
             | 40 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``ReachingCall``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``CallableAdapter``) state
               }
             | 41 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``ReachingActual``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``AggregateSlot``) state
               }
             | 42 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``OmittedCall``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``AggregateDeclaration``) state
               }
             | 43 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``OmittedCallActual``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``AggregateConstruction``) state
               }
             | 44 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``OmissionSite``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``AggregateValue``) state
               }
             | 45 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``OmittedActual``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``AggregateSource``) state
               }
             | 46 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``Callee``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``AggregateInput``) state
               }
             | 47 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``CalleeBody``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``AggregateWrite``) state
               }
             | 48 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``CalleeArgument``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``AggregateReadFrontier``) state
               }
             | 49 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``CalleeParameter``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``AggregateSelector``) state
               }
             | 50 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``Ingress``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``AggregateConstructor``) state
               }
             | 51 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``Origin``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``AggregateTag``) state
               }
             | 52 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``Construction``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``AggregatePayload``) state
               }
             | 53 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``LazyStringOrigin``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``Site``) state
               }
             | 54 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``CapturedStringOrigin``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``Source``) state
               }
             | 55 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``BranchChoice``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``ExtentSource``) state
               }
             | 56 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``BranchGuard``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``RepresentationDeclaration``) state
               }
             | 57 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``BranchOperator``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``Path``) state
               }
             | 58 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``BranchTagRead``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``Formal``) state
               }
             | 59 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``BranchSubject``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``ReachingCall``) state
               }
             | 60 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``BranchLiteral``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``ReachingActual``) state
               }
             | 61 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``BranchTrueArm``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``OmittedCall``) state
               }
             | 62 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``BranchFalseArm``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``OmittedCallActual``) state
               }
             | 63 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``BranchSelectedArm``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``OmissionSite``) state
               }
             | 64 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``BranchConstructor``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``OmittedActual``) state
               }
             | 65 -> result {
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``Callee``) state
+              }
+            | 66 -> result {
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``CalleeBody``) state
+              }
+            | 67 -> result {
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``CalleeArgument``) state
+              }
+            | 68 -> result {
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``CalleeParameter``) state
+              }
+            | 69 -> result {
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``Ingress``) state
+              }
+            | 70 -> result {
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``Origin``) state
+              }
+            | 71 -> result {
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``Construction``) state
+              }
+            | 72 -> result {
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``LazyStringOrigin``) state
+              }
+            | 73 -> result {
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``CapturedStringOrigin``) state
+              }
+            | 74 -> result {
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``BranchChoice``) state
+              }
+            | 75 -> result {
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``BranchGuard``) state
+              }
+            | 76 -> result {
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``BranchOperator``) state
+              }
+            | 77 -> result {
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``BranchTagRead``) state
+              }
+            | 78 -> result {
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``BranchSubject``) state
+              }
+            | 79 -> result {
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``BranchLiteral``) state
+              }
+            | 80 -> result {
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``BranchTrueArm``) state
+              }
+            | 81 -> result {
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``BranchFalseArm``) state
+              }
+            | 82 -> result {
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``BranchSelectedArm``) state
+              }
+            | 83 -> result {
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``BranchConstructor``) state
+              }
+            | 84 -> result {
                 return! finishRead (global.Fidelity.PSG.ParticipantRole.``BranchPayload``) state
               }
             | _ -> malformed state "Unknown Fidelity.PSG.ParticipantRole case"
@@ -11200,6 +11785,16 @@ module internal BinaryGenerated =
                 return! finishRead (global.Fidelity.PSG.ValueRepresentation.``Record``(a0, a1)) state
               }
             | 3 -> result {
+                let! a0, state = read_Fidelity_PSG_NodeId state
+                let! a1, state = read_Fidelity_PSG_ValueRepresentation state
+                return! finishRead (global.Fidelity.PSG.ValueRepresentation.``CallableComponent``(a0, a1)) state
+              }
+            | 4 -> result {
+                let! a0, state = (readList (fun state -> enterReadFields 2 state |> Result.bind (fun state -> readString state |> Result.bind (fun (v1_0, state) -> (readList read_Fidelity_PSG_ValueRepresentation) state |> Result.bind (fun (v1_1, state) -> finishRead (v1_0, v1_1) state))))) state
+                let! a1, state = (readOption (fun state -> enterReadFields 3 state |> Result.bind (fun state -> readI32 state |> Result.bind (fun (v1_0, state) -> readI32 state |> Result.bind (fun (v1_1, state) -> readI32 state |> Result.bind (fun (v1_2, state) -> finishRead (v1_0, v1_1, v1_2) state)))))) state
+                return! finishRead (global.Fidelity.PSG.ValueRepresentation.``Union``(a0, a1)) state
+              }
+            | 5 -> result {
                 let! a0, state = readI32 state
                 return! finishRead (global.Fidelity.PSG.ValueRepresentation.``Tag``(a0)) state
               }

@@ -37,6 +37,7 @@
     <Compile Include="Empty.fs" />
     <Compile Include="Revision.fs" />
     <Compile Include="RevisionNavigation.fs" />
+    <Compile Include="CallableAggregateIntegrity.fs" />
     <Compile Include="IntegrityNamed.fs" />
     <Compile Include="Integrity.fs" />
     <Compile Include="BinaryTypes.fs" />

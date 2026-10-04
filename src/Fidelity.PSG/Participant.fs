@@ -14,6 +14,12 @@ type ParticipantRole =
     | EnvironmentOwner | EnvironmentImplementation | EnvironmentFormal
     | EnvironmentConstructor | EnvironmentFactory | EnvironmentCall | EnvironmentDestination
     | EnvironmentLayoutProof | EnvironmentSpace | EnvironmentDeclarationInput | EnvironmentAuthorityInput
+    /// Callable aggregate incidence, with exact source ordinals and grouping.
+    | CallableContract | CallableCarrier | CallableFormation | CallableImplementation
+    | CallableEnvironment | CallableLifetime | CallableAdapter
+    | AggregateSlot | AggregateDeclaration | AggregateConstruction
+    | AggregateValue | AggregateSource | AggregateInput | AggregateWrite | AggregateReadFrontier
+    | AggregateSelector | AggregateConstructor | AggregateTag | AggregatePayload
     /// The node at which the relation is stated.
     | Site
     /// The string operand of the site.

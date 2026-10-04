@@ -142,6 +142,10 @@ module Integrity =
         let codata = revision.Codata
         let callable = revision.Emission.Callable
         [ "Emission.Callable.Carriers", "Codata.CallableCarriers", disagreeing callable.Carriers codata.CallableCarriers
+          "Emission.Callable.Contracts", "Codata.CallableContracts", disagreeing callable.Contracts codata.CallableContracts
+          "Emission.Callable.AggregateSlots", "Codata.CallableAggregateSlots", disagreeing callable.AggregateSlots codata.CallableAggregateSlots
+          "Emission.Callable.AggregateValues", "Codata.CallableAggregateValues", disagreeing callable.AggregateValues codata.CallableAggregateValues
+          "Emission.Callable.AggregateDependencies", "Codata.CallableAggregateDependencies", disagreeing callable.AggregateDependencies codata.CallableAggregateDependencies
           "Emission.Callable.Joins", "Codata.CallableJoins", disagreeing callable.Joins codata.CallableJoins
           "Emission.Callable.Flows", "Codata.CallableFlows", disagreeing callable.Flows codata.CallableFlows
           "Emission.Callable.MutableStorage", "Codata.MutableCallableStorage",
@@ -1069,10 +1073,19 @@ module Integrity =
                          "Emission.Storage.EnvironmentResidences.AuthorityInputs"
                          "Emission.Storage.EnvironmentResidences.BindingPath"
                          "Emission.Storage.EnvironmentResidences.DeclarationInputs" ]
-        let role part id =
-            if explicitParts.Contains part || supportParts.Contains part || part.StartsWith("SourceReadings.", System.StringComparison.Ordinal) then true
+        let role (part: string) (id: NodeId) =
+            // These mixed row/source identities are checked with their typed
+            // roles by callableAggregates. Row identity is not a runtime body.
+            let aggregatePart =
+                ["Emission.Callable.Aggregate"; "Codata.CallableAggregate";
+                 "Emission.Callable.Contracts"; "Codata.CallableContracts"]
+                |> List.exists (fun prefix -> part.StartsWith(prefix, System.StringComparison.Ordinal))
+            if explicitParts.Contains part || supportParts.Contains part || aggregatePart || part.StartsWith("SourceReadings.", System.StringComparison.Ordinal) then true
             else
                 match part with
+                | "Emission.Callable.Carriers.Contract" | "Codata.CallableCarriers.Contract" -> callable.Contracts.ContainsKey id
+                | "Emission.Callable.Carriers.Lifetime" | "Codata.CallableCarriers.Lifetime" -> true
+                | "Emission.Numeric.OccurrenceRepresentations (values)" | "Emission.Numeric.TypeRepresentations (values)" -> callable.AggregateSlots.ContainsKey id
                 | "Emission.Numeric.SourceTypes" | "Emission.Numeric.OccurrenceRepresentations"
                 | "Emission.Callable.ValueShapes" | "Emission.Callable.ValueShapes (values)"
                 | "Emission.Callable.AliasTargets" | "Emission.Callable.AliasTargets (values)"
@@ -1184,6 +1197,11 @@ module Integrity =
             |> List.distinct
         stored @ kinds @ edges
 
+    /// Source-authored callable component integrity, independent of witnessing.
+    let callableAggregates revision : IntegrityViolation list =
+        CallableAggregateIntegrity.check revision
+        |> List.map (fun (part, site, reason) -> { Part = part; Node = Some site; Reason = reason })
+
     /// Every structural defect of the revision. The list is empty for a well-formed one.
     let check (revision: Revision) : IntegrityViolation list =
         let header =
@@ -1217,7 +1235,7 @@ module Integrity =
                       Reason = sprintf "The row of node %d in %s differs from its row in %s." (NodeId.value identity) part other }))
         header @ misfiled @ absent @ unrelated @ disagreed @ sourceReadings revision @ claims revision @ regions revision @
         callableRows revision @ numericRows revision @ memoryRows revision @ programStorageRows revision @ spatialRows revision @ startupRows revision @
-        boundaryRows revision @ artifactAccounts revision @ branchScopes revision @ stored revision @ incidence revision
+        boundaryRows revision @ artifactAccounts revision @ branchScopes revision @ stored revision @ incidence revision @ callableAggregates revision
 
     /// The first violations as one reason, for a reader that refuses the revision.
     let describe (violations: IntegrityViolation list) : string =

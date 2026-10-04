@@ -18,6 +18,7 @@
     <Compile Include="JsonInspectionTests.fs" />
     <Compile Include="EmptyTests.fs" />
     <Compile Include="IntegrityTests.fs" />
+    <Compile Include="CallableAggregateTests.fs" />
     <Compile Include="ArtifactAccountTests.fs" />
     <Compile Include="GeneratedTests.fs" />
     <Compile Include="GateTests.fs" />

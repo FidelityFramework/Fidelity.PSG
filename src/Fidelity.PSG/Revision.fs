@@ -75,9 +75,13 @@ type Codata = {
     LazyOrigins: Map<NodeId, NodeId>
     LazyDestinations: Map<NodeId, NodeId>
     KnownCallables: Map<NodeId, KnownCallable>
+    CallableContracts: Map<NodeId, CallableContract>
     CallableCarriers: Map<NodeId, CallableCarrier>
     CallableJoins: Map<NodeId, CallableJoin>
     CallableFlows: Map<NodeId, CallableFlow>
+    CallableAggregateSlots: Map<NodeId, CallableAggregateSlot>
+    CallableAggregateValues: Map<NodeId, CallableAggregateValue list>
+    CallableAggregateDependencies: Map<NodeId, CallableAggregateDependencyAccount>
     CallableBranches: CallableBranchAuthority
     MutableCallableStorage: Map<NodeId, MutableCallableStorage>
     ContinuationFrames: Map<NodeId, ContinuationFrame>
@@ -156,9 +160,13 @@ module Codata =
           LazyOrigins = Map.empty
           LazyDestinations = Map.empty
           KnownCallables = Map.empty
+          CallableContracts = Map.empty
           CallableCarriers = Map.empty
           CallableJoins = Map.empty
           CallableFlows = Map.empty
+          CallableAggregateSlots = Map.empty
+          CallableAggregateValues = Map.empty
+          CallableAggregateDependencies = Map.empty
           CallableBranches = CallableBranchAuthority.empty
           MutableCallableStorage = Map.empty
           ContinuationFrames = Map.empty
@@ -188,7 +196,7 @@ module ExplicitDemandProjection =
 module Revision =
     /// The version of the contract declared by this library.
     [<Literal>]
-    let Schema = 16
+    let Schema = 17
 
     /// The published form of a program with nothing in it, from a producer that
     /// declares no platform width.

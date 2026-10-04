@@ -35,6 +35,9 @@ type ValueRepresentation =
     | Scalar of SettledSlot
     | Buffer of count: int option * element: ValueRepresentation
     | Record of fields: (string * ValueRepresentation) list * placement: (int list * int * int) option
+    /// The slot row owns selector/environment data placement. Code is not data.
+    | CallableComponent of slot: NodeId * data: ValueRepresentation
+    | Union of cases: (string * ValueRepresentation list) list * placement: (int * int * int) option
     | Tag of cases: int
 
 type ScalarCarrier = {
@@ -391,4 +394,3 @@ type KernelModuleWitness = {
 
 [<RequireQualifiedAccess>]
 type SpatialModuleWitness = Hardware of HardwareModuleWitness | Kernel of KernelModuleWitness
-
