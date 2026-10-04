@@ -129,6 +129,56 @@ module internal CallableAggregateIntegrity =
             |> Option.orElseWith (fun () ->
                 callable.AggregateSlots.TryFind row.Slot
                 |> Option.bind (fun slot -> revision.Emission.Numeric.TypeRepresentations.TryFind slot.AggregateType))
+        // Read the exact authored pieces. This does not choose a layout: offsets,
+        // view bounds, scalar slots, total extent and alignment are stored facts.
+        let componentData (row: CallableAggregateValue) =
+            let selector =
+                row.Selector |> Option.bind (fun selector ->
+                    match selector.Slot, selector.ByteOffset with
+                    | Some (SettledSlot.Integer(bits, _) as slot), Some offset ->
+                        Some(offset, (bigint bits + 7I) / 8I, None, ValueRepresentation.Scalar slot)
+                    | _ -> None) |> Option.toList
+            let environments =
+                row.Alternatives |> List.choose (fun alternative ->
+                    alternative.EnvironmentPlacement |> Option.map (fun placement ->
+                        placement.ByteOffset, bigint placement.StorageBytes, Some placement.Alignment,
+                        ValueRepresentation.Buffer(Some placement.ViewBytes, ValueRepresentation.Scalar(SettledSlot.Integer(8, None)))))
+            let pieces = selector @ environments |> List.distinct |> List.sortBy (fun (offset, _, _, _) -> offset)
+            let fields = pieces |> List.mapi (fun ordinal (_, _, _, data) -> $"component{ordinal}", data)
+            let offsets = pieces |> List.map (fun (offset, _, _, _) -> offset)
+            let bounded = pieces |> List.forall (fun (offset, bytes, alignment, _) ->
+                offset >= 0 && bytes > 0I && bigint offset + bytes <= bigint row.Bytes &&
+                (alignment |> Option.forall (fun alignment ->
+                    alignment > 0 && (alignment &&& (alignment - 1)) = 0 &&
+                    offset % alignment = 0 && row.Alignment % alignment = 0)))
+            let separated = pieces |> List.pairwise |> List.forall (fun ((offset, bytes, _, _), (next, _, _, _)) ->
+                bigint offset + bytes <= bigint next)
+            ValueRepresentation.Record(fields, Some(offsets, row.Bytes, row.Alignment)), bounded && separated
+        let recordField (slot: CallableAggregateSlot) held =
+            match slot.Path, held with
+            | [CallableAggregatePathStep.RecordField ordinal], ValueRepresentation.Record(fields, _) ->
+                List.tryItem ordinal fields |> Option.map fst
+            | _ -> None
+        let liveWrite (row: CallableAggregateValue) (slot: CallableAggregateSlot) held =
+            match revision.Nodes.TryFind row.Occurrence with
+            | Some { Kind = SemanticKind.RecordExpr(fields, _) } when row.Operation = CallableAggregateOperation.Construct ->
+                recordField slot held |> Option.bind (fun name ->
+                    match fields |> List.filter (fst >> (=) name) with
+                    | [_, value] -> Some value
+                    | _ -> None)
+            | Some { Kind = SemanticKind.FieldSet(aggregate, name, value) }
+                when row.Operation = CallableAggregateOperation.Assign && aggregate = row.Aggregate && recordField slot held = Some name -> Some value
+            | Some { Kind = SemanticKind.UnionCase(_, caseOrdinal, payload) }
+            | Some { Kind = SemanticKind.DUConstruct(_, caseOrdinal, payload, _) }
+                when row.Operation = CallableAggregateOperation.Construct ->
+                match slot.Path, row.Tag with
+                | [CallableAggregatePathStep.UnionPayload(expected, ordinal)], Some tag
+                    when caseOrdinal = expected && tag.Constructor = row.Occurrence && tag.PayloadOrdinal = Some ordinal ->
+                    if ordinal = 0 && payload = row.Value then payload
+                    else payload |> Option.bind revision.Nodes.TryFind |> Option.bind (fun node ->
+                        match node.Kind with SemanticKind.TupleExpr fields -> List.tryItem ordinal fields | _ -> None)
+                | _ -> None
+            | _ -> None
         let nominalConstructor = function
             | TypeIdentity.Application(constructor, _) | TypeIdentity.Union(constructor, _) -> Some constructor
             | _ -> None
@@ -175,6 +225,13 @@ module internal CallableAggregateIntegrity =
             [ if not (revision.Nodes.ContainsKey carrier.Formation) ||
                  not (revision.Nodes.ContainsKey carrier.Implementation || callable.Symbols.ContainsKey carrier.Implementation) then
                   yield failure "I3" site "A carrier lacks its current formation or implementation declaration."
+              match revision.Nodes.TryFind carrier.Formation, carrier.EnvironmentValue with
+              | Some { Kind = SemanticKind.ClosureValue(implementation, environment) }, Some expected
+                  when implementation = carrier.Implementation && environment = expected -> ()
+              | Some { Kind = SemanticKind.ClosureValue _ }, _
+              | _, Some _ ->
+                  yield failure "I3" site "The carrier differs from its live closure formation and environment."
+              | _ -> ()
               if Option.isSome carrier.Environment <> Option.isSome carrier.EnvironmentValue then
                   yield failure "I3" site "The carrier's exact environment occurrence and convention disagree."
               if carrier.Kind = CallableKind.NativeEntry && Option.isSome carrier.Environment then
@@ -230,17 +287,31 @@ module internal CallableAggregateIntegrity =
               match row.Operation, row.Frontier with
               | CallableAggregateOperation.Snapshot, None -> yield failure "I5" site "A stored read has no snapshot frontier."
               | _ -> ()
-              if row.Bytes < 0 || row.Alignment <= 0 then yield failure "I1" site "Component storage has no admitted extent and alignment."
+              if row.Operation = CallableAggregateOperation.Construct && row.Aggregate <> site then
+                  yield failure "I5" site "A construction row names another aggregate occurrence."
+              if row.Bytes < 0 || row.Alignment <= 0 || (row.Alignment &&& (row.Alignment - 1)) <> 0 then
+                  yield failure "I1" site "Component storage has no admitted extent and alignment."
               match callable.AggregateSlots.TryFind row.Slot with
               | None -> yield failure "I5" site "The component's resolved slot row is absent."
               | Some slot ->
                   if slot.Path |> List.exists (function CallableAggregatePathStep.UnionPayload _ -> true | _ -> false) then
                       if row.Tag.IsNone then yield failure "I5" site "A callable union payload has no current constructor/tag evidence."
+                  elif row.Tag.IsSome then
+                      yield failure "I5" site "A record component carries union tag evidence."
                   match representation row with
                   | Some(Ok held) ->
                       match componentAt slot.Path held with
-                      | Some(identity, data) when identity = slot.Identity && dataOnly data -> ()
+                      | Some(identity, data) when identity = slot.Identity && dataOnly data ->
+                          let expected, placementsValid = componentData row
+                          let empty = match expected with ValueRepresentation.Record([], _) -> true | _ -> false
+                          if data <> expected || (empty && (row.Bytes <> 0 || row.Alignment <> 1)) then
+                              yield failure "I1" site "The component data differs from its exact published selector and environment placements."
+                          if not placementsValid then
+                              yield failure "I1" site "The published component pieces overlap or exceed their declared placement."
                       | _ -> yield failure "I1" site "The callable field/payload is absent or represented as ordinary code data."
+                      if (row.Operation = CallableAggregateOperation.Construct || row.Operation = CallableAggregateOperation.Assign) &&
+                         not row.Alternatives.IsEmpty && (row.Value.IsNone || liveWrite row slot held <> row.Value) then
+                          yield failure "I5" site "The callable write differs from its live constructor operand."
                   | _ -> yield failure "I1" site "The aggregate has no published component representation."
                   let count = row.Alternatives.Length
                   let callableCase = slot.Path |> List.tryPick (function
@@ -254,8 +325,7 @@ module internal CallableAggregateIntegrity =
                       yield failure "I2" site "Alternatives do not cover each selector ordinal exactly once."
                   match count, row.Selector, row.Tag with
                   | 0, None, Some tag when
-                      (callableCase |> Option.exists ((<>) tag.CaseOrdinal)) ||
-                      (tag.Payload.IsNone && tag.PayloadOrdinal.IsNone) -> ()
+                      callableCase |> Option.exists ((<>) tag.CaseOrdinal) -> ()
                   | 0, _, _ -> yield failure "I2" site "Only an absent union payload may have no alternatives; it has no selector."
                   | _, Some selector, _ ->
                       if selector.Lower <> 0 || selector.UpperExclusive <> count then
@@ -276,10 +346,10 @@ module internal CallableAggregateIntegrity =
                   | Some value, Some selected ->
                       match row.Alternatives |> List.tryItem selected with
                       | Some alternative when row.FormationInputs |> List.contains value ->
-                          if value <> alternative.Carrier && not (row.FormationInputs |> List.contains alternative.Carrier) then
+                          if value <> alternative.Carrier then
                               yield failure "I5" site "The selected write is not paired with its actual carrier input."
                       | _ -> yield failure "I2" site "The written value has no selected alternative in the admitted family."
-                  | None, None -> ()
+                  | None, None when count = 0 || row.Operation = CallableAggregateOperation.Project || row.Operation = CallableAggregateOperation.Snapshot -> ()
                   | Some _, None when row.Operation = CallableAggregateOperation.Project || row.Operation = CallableAggregateOperation.Snapshot -> ()
                   | _ -> yield failure "I5" site "The source write and its selection are incomplete."
                   for alternative in row.Alternatives do
@@ -299,16 +369,13 @@ module internal CallableAggregateIntegrity =
                               yield failure "I4" site "The alternative's contract differs from its carrier's exact contract."
                           match alternative.Adapter with
                           | None when Ok alternative.Contract = slot.Contract -> ()
-                          | Some adapter ->
-                              match callable.Carriers.TryFind adapter with
-                              | Some adapted when adapted.Contract = slot.Contract && Result.isOk slot.Contract ->
-                                  yield! carrierChecks site adapted
-                                  yield! exactRow ParticipantRole.CallableAdapter alternative.Ordinal adapter
-                              | _ -> yield failure "I4" site "The selected adapter has no settled receiving contract."
+                          | Some _ -> yield failure "I4" site "A callable adapter requires an explicit source-authored adapter relation."
                           | _ -> yield failure "I4" site "A slot combines different contract identities without an admitted adapter."
                           match carrier.Environment, alternative.EnvironmentPlacement with
                           | None, None -> ()
                           | Some environment, Some placement when Some placement.Value = carrier.EnvironmentValue && placement.Owner = environment.Owner ->
+                              if placement.Adaptation.IsSome then
+                                  yield failure "I1" site "An environment adaptation requires an explicit source-authored relation."
                               match revision.Codata.EnvironmentLayouts.TryFind environment.Owner with
                               | Some layout when layout.Bytes = placement.ViewBytes -> ()
                               | _ -> yield failure "I3" site "The environment view extent differs from its exact layout."
@@ -341,7 +408,7 @@ module internal CallableAggregateIntegrity =
                           if ordinal = 0 && payload = tag.Payload then payload
                           else payload |> Option.bind revision.Nodes.TryFind |> Option.bind (fun node ->
                               match node.Kind with SemanticKind.TupleExpr fields -> List.tryItem ordinal fields | _ -> None)
-                      if caseOrdinal <> tag.CaseOrdinal ||
+                      if caseOrdinal <> tag.CaseOrdinal || payload.IsSome <> tag.Payload.IsSome ||
                          (tag.PayloadOrdinal |> Option.bind payloadAt) <> tag.Payload then
                           yield failure "I5" site "The retained constructor/tag/payload differs from the live constructor."
                   | _ -> yield failure "I5" site "The union constructor has no current published construction." ]
@@ -371,6 +438,11 @@ module internal CallableAggregateIntegrity =
                 (if premiseNodes.Contains id then None else revision.Nodes.TryFind id) |> Option.map (fun node ->
                     { Node = id; Kind = node.Kind; Type = node.Type; Children = node.Children; Anchors = node.ObligationAnchors }))
             let claims = participantNodes |> List.choose (fun id -> revision.CurrentClaims.TryFind id |> Option.map (fun claim -> id, claim))
+            let implementations =
+                (account.Carriers |> List.map _.Implementation) @
+                (participants |> List.choose (fun p -> if p.Role = ParticipantRole.CallableImplementation then Some p.Node else None))
+                |> List.distinct
+            let symbols = implementations |> List.choose (fun id -> callable.Symbols.TryFind id |> Option.map (fun symbol -> id, symbol))
             [ if account.Occurrence <> site || not valuesCurrent ||
                  (account.Values |> List.filter (fun row -> row.Occurrence = site)) <> direct ||
                  not (unique (fun (row: CallableAggregateValue) -> row.Occurrence, row.Slot) account.Values) then
@@ -384,7 +456,7 @@ module internal CallableAggregateIntegrity =
               if account.Slots <> (slots |> List.choose callable.AggregateSlots.TryFind) ||
                  account.Carriers <> (carriers |> List.choose callable.Carriers.TryFind) ||
                  account.Contracts <> (contracts |> List.choose callable.Contracts.TryFind) ||
-                 account.Flows <> flows || account.Joins <> joins then
+                 account.Flows <> flows || account.Joins <> joins || account.Symbols <> symbols then
                   yield failure "I6" site "The account differs from the complete current slot, carrier, contract or flow/join rows."
               if account.Participants <> participants || account.Sources <> sources || account.Claims <> claims then
                   yield failure "I6" site "The ordered dependency incidence or its published source/claim evidence is stale." ]
@@ -402,6 +474,8 @@ module internal CallableAggregateIntegrity =
                       yield failure "I5" slot $"Declaration {NodeId.value declaration} has conflicting canonical metadata facts."
           for KeyValue(key, contract) in callable.Contracts do
               if key <> contract.Identity then yield failure "I4" key "A callable contract is filed under another identity."
+              if contract.Participants |> List.exists (fun participant -> participant.Group <> key) then
+                  yield failure "I5" key "A contract participant is grouped under another contract."
               yield! vector key contract.Participants
               yield! exact key ParticipantRole.CallableContract 0 key key contract.Participants
               yield! conventionChecks contract

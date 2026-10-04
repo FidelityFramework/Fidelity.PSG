@@ -72,16 +72,15 @@ let ``snapshot header has independent version schema and fingerprint bytes`` () 
     // Spec closure-representation §2.4: "The account retains typed relation
     // identities, roles, ordinals and operand order and multiplicity." The old
     // schema/digest names a shape without those newly published aggregate rows.
-    // Schema 18 retains contract-owned numeric support facts, including source
-    // authority that has no executable occurrence in the live revision, and
-    // FFI §3.4's compiler-owned convention, conversions and code residence.
-    let prefix = Convert.FromHexString("465053474944583202000000120000006F9021CC426417F8F26F1840BEEB0F5A3D5FAECFA51910AD7D8C513283384E78")
+    // Schema 19 also retains exact symbol names for account implementations,
+    // including declarations whose bodies are absent from this live revision.
+    let prefix = Convert.FromHexString("46505347494458320200000013000000B8DF89ADA17BE1C25808052C8C9431B330331BA2C94D41517CD46136A4A4025C")
     Assert.Equal<byte>(prefix, bytes[..47])
     Assert.Equal<byte>([|64uy;0uy;0uy;0uy;0uy;0uy;0uy;0uy|], bytes[48..55])
     let header = child bytes 64 0
     let schema = child bytes header 0
     let producer = child bytes header 1
-    Assert.Equal<byte>([|18uy;0uy;0uy;0uy|], bytes[schema..schema + 3])
+    Assert.Equal<byte>([|19uy;0uy;0uy;0uy|], bytes[schema..schema + 3])
     Assert.Equal<byte>([|1uy;byte 'g'|], bytes[producer..producer + 1])
     Assert.Equal("g", (Binary.decode limits bytes |> take).Header.Producer)
 
@@ -143,9 +142,9 @@ let ``unknown format schema digest and union cases fail closed`` () =
     match Binary.decode limits (mutate 8 3uy) with
     | Result.Error(BinaryError.UnsupportedFormat 3u) -> () | other -> failwithf "%A" other
     // Binary_Images.md: "A schema, format or fingerprint mismatch is refused."
-    // Exercise the obsolete schema 17 against this schema-18 reader.
-    match Binary.decode limits (mutate 12 17uy) with
-    | Result.Error(BinaryError.SchemaMismatch(18, 17)) -> () | other -> failwithf "%A" other
+    // Exercise the obsolete schema 18 against this schema-19 reader.
+    match Binary.decode limits (mutate 12 18uy) with
+    | Result.Error(BinaryError.SchemaMismatch(19, 18)) -> () | other -> failwithf "%A" other
     match Binary.decode limits (mutate 16 0uy) with
     | Result.Error BinaryError.ContractMismatch -> () | other -> failwithf "%A" other
     let unknown = indexedEncoded BinaryGenerated.write_Fidelity_PSG_NativeLiteral NativeLiteral.Unit

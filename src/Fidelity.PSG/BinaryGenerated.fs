@@ -5,9 +5,9 @@ module internal BinaryGenerated =
     [<Literal>]
     let Format = 2u
     [<Literal>]
-    let Schema = 18
+    let Schema = 19
     [<Literal>]
-    let Fingerprint = "6F9021CC426417F8F26F1840BEEB0F5A3D5FAECFA51910AD7D8C513283384E78"
+    let Fingerprint = "B8DF89ADA17BE1C25808052C8C9431B330331BA2C94D41517CD46136A4A4025C"
     [<Literal>]
     let NamedTypes = 270
     [<Literal>]
@@ -521,6 +521,7 @@ module internal BinaryGenerated =
         let! state = (writeList write_Fidelity_PSG_Participant) state value.``Participants``
         let! state = (writeList write_Fidelity_PSG_CallableAggregateSourceIncidence) state value.``Sources``
         let! state = (writeList (fun state (v1_0, v1_1) -> enterWrite state |> Result.bind (fun state -> write_Fidelity_PSG_NodeId state v1_0 |> Result.bind (fun state -> write_Fidelity_PSG_ObligationInfo state v1_1 |> Result.bind (fun state -> Ok(leaveWrite state)))))) state value.``Claims``
+        let! state = (writeList (fun state (v1_0, v1_1) -> enterWrite state |> Result.bind (fun state -> write_Fidelity_PSG_NodeId state v1_0 |> Result.bind (fun state -> write_Fidelity_PSG_CallableSymbolName state v1_1 |> Result.bind (fun state -> Ok(leaveWrite state)))))) state value.``Symbols``
         return leaveWrite state
     }
 
@@ -6781,7 +6782,7 @@ module internal BinaryGenerated =
     }
 
     and read_Fidelity_PSG_CallableAggregateDependencyAccount (state: ReadState) : Result<global.Fidelity.PSG.CallableAggregateDependencyAccount * ReadState, BinaryError> = result {
-        let! state = enterReadFields 10 state
+        let! state = enterReadFields 11 state
         let! a0, state = read_Fidelity_PSG_NodeId state
         let! a1, state = (readList read_Fidelity_PSG_CallableAggregateSlot) state
         let! a2, state = (readList read_Fidelity_PSG_CallableAggregateValue) state
@@ -6792,7 +6793,8 @@ module internal BinaryGenerated =
         let! a7, state = (readList read_Fidelity_PSG_Participant) state
         let! a8, state = (readList read_Fidelity_PSG_CallableAggregateSourceIncidence) state
         let! a9, state = (readList (fun state -> enterReadFields 2 state |> Result.bind (fun state -> read_Fidelity_PSG_NodeId state |> Result.bind (fun (v1_0, state) -> read_Fidelity_PSG_ObligationInfo state |> Result.bind (fun (v1_1, state) -> finishRead (v1_0, v1_1) state))))) state
-        return! finishRead ({ ``Occurrence`` = a0; ``Slots`` = a1; ``Values`` = a2; ``Carriers`` = a3; ``Contracts`` = a4; ``Flows`` = a5; ``Joins`` = a6; ``Participants`` = a7; ``Sources`` = a8; ``Claims`` = a9 } : global.Fidelity.PSG.CallableAggregateDependencyAccount) state
+        let! a10, state = (readList (fun state -> enterReadFields 2 state |> Result.bind (fun state -> read_Fidelity_PSG_NodeId state |> Result.bind (fun (v1_0, state) -> read_Fidelity_PSG_CallableSymbolName state |> Result.bind (fun (v1_1, state) -> finishRead (v1_0, v1_1) state))))) state
+        return! finishRead ({ ``Occurrence`` = a0; ``Slots`` = a1; ``Values`` = a2; ``Carriers`` = a3; ``Contracts`` = a4; ``Flows`` = a5; ``Joins`` = a6; ``Participants`` = a7; ``Sources`` = a8; ``Claims`` = a9; ``Symbols`` = a10 } : global.Fidelity.PSG.CallableAggregateDependencyAccount) state
     }
 
     and read_Fidelity_PSG_CallableAggregateEnvironmentPlacement (state: ReadState) : Result<global.Fidelity.PSG.CallableAggregateEnvironmentPlacement * ReadState, BinaryError> = result {

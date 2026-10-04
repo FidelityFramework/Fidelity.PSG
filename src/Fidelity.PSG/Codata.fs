@@ -360,6 +360,14 @@ type CallableAggregateSourceIncidence = {
     Anchors: string list
 }
 
+/// The observed declaration name, independent of executable body residence.
+[<RequireQualifiedAccess>]
+type CallableSymbolName =
+    | ModuleBinding of moduleName: string * name: string
+    | LocalBinding of declaration: NodeId * name: string
+    | RootBinding of name: string
+    | Anonymous of implementation: NodeId
+
 /// Exact immutable inputs to one selection. These are copied source rows, not
 /// a retained graph or a hash of deduplicated node identities. Structural
 /// validation compares every field against the current published tables.
@@ -374,6 +382,8 @@ type CallableAggregateDependencyAccount = {
     Participants: Participant list
     Sources: CallableAggregateSourceIncidence list
     Claims: (NodeId * ObligationInfo) list
+    /// Exact names of referenced implementations, including symbol-only code.
+    Symbols: (NodeId * CallableSymbolName) list
 }
 
 /// A write updates the finite alternative discriminator and the actual
@@ -559,13 +569,6 @@ type OrdinaryCallProjection = {
     Omitted: Set<int>
     Eager: Set<int>
 }
-
-[<RequireQualifiedAccess>]
-type CallableSymbolName =
-    | ModuleBinding of moduleName: string * name: string
-    | LocalBinding of declaration: NodeId * name: string
-    | RootBinding of name: string
-    | Anonymous of implementation: NodeId
 
 type CallableEmissionDeclaration = {
     Lookup: NodeId
