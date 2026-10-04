@@ -1201,7 +1201,7 @@ module Integrity =
                     | EdgeRole.OrdinaryInactiveImplementation ->
                         match revision.Emission.Ordinary.Inactivity.TryFind edge.Target with
                         | Some proof ->
-                            let expected = [proof.Entry; proof.Body] @ proof.Parameters @ Set.toList proof.Participants @ Set.toList proof.Excluded @ Set.toList proof.Calls
+                            let expected = [proof.Entry; proof.Body] @ proof.Parameters @ (proof.Uses |> Map.keys |> Seq.toList) @ Set.toList proof.Excluded @ Set.toList proof.Calls
                             if edge.Class = EdgeClass.Demand && edge.Ordinal = proof.Parameters.Length && edge.Sources = expected then []
                             else [defect "Edges" edge.Target "The inactive execution relation differs from its typed source row."]
                         | None -> [missingRow "Edges.Target" "Emission.Ordinary.Inactivity" edge.Target]
@@ -1237,7 +1237,6 @@ module Integrity =
               let support =
                   [proof.Implementation; proof.Entry; proof.Body] @ proof.Parameters @
                   Set.toList proof.Roots @ Set.toList proof.Excluded @ Set.toList proof.Calls @
-                  Set.toList proof.Participants @
                   (proof.Uses |> Map.toList |> List.collect (fun (source, uses) ->
                       source :: (uses |> List.collect (fun (_, _, _, sources, target) -> target :: sources))))
                   |> Set.ofList
@@ -1248,8 +1247,7 @@ module Integrity =
                  not (Set.isSubset (Set.ofList proof.Parameters) proof.Excluded) ||
                  not (Set.isSubset proof.Calls proof.Excluded) then
                   yield defect site "The inactive implementation, entry, ordered formals or excluded execution sites disagree."
-              if (proof.Uses |> Map.keys |> Set.ofSeq) <> proof.Participants ||
-                 (proof.SourcePremises |> Map.keys |> Set.ofSeq) <> support then
+              if (proof.SourcePremises |> Map.keys |> Set.ofSeq) <> support then
                   yield defect site "The inactive use inventory lacks its exact immutable source premises."
               match proof.SourcePremises.TryFind site with
               | Some premise when premise.Shape.Form = "lambda" && not premise.HasExtern &&

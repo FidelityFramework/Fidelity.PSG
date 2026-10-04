@@ -5,9 +5,9 @@ module internal BinaryGenerated =
     [<Literal>]
     let Format = 2u
     [<Literal>]
-    let Schema = 20
+    let Schema = 21
     [<Literal>]
-    let Fingerprint = "10CEA46A8F1620B5EDAD843370B8BCE30B74E0155E4432532BABE0B38659ADDF"
+    let Fingerprint = "458DFDB8EEF1DCC37F11BBBFF36FAFF7C6DAC350B63BCBF902376D81552FE279"
     [<Literal>]
     let NamedTypes = 271
     [<Literal>]
@@ -4187,7 +4187,6 @@ module internal BinaryGenerated =
         let! state = (writeSet write_Fidelity_PSG_NodeId) state value.``Roots``
         let! state = (writeSet write_Fidelity_PSG_NodeId) state value.``Excluded``
         let! state = (writeSet write_Fidelity_PSG_NodeId) state value.``Calls``
-        let! state = (writeSet write_Fidelity_PSG_NodeId) state value.``Participants``
         let! state = (writeMap write_Fidelity_PSG_NodeId (writeList (fun state (v2_0, v2_1, v2_2, v2_3, v2_4) -> enterWrite state |> Result.bind (fun state -> write_Fidelity_PSG_EdgeClass state v2_0 |> Result.bind (fun state -> write_Fidelity_PSG_EdgeRole state v2_1 |> Result.bind (fun state -> writeI32 state v2_2 |> Result.bind (fun state -> (writeList write_Fidelity_PSG_NodeId) state v2_3 |> Result.bind (fun state -> write_Fidelity_PSG_NodeId state v2_4 |> Result.bind (fun state -> Ok(leaveWrite state)))))))))) state value.``Uses``
         let! state = (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_BoundarySourcePremise) state value.``SourcePremises``
         return leaveWrite state
@@ -10113,7 +10112,7 @@ module internal BinaryGenerated =
     }
 
     and read_Fidelity_PSG_OrdinaryInactivityProjection (state: ReadState) : Result<global.Fidelity.PSG.OrdinaryInactivityProjection * ReadState, BinaryError> = result {
-        let! state = enterReadFields 10 state
+        let! state = enterReadFields 9 state
         let! a0, state = read_Fidelity_PSG_NodeId state
         let! a1, state = read_Fidelity_PSG_NodeId state
         let! a2, state = read_Fidelity_PSG_NodeId state
@@ -10121,10 +10120,9 @@ module internal BinaryGenerated =
         let! a4, state = (readSet read_Fidelity_PSG_NodeId) state
         let! a5, state = (readSet read_Fidelity_PSG_NodeId) state
         let! a6, state = (readSet read_Fidelity_PSG_NodeId) state
-        let! a7, state = (readSet read_Fidelity_PSG_NodeId) state
-        let! a8, state = (readMap read_Fidelity_PSG_NodeId (readList (fun state -> enterReadFields 5 state |> Result.bind (fun state -> read_Fidelity_PSG_EdgeClass state |> Result.bind (fun (v2_0, state) -> read_Fidelity_PSG_EdgeRole state |> Result.bind (fun (v2_1, state) -> readI32 state |> Result.bind (fun (v2_2, state) -> (readList read_Fidelity_PSG_NodeId) state |> Result.bind (fun (v2_3, state) -> read_Fidelity_PSG_NodeId state |> Result.bind (fun (v2_4, state) -> finishRead (v2_0, v2_1, v2_2, v2_3, v2_4) state))))))))) state
-        let! a9, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_BoundarySourcePremise) state
-        return! finishRead ({ ``Implementation`` = a0; ``Entry`` = a1; ``Body`` = a2; ``Parameters`` = a3; ``Roots`` = a4; ``Excluded`` = a5; ``Calls`` = a6; ``Participants`` = a7; ``Uses`` = a8; ``SourcePremises`` = a9 } : global.Fidelity.PSG.OrdinaryInactivityProjection) state
+        let! a7, state = (readMap read_Fidelity_PSG_NodeId (readList (fun state -> enterReadFields 5 state |> Result.bind (fun state -> read_Fidelity_PSG_EdgeClass state |> Result.bind (fun (v2_0, state) -> read_Fidelity_PSG_EdgeRole state |> Result.bind (fun (v2_1, state) -> readI32 state |> Result.bind (fun (v2_2, state) -> (readList read_Fidelity_PSG_NodeId) state |> Result.bind (fun (v2_3, state) -> read_Fidelity_PSG_NodeId state |> Result.bind (fun (v2_4, state) -> finishRead (v2_0, v2_1, v2_2, v2_3, v2_4) state))))))))) state
+        let! a8, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_BoundarySourcePremise) state
+        return! finishRead ({ ``Implementation`` = a0; ``Entry`` = a1; ``Body`` = a2; ``Parameters`` = a3; ``Roots`` = a4; ``Excluded`` = a5; ``Calls`` = a6; ``Uses`` = a7; ``SourcePremises`` = a8 } : global.Fidelity.PSG.OrdinaryInactivityProjection) state
     }
 
     and read_Fidelity_PSG_OrdinaryOmission (state: ReadState) : Result<global.Fidelity.PSG.OrdinaryOmission * ReadState, BinaryError> = result {
