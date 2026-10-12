@@ -281,6 +281,66 @@ let ``a fact held in two tables must be the same in both`` held =
             Emission = { bindingWithLiteral.Emission with Callable = { callable with Joins = Map.ofList [ NodeId 1, join ] } } }
     Assert.Empty(Integrity.check agreed)
 
+// Stored signature rows model a higher-order formal. Source typing and physical
+// convention settlement remain Baker's responsibility; these controls read rows.
+let private callableComponentRows kind =
+  let formal, target = NodeId 3, NodeId 4
+  let initial =
+    { bindingWithLiteral with
+        Nodes = bindingWithLiteral.Nodes
+                  .Add(formal, node 3 (SemanticKind.PatternBinding "callback") [])
+                  .Add(target, node 4 (SemanticKind.Binding("target", false, false, None)) []) }
+    |> covered
+  let carrier occurrence implementation parameters shapes : CallableCarrier =
+    { Occurrence = occurrence; Kind = CallableKind.OrdinaryFlatClosure; Formation = occurrence
+      EnvironmentValue = None; Contract = Error "Stored signature fixture"; Lifetime = []
+      SourceType = boolType; Implementation = implementation; Parameters = parameters
+      ParameterShapes = shapes; OmittedParameters = Set.empty; Result = NodeId 2
+      ResultShape = CallableValueShape.Data(NodeId 2); Environment = None }
+  let parameters = [ "callback", boolType, formal ]
+  let carriers = Map.ofList [ NodeId 1, carrier (NodeId 1) (NodeId 1) parameters [CallableValueShape.Callable formal];
+                             target, carrier target target [] [] ]
+  let flow : CallableFlow =
+    { Occurrence = formal; SourceType = boolType; Alternatives = [target]; Dependencies = Map.empty; Calls = [] }
+  let join : CallableJoin =
+    { Occurrence = formal; SourceType = boolType; Storage = formal; Read = formal; Alternatives = [target] }
+  let carriers =
+    if kind = "carrier" || kind = "duplicate" then carriers.Add(formal, carrier formal target [] []) else carriers
+  let joins = if kind = "join" then Map.ofList [formal, join] else Map.empty
+  let flows = if kind = "flow" || kind = "duplicate" then Map.ofList [formal, flow] else Map.empty
+  let declaration id parameters : CallableEmissionDeclaration =
+    { Lookup = id; Implementation = id; Parameters = parameters; Result = NodeId 2
+      Context = LambdaContext.RegularClosure; Captures = []; Name = CallableSymbolName.Anonymous id
+      Parent = None; Participants = Set.ofList (id :: NodeId 2 :: (parameters |> List.map (fun (_, _, formal) -> formal))) }
+  let callable =
+    { initial.Emission.Callable with
+        Carriers = carriers; Joins = joins; Flows = flows
+        Declarations = Map.ofList [NodeId 1, declaration (NodeId 1) parameters; target, declaration target []]
+        Symbols = Map.ofList [NodeId 1, CallableSymbolName.Anonymous(NodeId 1); target, CallableSymbolName.Anonymous target]
+        ClosedData = Set.singleton(NodeId 2)
+        ValueShapes = initial.Emission.Callable.ValueShapes.Add(formal, CallableValueShape.Callable formal) }
+  { initial with
+      Codata = { initial.Codata with CallableCarriers = carriers; CallableJoins = joins; CallableFlows = flows }
+      Emission = { initial.Emission with Callable = callable } }
+
+[<Theory>]
+[<InlineData("carrier")>]
+[<InlineData("join")>]
+[<InlineData("flow")>]
+let ``callable signature components retain their single stored carrier owner`` kind =
+  Assert.Empty(Integrity.check (callableComponentRows kind))
+
+[<Theory>]
+[<InlineData("missing")>]
+[<InlineData("duplicate")>]
+let ``callable signature components refuse missing or competing owner rows`` kind =
+  let violation = only "Emission.Callable.Carriers.ParameterShapes" (Integrity.check (callableComponentRows kind))
+  Assert.Equal(Some(NodeId 3), violation.Node)
+  let reason =
+    if kind = "missing" then "has no row in Emission.Callable.Carriers, Joins or Flows."
+    else "Callable component has conflicting carrier, join or flow rows."
+  Assert.Contains(reason, violation.Reason)
+
 // A string literal (node 3) and its body-free current storage claim (identity 4). Node 5 is a call whose
 // ordinal 0 is omitted and node 6 the declaration of the pool's space.
 let private storageProof : ObligationInfo =

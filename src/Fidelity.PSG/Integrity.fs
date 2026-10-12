@@ -464,7 +464,11 @@ module Integrity =
             | CallableValueShape.Data node ->
                 need part "SignatureData or ClosedData" node (Set.contains node permitted || callable.ClosedData.Contains node) @
                 need part "Emission.Numeric.OccurrenceRepresentations" node (numeric.OccurrenceRepresentations.ContainsKey node)
-            | CallableValueShape.Callable node -> need part "Emission.Callable.Carriers" node (callable.Carriers.ContainsKey node)
+            | CallableValueShape.Callable node ->
+                match callable.Carriers.ContainsKey node, callable.Joins.ContainsKey node, callable.Flows.ContainsKey node with
+                | true, false, false | false, true, false | false, false, true -> []
+                | false, false, false -> [missingRow part "Emission.Callable.Carriers, Joins or Flows" node]
+                | _ -> [defect part node "Callable component has conflicting carrier, join or flow rows."]
             | CallableValueShape.Sequence node -> need part "Emission.Storage.Sequences" node (revision.Emission.Storage.Sequences.ContainsKey node)
             | CallableValueShape.Lazy node -> need part "Emission.Storage.Lazies" node (revision.Emission.Storage.Lazies.ContainsKey node)
         [ for KeyValue(site, carrier) in callable.Carriers do
