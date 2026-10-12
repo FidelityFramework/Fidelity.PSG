@@ -5,9 +5,9 @@ module internal BinaryGenerated =
     [<Literal>]
     let Format = 2u
     [<Literal>]
-    let Schema = 21
+    let Schema = 22
     [<Literal>]
-    let Fingerprint = "458DFDB8EEF1DCC37F11BBBFF36FAFF7C6DAC350B63BCBF902376D81552FE279"
+    let Fingerprint = "7E1E623219D21C368F8B68569EDE23FF63B7579E7B7BE1A9C844328FED3886A4"
     [<Literal>]
     let NamedTypes = 271
     [<Literal>]
@@ -1244,6 +1244,10 @@ module internal BinaryGenerated =
               }
             | global.Fidelity.PSG.DeclRoot.``KernelModule`` -> result {
                 let! state = writeTag state 2
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.DeclRoot.``LibraryExport`` -> result {
+                let! state = writeTag state 3
                 return leaveWrite state
               }
     }
@@ -7523,6 +7527,9 @@ module internal BinaryGenerated =
               }
             | 2 -> result {
                 return! finishRead (global.Fidelity.PSG.DeclRoot.``KernelModule``) state
+              }
+            | 3 -> result {
+                return! finishRead (global.Fidelity.PSG.DeclRoot.``LibraryExport``) state
               }
             | _ -> malformed state "Unknown Fidelity.PSG.DeclRoot case"
     }

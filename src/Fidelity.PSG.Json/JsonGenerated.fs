@@ -308,6 +308,7 @@ module internal JsonGenerated =
         | global.Fidelity.PSG.DeclRoot.``EntryPoint`` -> union "EntryPoint" []
         | global.Fidelity.PSG.DeclRoot.``HardwareModule`` -> union "HardwareModule" []
         | global.Fidelity.PSG.DeclRoot.``KernelModule`` -> union "KernelModule" []
+        | global.Fidelity.PSG.DeclRoot.``LibraryExport`` -> union "LibraryExport" []
 
     and write_Fidelity_PSG_Dimension (value: global.Fidelity.PSG.Dimension) : JsonValue =
         JsonValue.Object [("Bases", (writeMap write_Fidelity_PSG_BaseMeasure writeInt32) value.``Bases``); ("Vars", (writeMap write_Fidelity_PSG_MeasureVar writeInt32) value.``Vars``)]

@@ -163,6 +163,13 @@ let ``inspection generator agrees with the compiled complete contract`` () =
     Assert.Equal(PsgJsonGeneration.generate typeof<Revision>.Assembly.Location, actual)
 
 [<Fact>]
+let ``inspection names LibraryExport distinctly from executable declaration roots`` () =
+    for root, name in [DeclRoot.EntryPoint, "EntryPoint"; DeclRoot.HardwareModule, "HardwareModule"; DeclRoot.KernelModule, "KernelModule"; DeclRoot.LibraryExport, "LibraryExport"] do
+        let rendered = renderValue typeof<DeclRoot> (box root) |> properties
+        Assert.Equal(name, rendered["$case"] |> text)
+        Assert.Empty(rendered["$fields"] |> properties)
+
+[<Fact>]
 let ``every reachable inspection field and union constructor is retained`` () =
     let rec collect seen (ty: Type) =
         if Map.containsKey ty.FullName seen then seen

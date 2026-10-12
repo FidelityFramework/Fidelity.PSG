@@ -94,6 +94,7 @@ type DeclRoot =
     | EntryPoint        // CPU: [<EntryPoint>] or name="main" — OS calls this
     | HardwareModule    // FPGA: [<HardwareModule>] — this IS the circuit
     | KernelModule      // NPU: [<KernelModule>] — compute kernel dispatched to AIE tiles
+    | LibraryExport     // Retained public source binding; grants no activation or ABI
 
 /// Classification of module members for code generation.
 type ModuleClassification = {

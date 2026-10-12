@@ -72,15 +72,15 @@ let ``snapshot header has independent version schema and fingerprint bytes`` () 
     // Spec closure-representation §2.4: "The account retains typed relation
     // identities, roles, ordinals and operand order and multiplicity." The old
     // schema/digest names a shape without those newly published aggregate rows.
-    // Schema 21 keeps the complete source-owned inactivity proof's participants
-    // in its role-bearing Uses map, removing the redundant participant set.
-    let prefix = Convert.FromHexString("46505347494458320200000015000000458DFDB8EEF1DCC37F11BBBFF36FAFF7C6DAC350B63BCBF902376D81552FE279")
+    // Schema 22 preserves LibraryExport as a distinct retained source root,
+    // without identifying it with an executable or spatial declaration root.
+    let prefix = Convert.FromHexString("465053474944583202000000160000007E1E623219D21C368F8B68569EDE23FF63B7579E7B7BE1A9C844328FED3886A4")
     Assert.Equal<byte>(prefix, bytes[..47])
     Assert.Equal<byte>([|64uy;0uy;0uy;0uy;0uy;0uy;0uy;0uy|], bytes[48..55])
     let header = child bytes 64 0
     let schema = child bytes header 0
     let producer = child bytes header 1
-    Assert.Equal<byte>([|21uy;0uy;0uy;0uy|], bytes[schema..schema + 3])
+    Assert.Equal<byte>([|22uy;0uy;0uy;0uy|], bytes[schema..schema + 3])
     Assert.Equal<byte>([|1uy;byte 'g'|], bytes[producer..producer + 1])
     Assert.Equal("g", (Binary.decode limits bytes |> take).Header.Producer)
 
@@ -129,6 +129,43 @@ let ``complete populated snapshot preserves identity ranges relations and litera
     | _ -> failwith "Literal cases changed during transport"
 
 [<Fact>]
+let ``declaration root tags retain LibraryExport distinctly from executable roots`` () =
+    for root, tag in [DeclRoot.EntryPoint, 0uy; DeclRoot.HardwareModule, 1uy; DeclRoot.KernelModule, 2uy; DeclRoot.LibraryExport, 3uy] do
+        let bytes = indexedEncoded BinaryGenerated.write_Fidelity_PSG_DeclRoot root
+        Assert.Equal(tag, bytes[child bytes 0 0])
+        let copy, state = BinaryGenerated.read_Fidelity_PSG_DeclRoot (indexedReadState limits bytes) |> take
+        Assert.Equal(root, copy)
+        Assert.Equal(0, state.Depth)
+    let unknown = indexedEncoded BinaryGenerated.write_Fidelity_PSG_DeclRoot DeclRoot.LibraryExport
+    unknown[child unknown 0 0] <- 4uy
+    match BinaryGenerated.read_Fidelity_PSG_DeclRoot (indexedReadState limits unknown) with
+    | Result.Error(BinaryError.Malformed(_, "Unknown Fidelity.PSG.DeclRoot case")) -> ()
+    | other -> failwithf "Expected exact unknown declaration-root refusal, got %A" other
+
+[<Fact>]
+let ``library export binding and root tables retain their distinct flavor in a revision`` () =
+    let basis = Build.bindingWithLiteral
+    let binding = {basis.Nodes[NodeId 1] with Kind = SemanticKind.Binding("value", false, false, Some DeclRoot.LibraryExport)}
+    let classification : ModuleClassification =
+        { Name = "Library"; ModuleInit = []; Definitions = [NodeId 1]
+          DeclarationRoot = Some(NodeId 1, DeclRoot.LibraryExport) }
+    let original =
+        {basis with
+            Nodes = basis.Nodes.Add(NodeId 1, binding)
+            DeclarationRoots = [NodeId 1, DeclRoot.LibraryExport]
+            ModuleClassifications = Map.ofList [NodeId 1, classification]}
+    Assert.Empty(Integrity.check original)
+    let copy = Binary.encode limits original |> take |> Binary.decode limits |> take
+    Assert.Equal(binding.Kind, copy.Nodes[NodeId 1].Kind)
+    Assert.Equal<(NodeId * DeclRoot) list>(original.DeclarationRoots, copy.DeclarationRoots)
+    Assert.Equal<Map<NodeId, ModuleClassification>>(original.ModuleClassifications, copy.ModuleClassifications)
+    // This is a transport record control; no lambda or invocation is inferred.
+    let roots = {basis.Codata with DeclarationRootLambdas = Map.ofList [NodeId 17, DeclRoot.LibraryExport]}
+    let rootBytes = indexedEncoded BinaryGenerated.write_Fidelity_PSG_Codata roots
+    let rootCopy, _ = BinaryGenerated.read_Fidelity_PSG_Codata (indexedReadState limits rootBytes) |> take
+    Assert.Equal<Map<NodeId, DeclRoot>>(roots.DeclarationRootLambdas, rootCopy.DeclarationRootLambdas)
+
+[<Fact>]
 let ``all proper truncations and trailing bytes are refused`` () =
     let bytes = Binary.encode limits Build.bindingWithLiteral |> take
     for length in 0 .. bytes.Length - 1 do
@@ -142,10 +179,10 @@ let ``unknown format schema digest and union cases fail closed`` () =
     match Binary.decode limits (mutate 8 3uy) with
     | Result.Error(BinaryError.UnsupportedFormat 3u) -> () | other -> failwithf "%A" other
     // Binary_Images.md: "A schema, format or fingerprint mismatch is refused."
-    // Exercise the preceding schema 20 against this schema-21 reader.
-    match Binary.decode limits (mutate 12 20uy) with
-    | Result.Error(BinaryError.SchemaMismatch(21, 20)) -> () | other -> failwithf "%A" other
-    match Binary.decode limits (mutate 16 0uy) with
+    // Exercise the preceding schema 21 against this schema-22 reader.
+    match Binary.decode limits (mutate 12 21uy) with
+    | Result.Error(BinaryError.SchemaMismatch(22, 21)) -> () | other -> failwithf "%A" other
+    match Binary.decode limits (mutate 16 (bytes[16] ^^^ 0xFFuy)) with
     | Result.Error BinaryError.ContractMismatch -> () | other -> failwithf "%A" other
     let unknown = indexedEncoded BinaryGenerated.write_Fidelity_PSG_NativeLiteral NativeLiteral.Unit
     unknown[child unknown 0 0] <- 127uy

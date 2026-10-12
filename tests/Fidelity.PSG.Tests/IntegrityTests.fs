@@ -74,6 +74,19 @@ let ``a declaration root that is not held is reported`` () =
     Assert.Equal(Some (NodeId 7), violation.Node)
 
 [<Fact>]
+let ``library export requires its held source identity without a spatial plan`` () =
+    let binding = {bindingWithLiteral.Nodes[NodeId 1] with Kind = SemanticKind.Binding("value", false, false, Some DeclRoot.LibraryExport)}
+    let held =
+        {bindingWithLiteral with
+            Nodes = bindingWithLiteral.Nodes.Add(NodeId 1, binding)
+            DeclarationRoots = [NodeId 1, DeclRoot.LibraryExport]}
+    Assert.Empty(Integrity.check held)
+    let orphaned = {held with DeclarationRoots = [NodeId 7, DeclRoot.LibraryExport]}
+    let violation = only "DeclarationRoots" (Integrity.check orphaned)
+    Assert.Equal(Some(NodeId 7), violation.Node)
+    Assert.Equal("Node 7 is named and is not held by the revision.", violation.Reason)
+
+[<Fact>]
 let ``a published fact about a node that is not held is reported by its table`` () =
     let escapes = Map.ofList [ NodeId 5, EscapeKind.StackScoped ]
     let stated = { bindingWithLiteral with Codata = { bindingWithLiteral.Codata with Escapes = escapes } }
