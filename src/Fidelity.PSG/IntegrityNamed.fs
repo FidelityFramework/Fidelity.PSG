@@ -672,6 +672,7 @@ module IntegrityNamed =
         | Fidelity.PSG.EdgeRole.LazyEffectRange -> []
         | Fidelity.PSG.EdgeRole.OrdinaryUnusedFormal -> []
         | Fidelity.PSG.EdgeRole.OrdinaryUnusedActual -> []
+        | Fidelity.PSG.EdgeRole.OrdinaryUnusedBindingInitializer -> []
         | Fidelity.PSG.EdgeRole.OrdinaryInactiveImplementation -> []
         | Fidelity.PSG.EdgeRole.OrdinaryBindingDemand(a0) -> (idsOfBindingDemandEvidence a0)
         | Fidelity.PSG.EdgeRole.OrdinaryBindingDemandPending(_, a1) -> (idsOfBindingDemandEvidence a1)

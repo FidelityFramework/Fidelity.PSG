@@ -5,11 +5,11 @@ module internal BinaryGenerated =
     [<Literal>]
     let Format = 2u
     [<Literal>]
-    let Schema = 22
+    let Schema = 23
     [<Literal>]
-    let Fingerprint = "7E1E623219D21C368F8B68569EDE23FF63B7579E7B7BE1A9C844328FED3886A4"
+    let Fingerprint = "02E3AF994F7ED25B32F20B69C7F8629A2FC7BA37BAF515A5B62AA64C905C3814"
     [<Literal>]
-    let NamedTypes = 271
+    let NamedTypes = 272
     [<Literal>]
     let RevisionFields = 17
     [<Literal>]
@@ -2103,28 +2103,32 @@ module internal BinaryGenerated =
                 let! state = writeTag state 165
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``OrdinaryInactiveImplementation`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``OrdinaryUnusedBindingInitializer`` -> result {
                 let! state = writeTag state 166
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``OrdinaryBindingDemand``(a0) -> result {
+            | global.Fidelity.PSG.EdgeRole.``OrdinaryInactiveImplementation`` -> result {
                 let! state = writeTag state 167
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.EdgeRole.``OrdinaryBindingDemand``(a0) -> result {
+                let! state = writeTag state 168
                 let! state = write_Fidelity_PSG_BindingDemandEvidence state a0
                 return leaveWrite state
               }
             | global.Fidelity.PSG.EdgeRole.``OrdinaryBindingDemandPending``(a0, a1) -> result {
-                let! state = writeTag state 168
+                let! state = writeTag state 169
                 let! state = writeString state a0
                 let! state = write_Fidelity_PSG_BindingDemandEvidence state a1
                 return leaveWrite state
               }
             | global.Fidelity.PSG.EdgeRole.``OrdinaryBindingDemandHistory``(a0) -> result {
-                let! state = writeTag state 169
+                let! state = writeTag state 170
                 let! state = write_Fidelity_PSG_BindingDemandEvidence state a0
                 return leaveWrite state
               }
             | global.Fidelity.PSG.EdgeRole.``FiniteCellRange`` -> result {
-                let! state = writeTag state 170
+                let! state = writeTag state 171
                 return leaveWrite state
               }
     }
@@ -4199,9 +4203,24 @@ module internal BinaryGenerated =
     and write_Fidelity_PSG_OrdinaryOmission (state: WriteState) (value: global.Fidelity.PSG.OrdinaryOmission) : Result<WriteState, BinaryError> = result {
         let! state = enterWrite state
         let! state = write_Fidelity_PSG_NodeId state value.``Site``
-        let! state = writeI32 state value.``Ordinal``
+        let! state = write_Fidelity_PSG_OrdinaryOmissionOrigin state value.``Origin``
         let! state = write_Fidelity_PSG_NodeId state value.``Actual``
         return leaveWrite state
+    }
+
+    and write_Fidelity_PSG_OrdinaryOmissionOrigin (state: WriteState) (value: global.Fidelity.PSG.OrdinaryOmissionOrigin) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        return!
+            match value with
+            | global.Fidelity.PSG.OrdinaryOmissionOrigin.``CallArgument``(a0) -> result {
+                let! state = writeTag state 0
+                let! state = writeI32 state a0
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.OrdinaryOmissionOrigin.``BindingInitializer`` -> result {
+                let! state = writeTag state 1
+                return leaveWrite state
+              }
     }
 
     and write_Fidelity_PSG_PartialApplication (state: WriteState) (value: global.Fidelity.PSG.PartialApplication) : Result<WriteState, BinaryError> = result {
@@ -4501,84 +4520,92 @@ module internal BinaryGenerated =
                 let! state = writeTag state 64
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``Callee`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``OmissionBinding`` -> result {
                 let! state = writeTag state 65
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``CalleeBody`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``OmittedInitializer`` -> result {
                 let! state = writeTag state 66
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``CalleeArgument`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``Callee`` -> result {
                 let! state = writeTag state 67
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``CalleeParameter`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``CalleeBody`` -> result {
                 let! state = writeTag state 68
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``Ingress`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``CalleeArgument`` -> result {
                 let! state = writeTag state 69
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``Origin`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``CalleeParameter`` -> result {
                 let! state = writeTag state 70
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``Construction`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``Ingress`` -> result {
                 let! state = writeTag state 71
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``LazyStringOrigin`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``Origin`` -> result {
                 let! state = writeTag state 72
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``CapturedStringOrigin`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``Construction`` -> result {
                 let! state = writeTag state 73
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``BranchChoice`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``LazyStringOrigin`` -> result {
                 let! state = writeTag state 74
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``BranchGuard`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``CapturedStringOrigin`` -> result {
                 let! state = writeTag state 75
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``BranchOperator`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``BranchChoice`` -> result {
                 let! state = writeTag state 76
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``BranchTagRead`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``BranchGuard`` -> result {
                 let! state = writeTag state 77
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``BranchSubject`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``BranchOperator`` -> result {
                 let! state = writeTag state 78
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``BranchLiteral`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``BranchTagRead`` -> result {
                 let! state = writeTag state 79
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``BranchTrueArm`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``BranchSubject`` -> result {
                 let! state = writeTag state 80
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``BranchFalseArm`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``BranchLiteral`` -> result {
                 let! state = writeTag state 81
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``BranchSelectedArm`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``BranchTrueArm`` -> result {
                 let! state = writeTag state 82
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``BranchConstructor`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``BranchFalseArm`` -> result {
                 let! state = writeTag state 83
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ParticipantRole.``BranchPayload`` -> result {
+            | global.Fidelity.PSG.ParticipantRole.``BranchSelectedArm`` -> result {
                 let! state = writeTag state 84
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.ParticipantRole.``BranchConstructor`` -> result {
+                let! state = writeTag state 85
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.ParticipantRole.``BranchPayload`` -> result {
+                let! state = writeTag state 86
                 return leaveWrite state
               }
     }
@@ -8209,22 +8236,25 @@ module internal BinaryGenerated =
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``OrdinaryUnusedActual``) state
               }
             | 166 -> result {
-                return! finishRead (global.Fidelity.PSG.EdgeRole.``OrdinaryInactiveImplementation``) state
+                return! finishRead (global.Fidelity.PSG.EdgeRole.``OrdinaryUnusedBindingInitializer``) state
               }
             | 167 -> result {
+                return! finishRead (global.Fidelity.PSG.EdgeRole.``OrdinaryInactiveImplementation``) state
+              }
+            | 168 -> result {
                 let! a0, state = read_Fidelity_PSG_BindingDemandEvidence state
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``OrdinaryBindingDemand``(a0)) state
               }
-            | 168 -> result {
+            | 169 -> result {
                 let! a0, state = readString state
                 let! a1, state = read_Fidelity_PSG_BindingDemandEvidence state
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``OrdinaryBindingDemandPending``(a0, a1)) state
               }
-            | 169 -> result {
+            | 170 -> result {
                 let! a0, state = read_Fidelity_PSG_BindingDemandEvidence state
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``OrdinaryBindingDemandHistory``(a0)) state
               }
-            | 170 -> result {
+            | 171 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``FiniteCellRange``) state
               }
             | _ -> malformed state "Unknown Fidelity.PSG.EdgeRole case"
@@ -10135,9 +10165,24 @@ module internal BinaryGenerated =
     and read_Fidelity_PSG_OrdinaryOmission (state: ReadState) : Result<global.Fidelity.PSG.OrdinaryOmission * ReadState, BinaryError> = result {
         let! state = enterReadFields 3 state
         let! a0, state = read_Fidelity_PSG_NodeId state
-        let! a1, state = readI32 state
+        let! a1, state = read_Fidelity_PSG_OrdinaryOmissionOrigin state
         let! a2, state = read_Fidelity_PSG_NodeId state
-        return! finishRead ({ ``Site`` = a0; ``Ordinal`` = a1; ``Actual`` = a2 } : global.Fidelity.PSG.OrdinaryOmission) state
+        return! finishRead ({ ``Site`` = a0; ``Origin`` = a1; ``Actual`` = a2 } : global.Fidelity.PSG.OrdinaryOmission) state
+    }
+
+    and read_Fidelity_PSG_OrdinaryOmissionOrigin (state: ReadState) : Result<global.Fidelity.PSG.OrdinaryOmissionOrigin * ReadState, BinaryError> = result {
+        let! state = enterReadCases 2 state
+        let! tag, state = readTag state
+        return!
+            match tag with
+            | 0 -> result {
+                let! a0, state = readI32 state
+                return! finishRead (global.Fidelity.PSG.OrdinaryOmissionOrigin.``CallArgument``(a0)) state
+              }
+            | 1 -> result {
+                return! finishRead (global.Fidelity.PSG.OrdinaryOmissionOrigin.``BindingInitializer``) state
+              }
+            | _ -> malformed state "Unknown Fidelity.PSG.OrdinaryOmissionOrigin case"
     }
 
     and read_Fidelity_PSG_PartialApplication (state: ReadState) : Result<global.Fidelity.PSG.PartialApplication * ReadState, BinaryError> = result {
@@ -10374,63 +10419,69 @@ module internal BinaryGenerated =
                 return! finishRead (global.Fidelity.PSG.ParticipantRole.``OmittedActual``) state
               }
             | 65 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``Callee``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``OmissionBinding``) state
               }
             | 66 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``CalleeBody``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``OmittedInitializer``) state
               }
             | 67 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``CalleeArgument``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``Callee``) state
               }
             | 68 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``CalleeParameter``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``CalleeBody``) state
               }
             | 69 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``Ingress``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``CalleeArgument``) state
               }
             | 70 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``Origin``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``CalleeParameter``) state
               }
             | 71 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``Construction``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``Ingress``) state
               }
             | 72 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``LazyStringOrigin``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``Origin``) state
               }
             | 73 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``CapturedStringOrigin``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``Construction``) state
               }
             | 74 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``BranchChoice``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``LazyStringOrigin``) state
               }
             | 75 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``BranchGuard``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``CapturedStringOrigin``) state
               }
             | 76 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``BranchOperator``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``BranchChoice``) state
               }
             | 77 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``BranchTagRead``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``BranchGuard``) state
               }
             | 78 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``BranchSubject``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``BranchOperator``) state
               }
             | 79 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``BranchLiteral``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``BranchTagRead``) state
               }
             | 80 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``BranchTrueArm``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``BranchSubject``) state
               }
             | 81 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``BranchFalseArm``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``BranchLiteral``) state
               }
             | 82 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``BranchSelectedArm``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``BranchTrueArm``) state
               }
             | 83 -> result {
-                return! finishRead (global.Fidelity.PSG.ParticipantRole.``BranchConstructor``) state
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``BranchFalseArm``) state
               }
             | 84 -> result {
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``BranchSelectedArm``) state
+              }
+            | 85 -> result {
+                return! finishRead (global.Fidelity.PSG.ParticipantRole.``BranchConstructor``) state
+              }
+            | 86 -> result {
                 return! finishRead (global.Fidelity.PSG.ParticipantRole.``BranchPayload``) state
               }
             | _ -> malformed state "Unknown Fidelity.PSG.ParticipantRole case"

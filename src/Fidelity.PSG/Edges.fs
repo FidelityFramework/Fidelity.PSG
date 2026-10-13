@@ -642,6 +642,7 @@ type EdgeRole =
     /// Exact invocation/formal/actual correspondence for an omitted physical
     /// operand. Direct explicit eager demand remains independently required.
     | OrdinaryUnusedActual
+    | OrdinaryUnusedBindingInitializer
     /// Complete ordinary caller family proves no activation from the entry.
     | OrdinaryInactiveImplementation
     | OrdinaryBindingDemand of BindingDemandEvidence

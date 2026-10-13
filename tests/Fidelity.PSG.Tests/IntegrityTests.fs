@@ -374,7 +374,7 @@ let private pool (listed: int) : StaticStringPool =
       Entries = [ { NodeIds = [ NodeId listed ]; Content = "text"; Offset = 0; Length = 4; StorageLength = 5 } ]
       SpaceName = "rodata"; Capacity = 4096L; SpaceAlignment = 1; Granularity = 1; DeclarationNode = NodeId 6 }
 
-let private omission : OrdinaryOmission = { Site = NodeId 5; Ordinal = 0; Actual = NodeId 3 }
+let private omission : OrdinaryOmission = { Site = NodeId 5; Origin = OrdinaryOmissionOrigin.CallArgument 0; Actual = NodeId 3 }
 
 /// The literal with its storage row, and the pool given.
 let private stored (row: LiteralStorage) (placed: StaticStringPool option) : Revision =
@@ -554,7 +554,7 @@ let ``a history row that differs from its current row is no violation`` () =
     let early = borrowed |> List.map (fun occurrence ->
         if occurrence.Role = ParticipantRole.ReachingCall && occurrence.Node = NodeId 7 then { occurrence with Node = NodeId 6 } else occurrence)
     Assert.NotEqual<Participant list>(borrowed, early)
-    let premise = { Literal = NodeId 5; Early = [ { Site = NodeId 6; Ordinal = 0; Actual = NodeId 8 } ] }
+    let premise = { Literal = NodeId 5; Early = [ { Site = NodeId 6; Origin = OrdinaryOmissionOrigin.CallArgument 0; Actual = NodeId 8 } ] }
     let literalHistory : Hyperedge =
         { Sources = [ NodeId 6; NodeId 8 ]; Target = NodeId 5; Class = EdgeClass.Provenance; Role = EdgeRole.LiteralStorageHistory premise; Ordinal = 0 }
     Assert.Empty(Integrity.check (withEdges [ viewEdge (ParticipantEvidence.Established borrowed) (nodesOf borrowed); historyEdge early; literalHistory ]))
@@ -578,6 +578,72 @@ let private withOmissions (participants: Participant list) : Revision =
 [<Fact>]
 let ``each omitted actual in the group of its omission site at the same ordinal is no violation`` () =
     Assert.Empty(Integrity.check (withOmissions omitted))
+
+let private initializerOmitted =
+  borrowed
+  @ [ participant 22 ParticipantRole.OmissionBinding 0 20
+      participant 23 ParticipantRole.OmittedInitializer 0 22 ]
+
+[<Fact>]
+let ``initializer omission and call argument omission pairs coexist without positional aliasing`` () =
+  Assert.Empty(Integrity.check (withOmissions initializerOmitted))
+  Assert.Empty(Integrity.check (withOmissions (omitted @ [participant 22 ParticipantRole.OmissionBinding 0 20; participant 23 ParticipantRole.OmittedInitializer 0 22])))
+
+[<Theory>]
+[<InlineData("no initializer")>]
+[<InlineData("no binding")>]
+[<InlineData("wrong group")>]
+[<InlineData("duplicate initializer")>]
+[<InlineData("call actual at binding")>]
+[<InlineData("initializer at call site")>]
+let ``initializer omission pairing refuses absent duplicate mismatched and cross-kind participants`` defect =
+  let changed =
+    match defect with
+    | "no initializer" -> initializerOmitted |> List.filter (fun occurrence -> occurrence.Role <> ParticipantRole.OmittedInitializer)
+    | "no binding" -> initializerOmitted |> List.filter (fun occurrence -> occurrence.Role <> ParticipantRole.OmissionBinding)
+    | "wrong group" -> initializerOmitted |> List.map (fun occurrence -> if occurrence.Role = ParticipantRole.OmittedInitializer then {occurrence with Group = NodeId 20} else occurrence)
+    | "duplicate initializer" -> initializerOmitted @ [participant 21 ParticipantRole.OmittedInitializer 0 22]
+    | "call actual at binding" -> initializerOmitted |> List.map (fun occurrence -> if occurrence.Role = ParticipantRole.OmittedInitializer then {occurrence with Role = ParticipantRole.OmittedActual} else occurrence)
+    | "initializer at call site" -> initializerOmitted |> List.map (fun occurrence -> if occurrence.Role = ParticipantRole.OmissionBinding then {occurrence with Role = ParticipantRole.OmissionSite} else occurrence)
+    | other -> failwithf "Unknown initializer omission defect: %s" other
+  let unplaced = "The omitted actual 23 of the string borrow row of node 3 is not in the group of an omission site at ordinal 0."
+  let missing = "The omission site 22 at ordinal 0 of the string borrow row of node 3 has 0 omitted actuals, not one."
+  let expected =
+    match defect with
+    | "no initializer" -> [missing]
+    | "no binding" -> [unplaced]
+    | "duplicate initializer" -> ["The omission site 22 at ordinal 0 of the string borrow row of node 3 has 2 omitted actuals, not one."]
+    | _ -> [unplaced; missing]
+  let failures = Integrity.incidence (withOmissions changed)
+  Assert.Equal<string list>(List.sort expected, failures |> List.map _.Reason |> List.sort)
+  Assert.All(failures, fun failure ->
+    Assert.Equal("Edges (StringByteView)", failure.Part)
+    Assert.Equal(Some(NodeId 3), failure.Node))
+
+[<Theory>]
+[<InlineData("binding")>]
+[<InlineData("initializer")>]
+[<InlineData("both")>]
+let ``initializer omission participants refuse nonzero positions even when their pair agrees`` role =
+  let changed = initializerOmitted |> List.map (fun occurrence ->
+    match occurrence.Role with
+    | ParticipantRole.OmissionBinding when role = "binding" || role = "both" -> {occurrence with Ordinal = 1}
+    | ParticipantRole.OmittedInitializer when role = "initializer" || role = "both" -> {occurrence with Ordinal = 1}
+    | _ -> occurrence)
+  let reasons = Integrity.incidence (withOmissions changed) |> List.map _.Reason
+  let nonpositional = "An initializer omission participant has a position although its role is non-positional."
+  let expected =
+    match role with
+    | "both" -> [nonpositional; nonpositional]
+    | "binding" ->
+      [nonpositional
+       "The omitted actual 23 of the string borrow row of node 3 is not in the group of an omission site at ordinal 0."
+       "The omission site 22 at ordinal 1 of the string borrow row of node 3 has 0 omitted actuals, not one."]
+    | _ ->
+      [nonpositional
+       "The omitted actual 23 of the string borrow row of node 3 is not in the group of an omission site at ordinal 1."
+       "The omission site 22 at ordinal 0 of the string borrow row of node 3 has 0 omitted actuals, not one."]
+  Assert.Equal<string list>(List.sort expected, List.sort reasons)
 
 [<Theory>]
 [<InlineData("actual in the omitted call's group")>]

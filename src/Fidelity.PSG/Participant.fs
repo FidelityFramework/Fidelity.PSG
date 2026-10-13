@@ -47,6 +47,10 @@ type ParticipantRole =
     /// The omitted actual of an omission relation, in the group of the omission's site and
     /// at its ordinal.
     | OmittedActual
+    /// An ordinary binding whose initializer is not entered; this role has no position.
+    | OmissionBinding
+    /// Its initializer, grouped by the omission binding; this role has no position.
+    | OmittedInitializer
     /// A lambda the call resolves to.
     | Callee
     /// The body of that lambda, in the group of the lambda.
@@ -92,11 +96,16 @@ type ParticipantEvidence =
 /// The early derivation of the string borrow at a site, apart from the current row.
 type BorrowHistory = { Site: NodeId; Early: EarlyDerivation }
 
-/// One omission relation of ordinary demand: the call, the ordinal of the actual
-/// that the call does not enter, and that actual.
+/// The source boundary whose deferred computation is not entered.
+[<RequireQualifiedAccess>]
+type OrdinaryOmissionOrigin =
+    | CallArgument of ordinal: int
+    | BindingInitializer
+
+/// One resident ordinary-demand relation, preserving its boundary's kind.
 type OrdinaryOmission = {
     Site: NodeId
-    Ordinal: int
+    Origin: OrdinaryOmissionOrigin
     Actual: NodeId
 }
 

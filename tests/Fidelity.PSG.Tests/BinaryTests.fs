@@ -43,6 +43,27 @@ let private indexedEncoded (writer: BinaryIndexed.WriteState -> 'a -> Result<Bin
 let private indexedReadState bounds bytes =
     BinaryIndexed.initialRead bounds (BAREWire.Memory.ByteSource.ofArray bytes) { Offset = 0UL; Length = uint64 bytes.Length }
 
+[<Fact>]
+let ``ordinary omission origins retain their kind ordinal and identities in the binary contract`` () =
+  let omissions : OrdinaryOmission list =
+    [ {Site = NodeId 5; Origin = OrdinaryOmissionOrigin.CallArgument 0; Actual = NodeId 3}
+      {Site = NodeId 5; Origin = OrdinaryOmissionOrigin.CallArgument 7; Actual = NodeId 3}
+      {Site = NodeId 5; Origin = OrdinaryOmissionOrigin.BindingInitializer; Actual = NodeId 3} ]
+  let images = omissions |> List.map (indexedEncoded BinaryGenerated.write_Fidelity_PSG_OrdinaryOmission)
+  Assert.Equal(3, images |> List.distinct |> List.length)
+  List.iter2 (fun expected bytes ->
+    let actual, state = BinaryGenerated.read_Fidelity_PSG_OrdinaryOmission (indexedReadState limits bytes) |> take
+    Assert.Equal(0, state.Depth)
+    Assert.Equal(expected, actual)) omissions images
+
+[<Fact>]
+let ``initializer omission participant roles retain their distinct binary identities`` () =
+  let roles = [ParticipantRole.OmissionSite; ParticipantRole.OmittedActual; ParticipantRole.OmissionBinding; ParticipantRole.OmittedInitializer]
+  let images = roles |> List.map (indexedEncoded BinaryGenerated.write_Fidelity_PSG_ParticipantRole)
+  Assert.Equal(4, images |> List.distinct |> List.length)
+  List.iter2 (fun expected bytes ->
+    Assert.Equal(expected, BinaryGenerated.read_Fidelity_PSG_ParticipantRole (indexedReadState limits bytes) |> take |> fst)) roles images
+
 let child (bytes: byte array) (at: int) (index: int) =
     let offset, _ = BAREWire.Encoding.Decoder.readU64 bytes (at + 8 + index * 16)
     int offset
@@ -72,15 +93,14 @@ let ``snapshot header has independent version schema and fingerprint bytes`` () 
     // Spec closure-representation §2.4: "The account retains typed relation
     // identities, roles, ordinals and operand order and multiplicity." The old
     // schema/digest names a shape without those newly published aggregate rows.
-    // Schema 22 preserves LibraryExport as a distinct retained source root,
-    // without identifying it with an executable or spatial declaration root.
-    let prefix = Convert.FromHexString("465053474944583202000000160000007E1E623219D21C368F8B68569EDE23FF63B7579E7B7BE1A9C844328FED3886A4")
+    // Schema 23 preserves omission origin kinds and non-positional initializer roles.
+    let prefix = Convert.FromHexString("4650534749445832020000001700000002E3AF994F7ED25B32F20B69C7F8629A2FC7BA37BAF515A5B62AA64C905C3814")
     Assert.Equal<byte>(prefix, bytes[..47])
     Assert.Equal<byte>([|64uy;0uy;0uy;0uy;0uy;0uy;0uy;0uy|], bytes[48..55])
     let header = child bytes 64 0
     let schema = child bytes header 0
     let producer = child bytes header 1
-    Assert.Equal<byte>([|22uy;0uy;0uy;0uy|], bytes[schema..schema + 3])
+    Assert.Equal<byte>([|23uy;0uy;0uy;0uy|], bytes[schema..schema + 3])
     Assert.Equal<byte>([|1uy;byte 'g'|], bytes[producer..producer + 1])
     Assert.Equal("g", (Binary.decode limits bytes |> take).Header.Producer)
 
@@ -179,9 +199,9 @@ let ``unknown format schema digest and union cases fail closed`` () =
     match Binary.decode limits (mutate 8 3uy) with
     | Result.Error(BinaryError.UnsupportedFormat 3u) -> () | other -> failwithf "%A" other
     // Binary_Images.md: "A schema, format or fingerprint mismatch is refused."
-    // Exercise the preceding schema 21 against this schema-22 reader.
-    match Binary.decode limits (mutate 12 21uy) with
-    | Result.Error(BinaryError.SchemaMismatch(22, 21)) -> () | other -> failwithf "%A" other
+    // Exercise the preceding schema 22 against this schema-23 reader.
+    match Binary.decode limits (mutate 12 22uy) with
+    | Result.Error(BinaryError.SchemaMismatch(23, 22)) -> () | other -> failwithf "%A" other
     match Binary.decode limits (mutate 16 (bytes[16] ^^^ 0xFFuy)) with
     | Result.Error BinaryError.ContractMismatch -> () | other -> failwithf "%A" other
     let unknown = indexedEncoded BinaryGenerated.write_Fidelity_PSG_NativeLiteral NativeLiteral.Unit

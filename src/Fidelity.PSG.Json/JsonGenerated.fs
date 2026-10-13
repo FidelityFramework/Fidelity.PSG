@@ -4,7 +4,7 @@ open Fidelity.Data.JSON
 module internal JsonGenerated =
     open JsonRuntime
     [<Literal>]
-    let NamedTypes = 258
+    let NamedTypes = 259
     let rec write_BAREWire_Platform_MemorySpace (value: global.BAREWire.Platform.MemorySpace) : JsonValue =
         JsonValue.Object [("Name", writeString value.``Name``); ("Kind", writeString value.``Kind``); ("Capacity", writeInt64 value.``Capacity``); ("Alignment", writeInt32 value.``Alignment``); ("Granularity", writeInt32 value.``Granularity``); ("Growth", writeString value.``Growth``); ("Access", writeString value.``Access``); ("Base", (writeOption writeInt64) value.``Base``); ("Notes", writeString value.``Notes``); ("MapKind", writeString value.``MapKind``); ("Since", writeString value.``Since``); ("Until", writeString value.``Until``)]
 
@@ -514,6 +514,7 @@ module internal JsonGenerated =
         | global.Fidelity.PSG.EdgeRole.``LazyEffectRange`` -> union "LazyEffectRange" []
         | global.Fidelity.PSG.EdgeRole.``OrdinaryUnusedFormal`` -> union "OrdinaryUnusedFormal" []
         | global.Fidelity.PSG.EdgeRole.``OrdinaryUnusedActual`` -> union "OrdinaryUnusedActual" []
+        | global.Fidelity.PSG.EdgeRole.``OrdinaryUnusedBindingInitializer`` -> union "OrdinaryUnusedBindingInitializer" []
         | global.Fidelity.PSG.EdgeRole.``OrdinaryInactiveImplementation`` -> union "OrdinaryInactiveImplementation" []
         | global.Fidelity.PSG.EdgeRole.``OrdinaryBindingDemand``(a0) -> union "OrdinaryBindingDemand" [("Item", write_Fidelity_PSG_BindingDemandEvidence a0)]
         | global.Fidelity.PSG.EdgeRole.``OrdinaryBindingDemandPending``(a0, a1) -> union "OrdinaryBindingDemandPending" [("reason", writeString a0); ("evidence", write_Fidelity_PSG_BindingDemandEvidence a1)]
@@ -1041,7 +1042,12 @@ module internal JsonGenerated =
         JsonValue.Object [("Implementation", write_Fidelity_PSG_NodeId value.``Implementation``); ("Entry", write_Fidelity_PSG_NodeId value.``Entry``); ("Body", write_Fidelity_PSG_NodeId value.``Body``); ("Parameters", (writeList write_Fidelity_PSG_NodeId) value.``Parameters``); ("Roots", (writeSet write_Fidelity_PSG_NodeId) value.``Roots``); ("Excluded", (writeSet write_Fidelity_PSG_NodeId) value.``Excluded``); ("Calls", (writeSet write_Fidelity_PSG_NodeId) value.``Calls``); ("Uses", (writeMap write_Fidelity_PSG_NodeId (writeList (fun (v2_0, v2_1, v2_2, v2_3, v2_4) -> JsonValue.Array [write_Fidelity_PSG_EdgeClass v2_0; write_Fidelity_PSG_EdgeRole v2_1; writeInt32 v2_2; (writeList write_Fidelity_PSG_NodeId) v2_3; write_Fidelity_PSG_NodeId v2_4]))) value.``Uses``); ("SourcePremises", (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_BoundarySourcePremise) value.``SourcePremises``)]
 
     and write_Fidelity_PSG_OrdinaryOmission (value: global.Fidelity.PSG.OrdinaryOmission) : JsonValue =
-        JsonValue.Object [("Site", write_Fidelity_PSG_NodeId value.``Site``); ("Ordinal", writeInt32 value.``Ordinal``); ("Actual", write_Fidelity_PSG_NodeId value.``Actual``)]
+        JsonValue.Object [("Site", write_Fidelity_PSG_NodeId value.``Site``); ("Origin", write_Fidelity_PSG_OrdinaryOmissionOrigin value.``Origin``); ("Actual", write_Fidelity_PSG_NodeId value.``Actual``)]
+
+    and write_Fidelity_PSG_OrdinaryOmissionOrigin (value: global.Fidelity.PSG.OrdinaryOmissionOrigin) : JsonValue =
+        match value with
+        | global.Fidelity.PSG.OrdinaryOmissionOrigin.``CallArgument``(a0) -> union "CallArgument" [("ordinal", writeInt32 a0)]
+        | global.Fidelity.PSG.OrdinaryOmissionOrigin.``BindingInitializer`` -> union "BindingInitializer" []
 
     and write_Fidelity_PSG_PartialApplication (value: global.Fidelity.PSG.PartialApplication) : JsonValue =
         JsonValue.Object [("TargetBindingId", write_Fidelity_PSG_NodeId value.``TargetBindingId``); ("SuppliedArgNodes", (writeList write_Fidelity_PSG_NodeId) value.``SuppliedArgNodes``); ("TotalParams", writeInt32 value.``TotalParams``)]
@@ -1121,6 +1127,8 @@ module internal JsonGenerated =
         | global.Fidelity.PSG.ParticipantRole.``OmittedCallActual`` -> union "OmittedCallActual" []
         | global.Fidelity.PSG.ParticipantRole.``OmissionSite`` -> union "OmissionSite" []
         | global.Fidelity.PSG.ParticipantRole.``OmittedActual`` -> union "OmittedActual" []
+        | global.Fidelity.PSG.ParticipantRole.``OmissionBinding`` -> union "OmissionBinding" []
+        | global.Fidelity.PSG.ParticipantRole.``OmittedInitializer`` -> union "OmittedInitializer" []
         | global.Fidelity.PSG.ParticipantRole.``Callee`` -> union "Callee" []
         | global.Fidelity.PSG.ParticipantRole.``CalleeBody`` -> union "CalleeBody" []
         | global.Fidelity.PSG.ParticipantRole.``CalleeArgument`` -> union "CalleeArgument" []

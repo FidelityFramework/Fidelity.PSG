@@ -227,13 +227,13 @@ module Integrity =
     /// each of its ordinals.
     let incidence (revision: Revision) : IntegrityViolation list =
         let violation part site reason = { Part = part; Node = Some site; Reason = reason }
-        let paired part site (participants: Participant list) =
+        let pairedRoles siteRole actualRole part site (participants: Participant list) =
             let sites =
                 participants
-                |> List.filter (fun participant -> participant.Role = ParticipantRole.OmissionSite)
+                |> List.filter (fun participant -> participant.Role = siteRole)
                 |> List.map (fun participant -> participant.Node, participant.Ordinal)
                 |> List.distinct
-            let actuals = participants |> List.filter (fun participant -> participant.Role = ParticipantRole.OmittedActual)
+            let actuals = participants |> List.filter (fun participant -> participant.Role = actualRole)
             let unplaced =
                 actuals
                 |> List.filter (fun actual -> not (List.contains (actual.Group, actual.Ordinal) sites))
@@ -251,6 +251,15 @@ module Integrity =
                         (sprintf "The omission site %d at ordinal %d of the string borrow row of node %d has %d omitted actuals, not one."
                             (NodeId.value omission) ordinal (NodeId.value site) count))
             unplaced @ counted
+        let paired part site (participants: Participant list) =
+            let initializerPositions = participants |> List.choose (fun participant ->
+                match participant.Role with
+                | ParticipantRole.OmissionBinding | ParticipantRole.OmittedInitializer when participant.Ordinal <> 0 ->
+                    Some (violation part site "An initializer omission participant has a position although its role is non-positional.")
+                | _ -> None)
+            pairedRoles ParticipantRole.OmissionSite ParticipantRole.OmittedActual part site participants
+            @ pairedRoles ParticipantRole.OmissionBinding ParticipantRole.OmittedInitializer part site participants
+            @ initializerPositions
         let owned part site (participants: Participant list) =
             let callees = participants |> List.filter (fun participant -> participant.Role = ParticipantRole.Callee)
             let lambdas = callees |> List.map _.Node |> Set.ofList

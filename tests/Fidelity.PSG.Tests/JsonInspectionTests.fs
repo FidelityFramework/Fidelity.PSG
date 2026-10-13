@@ -157,6 +157,28 @@ let private renderValue (ty: Type) value =
     methodInfo.Invoke(null, [|value|]) :?> JsonValue
 
 [<Fact>]
+let ``inspection preserves ordinary omission origin kind without inventing an initializer ordinal`` () =
+  let cases =
+    [ OrdinaryOmissionOrigin.CallArgument 0, "CallArgument", Some 0L
+      OrdinaryOmissionOrigin.CallArgument 7, "CallArgument", Some 7L
+      OrdinaryOmissionOrigin.BindingInitializer, "BindingInitializer", None ]
+  let images = cases |> List.map (fun (origin, name, ordinal) ->
+    let omission : OrdinaryOmission = {Site = NodeId 5; Origin = origin; Actual = NodeId 3}
+    let rendered = renderValue typeof<OrdinaryOmission> (box omission)
+    check typeof<OrdinaryOmission> (box omission) rendered
+    let storedOrigin = (properties rendered)["Origin"] |> properties
+    Assert.Equal(name, storedOrigin["$case"] |> text)
+    let fields = storedOrigin["$fields"] |> properties
+    match ordinal with
+    | Some expected ->
+      Assert.Equal<string list>(["ordinal"], fields |> Map.keys |> Seq.toList)
+      Assert.Equal(expected, fields["ordinal"] |> number)
+    | None -> Assert.Empty fields
+    Assert.Equal<JsonValue>(rendered, Json.serialize rendered |> Json.parse |> take)
+    rendered)
+  Assert.Equal(3, images |> List.distinct |> List.length)
+
+[<Fact>]
 let ``inspection generator agrees with the compiled complete contract`` () =
     let root = Path.GetFullPath(Path.Combine(__SOURCE_DIRECTORY__, "..", ".."))
     let actual = File.ReadAllText(Path.Combine(root, "src", "Fidelity.PSG.Json", "JsonGenerated.fs"))
