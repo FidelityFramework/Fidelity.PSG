@@ -23,6 +23,163 @@ let private hasViolation part (original: Revision) =
         Assert.Contains(failures, fun violation -> violation.Part = part)
     | other -> failwithf "An inconsistent artifact account was accepted: %A" other
 
+let private foreignResultAccount stated enclosure =
+    let original = revision [node 1 (SemanticKind.Binding("read", false, false, None)) []
+                             node 2 (SemanticKind.Application(NodeId 1, [NodeId 3])) [1; 3]
+                             node 3 (SemanticKind.Literal NativeLiteral.Unit) []
+                             node 4 (SemanticKind.Literal NativeLiteral.Unit) []
+                             node 5 (SemanticKind.Literal NativeLiteral.Unit) []
+                             node 6 (SemanticKind.Literal NativeLiteral.Unit) []
+                             node 7 (SemanticKind.Literal NativeLiteral.Unit) []]
+    let hypothesis : ForeignResultHypothesis =
+        { Quote = NodeId 4; Declaration = NodeId 1; Identity = "posix-read"; Version = "profile-1"
+          Source = "pilot/read"; Lower = ForeignResultBound.Constant -1I; Upper = ForeignResultBound.Argument 0 }
+    let application : ForeignResultApplication =
+        { Declaration = NodeId 1; Call = NodeId 2; Context = [NodeId 5]
+          Hypothesis = if stated then Some hypothesis else None
+          Arguments = [{Index = 0; Node = NodeId 3; Enclosure = enclosure}] }
+    let ready = stated && enclosure <> ValueRange.Unbounded
+    let roles = [ForeignResultProofRole.LogicalCoverage, NodeId 40; ForeignResultProofRole.AbiNarrowing, NodeId 41]
+    let models = roles |> List.map (fun (role, citizen) ->
+        let model : ForeignResultCoverageModel =
+            { Application = application; Role = role
+              ResultRange = if ready then ValueRange.Bounded(-1I, 1024I) else ValueRange.Unbounded
+              Destination = if ready then ValueRange.Bounded(-32768I, 32767I) else ValueRange.Unbounded
+              DestinationDeclaration = if ready then Some(NodeId 7) else None
+              Abi = if ready then Some(NodeId 6) else None
+              AbiRange = if ready then ValueRange.Bounded(-32768I, 32767I) else ValueRange.Unbounded
+              AbiIdentity = if ready then Some "fixture:abi:incarnation-1" else None
+              DestinationIdentity = if ready then Some "fixture:destination:incarnation-1" else None }
+        citizen, obligation ("read-result:" + string role) "foreign-result-coverage" (ObligationBody.ForeignResultCoverage model))
+    let participants =
+        [participant ParticipantRole.ForeignResultDeclaration 0 2 1
+         participant ParticipantRole.ForeignResultCall 0 2 2
+         participant ParticipantRole.ForeignResultContext 0 2 5] @
+        (if stated then [participant ParticipantRole.ForeignResultHypothesis 0 2 4] else []) @
+        [participant ParticipantRole.ForeignResultActual 0 2 3] @
+        (if ready then [participant ParticipantRole.ForeignResultAbi 0 2 6
+                        participant ParticipantRole.ForeignResultDestination 0 2 7
+                        participant ParticipantRole.ForeignResultAbi 1 2 6
+                        participant ParticipantRole.ForeignResultDestination 1 2 7] else [])
+    let account : ForeignResultUse =
+        { Application = application; Claims = roles
+          Participants = if ready then ParticipantEvidence.Established participants else ParticipantEvidence.Pending {Derived = participants} }
+    let boundary = {original.Emission.Boundary with ResultHypotheses = if stated then [hypothesis] else []}
+    let numeric = {original.Emission.Numeric with ForeignResultUses = [account]}
+    { original with
+        Emission = {original.Emission with Boundary = boundary; Numeric = numeric}
+        CurrentClaims = Map.ofList models; Obligations = models |> List.map snd
+        ObligationSources = roles |> List.map (fun (_, citizen) -> citizen, [participants |> List.map _.Node]) |> Map.ofList }
+
+[<Theory>]
+[<InlineData("ready")>]
+[<InlineData("absent")>]
+[<InlineData("unknown")>]
+[<InlineData("unanchored")>]
+let ``foreign result accounts retain conditional and pending model shape`` state =
+    let original = foreignResultAccount (state <> "absent") (if state = "ready" || state = "unanchored" then ValueRange.Bounded(0I, 1024I) else ValueRange.Unbounded)
+    let original =
+        if state <> "unanchored" then original
+        else
+            let claims = original.CurrentClaims |> Map.map (fun _ info ->
+                match info.Body with
+                | ObligationBody.ForeignResultCoverage model ->
+                    {info with Body = ObligationBody.ForeignResultCoverage {model with AbiIdentity = None; DestinationIdentity = None}}
+                | _ -> info)
+            {original with CurrentClaims = claims; Obligations = claims |> Map.toList |> List.map snd}
+    Assert.Empty(Integrity.check original)
+    let bytes = Binary.encode BinaryTests.limits original |> BinaryTests.take
+    let copy = Binary.decode BinaryTests.limits bytes |> BinaryTests.take
+    Assert.Equal<ForeignResultHypothesis list>(original.Emission.Boundary.ResultHypotheses, copy.Emission.Boundary.ResultHypotheses)
+    Assert.Equal<ForeignResultUse list>(original.Emission.Numeric.ForeignResultUses, copy.Emission.Numeric.ForeignResultUses)
+    Assert.Equal<Map<NodeId, ObligationInfo>>(original.CurrentClaims, copy.CurrentClaims)
+    for KeyValue(_, claim) in copy.CurrentClaims do
+        match claim.Body with
+        | ObligationBody.ForeignResultCoverage model ->
+            Assert.Equal((if state = "ready" then Some "fixture:abi:incarnation-1" else None), model.AbiIdentity)
+            Assert.Equal((if state = "ready" then Some "fixture:destination:incarnation-1" else None), model.DestinationIdentity)
+        | _ -> failwith "Conditional model was lost in the typed codec."
+    Assert.Equal<byte>(bytes, Binary.encode BinaryTests.limits copy |> BinaryTests.take)
+    Assert.Equal(2, copy.CurrentClaims.Count)
+    let view = Binary.openSource BinaryTests.limits (BAREWire.Memory.ByteSource.ofArray bytes) |> BinaryTests.take
+    let inspection = Fidelity.PSG.Json.Inspection.render false view |> BinaryTests.take
+    Assert.Contains("ForeignResultUses", inspection)
+    Assert.Contains("ForeignResultCoverage", inspection)
+    if state <> "absent" then Assert.Contains("profile-1", inspection)
+    else Assert.DoesNotContain("profile-1", inspection)
+
+[<Fact>]
+let ``foreign result absence retains the declaration and same role claim anchors`` () =
+    let ready = foreignResultAccount true (ValueRange.Bounded(0I, 1024I))
+    let pending = foreignResultAccount false ValueRange.Unbounded
+    Assert.Equal<NodeId list>(ready.CurrentClaims |> Map.keys |> Seq.toList, pending.CurrentClaims |> Map.keys |> Seq.toList)
+    Assert.Equal<(string * string) list>(ready.Obligations |> List.map (fun row -> row.Id, row.Source), pending.Obligations |> List.map (fun row -> row.Id, row.Source))
+    let account = Assert.Single pending.Emission.Numeric.ForeignResultUses
+    Assert.Equal(NodeId 1, account.Application.Declaration)
+    Assert.Equal(None, account.Application.Hypothesis)
+    match account.Participants with ParticipantEvidence.Pending _ -> () | _ -> failwith "Missing contract was not retained Pending."
+
+[<Theory>]
+[<InlineData("abi-empty")>]
+[<InlineData("destination-empty")>]
+[<InlineData("abi-unheld")>]
+[<InlineData("destination-unheld")>]
+let ``foreign premise provenance refuses blank anchors and anchors without premise nodes`` change =
+    let original = foreignResultAccount true (ValueRange.Bounded(0I, 1024I))
+    let claims = original.CurrentClaims |> Map.map (fun _ info ->
+        match info.Body with
+        | ObligationBody.ForeignResultCoverage model ->
+            let changed =
+                match change with
+                | "abi-empty" -> {model with AbiIdentity = Some ""}
+                | "destination-empty" -> {model with DestinationIdentity = Some " "}
+                | "abi-unheld" -> {model with Abi = None}
+                | "destination-unheld" -> {model with DestinationDeclaration = None}
+                | _ -> failwith "Unknown provenance control"
+            {info with Body = ObligationBody.ForeignResultCoverage changed}
+        | _ -> info)
+    hasViolation "Emission.Numeric.ForeignResultUses.Provenance" {original with CurrentClaims = claims; Obligations = claims |> Map.toList |> List.map snd}
+
+[<Theory>]
+[<InlineData("version", "Hypothesis")>]
+[<InlineData("withdrawal", "Hypothesis")>]
+[<InlineData("false-absence", "Hypothesis")>]
+[<InlineData("declaration", "Hypothesis")>]
+[<InlineData("duplicate", "Application")>]
+[<InlineData("argument", "Arguments")>]
+[<InlineData("claim", "Claims")>]
+[<InlineData("dropped-use", "Claims")>]
+[<InlineData("participants", "Participants")>]
+[<InlineData("sources", "Sources")>]
+let ``foreign result accounts refuse stale hypothesis and ledger crosslinks`` (change, suffix) =
+    let original = foreignResultAccount true (ValueRange.Bounded(0I, 1024I))
+    let boundary, numeric = original.Emission.Boundary, original.Emission.Numeric
+    let account = List.head numeric.ForeignResultUses
+    let altered =
+        match change with
+        | "version" -> {original with Emission = {original.Emission with Boundary = {boundary with ResultHypotheses = boundary.ResultHypotheses |> List.map (fun row -> {row with Version = "profile-2"})}}}
+        | "withdrawal" -> {original with Emission = {original.Emission with Boundary = {boundary with ResultHypotheses = []}}}
+        | "false-absence" -> {original with Emission = {original.Emission with Numeric = {numeric with ForeignResultUses = [{account with Application = {account.Application with Hypothesis = None}}]}}}
+        | "declaration" -> {original with Emission = {original.Emission with Numeric = {numeric with ForeignResultUses = [{account with Application = {account.Application with Declaration = NodeId 7}}]}}}
+        | "duplicate" -> {original with Emission = {original.Emission with Numeric = {numeric with ForeignResultUses = [account; account]}}}
+        | "argument" -> {original with Emission = {original.Emission with Numeric = {numeric with ForeignResultUses = [{account with Application = {account.Application with Arguments = [{Index = 2; Node = NodeId 3; Enclosure = ValueRange.Bounded(0I, 1024I)}]}}]}}}
+        | "claim" -> {original with CurrentClaims = original.CurrentClaims.Remove(NodeId 40)}
+        | "dropped-use" -> {original with Emission = {original.Emission with Numeric = {numeric with ForeignResultUses = []}}}
+        | "participants" -> {original with Emission = {original.Emission with Numeric = {numeric with ForeignResultUses = [{account with Participants = ParticipantEvidence.Established []}]}}}
+        | "sources" -> {original with ObligationSources = original.ObligationSources.Add(NodeId 40, [[NodeId 2]])}
+        | other -> failwithf "Unknown foreign result mutation %s" other
+    hasViolation ("Emission.Numeric.ForeignResultUses." + suffix) altered
+
+[<Theory>]
+[<InlineData("identity")>]
+[<InlineData("version")>]
+[<InlineData("source")>]
+let ``foreign result provenance refuses partially supplied hypotheses`` field =
+    let original = foreignResultAccount true (ValueRange.Bounded(0I, 1024I))
+    let malformed = original.Emission.Boundary.ResultHypotheses |> List.map (fun row ->
+        match field with "identity" -> {row with Identity = ""} | "version" -> {row with Version = ""} | _ -> {row with Source = ""})
+    hasViolation "Emission.Boundary.ResultHypotheses.Provenance" {original with Emission = {original.Emission with Boundary = {original.Emission.Boundary with ResultHypotheses = malformed}}}
+
 let private pendingReservations =
     let original = revision [node 1 (SemanticKind.EnvironmentAllocate(NodeId 1)) []
                              node 2 (SemanticKind.Binding("first", false, false, None)) []

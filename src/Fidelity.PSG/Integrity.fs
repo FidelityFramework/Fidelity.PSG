@@ -782,6 +782,94 @@ module Integrity =
                   for id in [row.Binding; row.Initializer] do
                       if not (revision.Nodes.ContainsKey id) then yield missingBody "Emission.Storage.Startup.Initializers.Action" id ]
 
+    /// Agreement of stored foreign hypotheses, invocation incidence and current
+    /// ledger citizens. This performs no inference or conditional discharge.
+    let private foreignResultRows (revision: Revision) =
+        let hypotheses = revision.Emission.Boundary.ResultHypotheses
+        let uses = revision.Emission.Numeric.ForeignResultUses
+        let fail site suffix reason = defect ("Emission.Numeric.ForeignResultUses." + suffix) site reason
+        let roles = [ForeignResultProofRole.LogicalCoverage; ForeignResultProofRole.AbiNarrowing]
+        let ordinal role = if role = ForeignResultProofRole.LogicalCoverage then 0 else 1
+        let participant call role index node : Participant = {Node = node; Role = role; Ordinal = index; Group = call}
+        [ for hypothesis in hypotheses do
+              if System.String.IsNullOrWhiteSpace hypothesis.Identity || System.String.IsNullOrWhiteSpace hypothesis.Version ||
+                 System.String.IsNullOrWhiteSpace hypothesis.Source then
+                  yield defect "Emission.Boundary.ResultHypotheses.Provenance" hypothesis.Declaration "An external execution hypothesis has incomplete identity, version or source."
+              if hypotheses |> List.filter (fun row -> row.Declaration = hypothesis.Declaration) |> List.length <> 1 then
+                  yield defect "Emission.Boundary.ResultHypotheses.Declaration" hypothesis.Declaration "A declaration has duplicate external result hypotheses."
+              for bound in [hypothesis.Lower; hypothesis.Upper] do
+                  match bound with
+                  | ForeignResultBound.Argument index when index < 0 ->
+                      yield defect "Emission.Boundary.ResultHypotheses.Argument" hypothesis.Declaration "A result bound has a negative argument ordinal."
+                  | _ -> ()
+          for account in uses do
+              let application = account.Application
+              let call = application.Call
+              if uses |> List.filter (fun row -> row.Application.Call = call && row.Application.Context = application.Context) |> List.length <> 1 then
+                  yield fail call "Application" "The exact call/context account is duplicated."
+              match application.Hypothesis, hypotheses |> List.filter (fun row -> row.Declaration = application.Declaration) with
+              | None, [] -> ()
+              | Some hypothesis, [current] when hypothesis = current && hypothesis.Declaration = application.Declaration -> ()
+              | _ -> yield fail call "Hypothesis" "The invocation hypothesis or its absence differs from the exact current declaration census."
+              if (application.Arguments |> List.map _.Index) <> [0 .. application.Arguments.Length - 1] then
+                  yield fail call "Arguments" "The actual arguments lack exact consecutive source ordinals."
+              for hypothesis in Option.toList application.Hypothesis do
+                  for bound in [hypothesis.Lower; hypothesis.Upper] do
+                      match bound with
+                      | ForeignResultBound.Argument index when index < 0 || index >= application.Arguments.Length ->
+                          yield fail call "Arguments" "A result endpoint names an absent actual argument."
+                      | _ -> ()
+              if List.map fst account.Claims <> roles || (account.Claims |> List.map snd |> List.distinct).Length <> 2 then
+                  yield fail call "Claims" "Logical coverage and ABI narrowing must retain two distinct ordered claim citizens."
+              let expected =
+                  [participant call ParticipantRole.ForeignResultDeclaration 0 application.Declaration
+                   participant call ParticipantRole.ForeignResultCall 0 call] @
+                  (application.Context |> List.mapi (participant call ParticipantRole.ForeignResultContext)) @
+                  (application.Hypothesis |> Option.map (fun hypothesis -> participant call ParticipantRole.ForeignResultHypothesis 0 hypothesis.Quote) |> Option.toList) @
+                  (application.Arguments |> List.map (fun argument -> participant call ParticipantRole.ForeignResultActual argument.Index argument.Node))
+              let models =
+                  account.Claims |> List.choose (fun (role, citizen) ->
+                      match revision.CurrentClaims.TryFind citizen with
+                      | Some claim ->
+                          match claim.Body with
+                          | ObligationBody.ForeignResultCoverage model when model.Application = application && model.Role = role -> Some(role, citizen, model)
+                          | _ -> None
+                      | None -> None)
+              if models.Length <> account.Claims.Length then
+                  yield fail call "Claims" "A claim citizen lacks its exact current conditional model, role or invocation."
+              for _, _, model in models do
+                  for identity, carrier in [model.AbiIdentity, model.Abi; model.DestinationIdentity, model.DestinationDeclaration] do
+                      match identity with
+                      | Some value when System.String.IsNullOrWhiteSpace value || carrier.IsNone ->
+                          yield fail call "Provenance" "A stated foreign-result premise anchor is blank or lacks its current premise node."
+                      | _ -> ()
+              let complete = expected @ (models |> List.collect (fun (role, _, model) ->
+                  (model.Abi |> Option.map (participant call ParticipantRole.ForeignResultAbi (ordinal role)) |> Option.toList) @
+                  (model.DestinationDeclaration |> Option.map (participant call ParticipantRole.ForeignResultDestination (ordinal role)) |> Option.toList)))
+              let actual = match account.Participants with ParticipantEvidence.Pending early -> early.Derived | ParticipantEvidence.Established rows -> rows
+              if actual <> complete then
+                  yield fail call "Participants" "The ordered declaration, call, context, hypothesis, actual, ABI or destination roles differ from their current model."
+              for _, citizen in account.Claims do
+                  if (uses |> List.collect _.Claims |> List.filter (fun (_, id) -> id = citizen)).Length <> 1 then
+                      yield fail call "Claims" "A conditional claim citizen belongs to more than one invocation or role."
+                  if revision.ObligationSources.TryFind citizen <> Some [actual |> List.map _.Node] then
+                      yield fail call "Sources" "A claim has a different complete ordered source vector."
+          for KeyValue(citizen, claim) in revision.CurrentClaims do
+              match claim.Body with
+              | ObligationBody.ForeignResultCoverage model ->
+                  let matches = uses |> List.filter (fun account ->
+                      account.Application = model.Application && List.contains (model.Role, citizen) account.Claims)
+                  if matches.Length <> 1 then
+                      yield fail model.Application.Call "Claims" "A current conditional claim lacks its exact invocation account."
+              | _ -> ()
+          for edge in revision.Edges do
+              match edge.Role with
+              | EdgeRole.BoundaryDomain domain when domain.ResultHypotheses <> hypotheses ->
+                  yield defect "Emission.Boundary.ResultHypotheses.Domain" edge.Target "The published hypothesis census differs from its stored boundary domain."
+              | EdgeRole.NumericDomain domain when domain.ForeignResultUses <> uses ->
+                  yield fail edge.Target "Domain" "The published result uses differ from their stored numeric domain."
+              | _ -> () ]
+
     /// Boundary references resolve inside their owning imported declaration.
     /// Import membership is not executable residency or general ID authority.
     let private boundaryRows (revision: Revision) =
@@ -1103,6 +1191,7 @@ module Integrity =
                          "Emission.Callable.ProgramInstances.Carrier"
                          "Emission.Boundary.IntrinsicWriteImports.Scope"
                          "Emission.Boundary.Calls.Arguments"; "Emission.Boundary.IntrinsicWriteProofs (values)"
+                         "Emission.Numeric.ForeignResultUses.Claims"
                          "Emission.Boundary.Imports.DeclarationFacts" ]
         let supportParts =
             Set.ofList [ "Emission.Callable.Supports (values)"; "Emission.Callable.Declarations.Participants"
@@ -1114,6 +1203,7 @@ module Integrity =
                          "Emission.Boundary.StringExtents.Participants"; "Emission.Boundary.IntrinsicWriteImports.Participants"
                          "Emission.Boundary.IntrinsicWrites.Participants"; "Emission.Numeric.Values.Participants"
                          "Emission.Numeric.Operations.Participants"; "Emission.Numeric.IndexTransports.Participants"
+                         "Emission.Numeric.ForeignResultUses.Participants"
                          "Emission.Memory.ArrayCopies.Participants"; "Emission.Spatial.Hardware.Participants"
                          "Emission.Spatial.Kernels.Participants"; "Codata.CallableBranches.Observations.Participants"
                          "Emission.Callable.Branches.Observations.Participants"
@@ -1165,6 +1255,7 @@ module Integrity =
                 | "Emission.Callable.Declarations.Parent" -> body id || source.ContextHeaders.ContainsKey id
                 | "Emission.Boundary.Imports" | "Emission.Boundary.Imports.Identity" -> boundary.Imports.ContainsKey id
                 | "Emission.Boundary.Imports.Binding" | "Emission.Boundary.Imports.DeclarationPath"
+                | "Emission.Boundary.ResultHypotheses.Declaration"
                 | "Emission.Boundary.DeclarationLeaves" | "Emission.Boundary.DeclarationOnly" -> body id || declarationFact id || boundaryType id || source.ContextHeaders.ContainsKey id
                 | "Emission.Boundary.Imports.Scope" -> source.ContextHeaders.ContainsKey id
                 | "Emission.Boundary.IntrinsicWriteImports.Scope" -> source.ContextHeaders.ContainsKey id
@@ -1369,7 +1460,7 @@ module Integrity =
                       Reason = sprintf "The row of node %d in %s differs from its row in %s." (NodeId.value identity) part other }))
         header @ misfiled @ absent @ unrelated @ disagreed @ sourceReadings revision @ claims revision @ regions revision @
         callableRows revision @ numericRows revision @ memoryRows revision @ programStorageRows revision @ spatialRows revision @ startupRows revision @
-        boundaryRows revision @ artifactAccounts revision @ branchScopes revision @ stored revision @ incidence revision @ callableAggregates revision @ ordinaryDemand revision
+        boundaryRows revision @ foreignResultRows revision @ artifactAccounts revision @ branchScopes revision @ stored revision @ incidence revision @ callableAggregates revision @ ordinaryDemand revision
 
     /// The first violations as one reason, for a reader that refuses the revision.
     let describe (violations: IntegrityViolation list) : string =

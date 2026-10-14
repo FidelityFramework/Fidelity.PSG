@@ -35,14 +35,14 @@ module Empty =
         { Imports = Map.empty; ByScope = Map.empty; Calls = Map.empty; ByteViews = Map.empty
           StringExtents = Map.empty; IntrinsicWriteImports = Map.empty; IntrinsicWrites = Map.empty
           IntrinsicWriteProofs = Map.empty; DeclarationLeaves = Set.empty; DeclarationOnly = Set.empty
-          Links = Set.empty }
+          Links = Set.empty; ResultHypotheses = [] }
 
     let numeric : NumericWitnessProjection =
         { Values = Map.empty; Operations = Map.empty; OperationRequired = Set.empty
           IndexTransports = Map.empty; Required = Set.empty; ResultSites = Set.empty
           Unresolved = Map.empty; SourceTypes = Map.empty; Layouts = Map.empty
           Elements = Map.empty; ElementTypes = Map.empty; DeclaredScalars = Map.empty
-          OccurrenceRepresentations = Map.empty; TypeRepresentations = Map.empty }
+          OccurrenceRepresentations = Map.empty; TypeRepresentations = Map.empty; ForeignResultUses = [] }
 
     let memory : MemoryWitnessProjection =
         { Operations = Map.empty; ArrayCopies = Map.empty; Required = Set.empty; Unresolved = Map.empty }

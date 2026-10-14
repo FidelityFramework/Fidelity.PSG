@@ -227,6 +227,227 @@ type FiniteLinearRecurrenceModel = {
     Upper: bigint list
 }
 
+/// Source-declared external behavior. This is a hypothesis, never a proof of
+/// foreign execution or a stable identity for a claim across incarnations.
+[<RequireQualifiedAccess>]
+type ForeignResultBound = Constant of bigint | Argument of int
+
+[<RequireQualifiedAccess>]
+type ForeignResultProofRole = LogicalCoverage | AbiNarrowing
+
+type ForeignResultHypothesis = {
+    Quote: NodeId
+    Declaration: NodeId
+    Identity: string
+    Version: string
+    Source: string
+    Lower: ForeignResultBound
+    Upper: ForeignResultBound
+}
+
+type ForeignResultArgument = { Index: int; Node: NodeId; Enclosure: ValueRange }
+
+type ForeignResultApplication = {
+    Declaration: NodeId
+    Call: NodeId
+    /// Existing ordered source-call coordinate, not a set or a durable anchor.
+    Context: NodeId list
+    /// None retains a missing contract; it supplies no behavioral default.
+    Hypothesis: ForeignResultHypothesis option
+    Arguments: ForeignResultArgument list
+}
+
+type ForeignResultCoverageModel = {
+    Application: ForeignResultApplication
+    Role: ForeignResultProofRole
+    ResultRange: ValueRange
+    Destination: ValueRange
+    DestinationDeclaration: NodeId option
+    Abi: NodeId option
+    /// Selected target ABI enclosure, independent of the behavior hypothesis.
+    AbiRange: ValueRange
+    /// Source-issued premise provenance. Absence permits a fresh check but
+    /// cannot authorize retaining code that consumed a prior discharge.
+    AbiIdentity: string option
+    DestinationIdentity: string option
+}
+
+/// One mathematical transcription of the stored conditional coverage model.
+/// Formatting backends consume this predicate; none discovers a program range.
+[<RequireQualifiedAccess>]
+module ForeignResultCoverage =
+    [<RequireQualifiedAccess>]
+    type Term =
+        | Constant of bigint
+        | Argument of int
+        | Result
+
+    [<RequireQualifiedAccess>]
+    type Predicate =
+        | LessOrEqual of Term * Term
+        | And of Predicate list
+        | Implies of Predicate * Predicate
+
+    type Projection =
+        {
+            Arguments: int list
+            Premises: Predicate
+            Totality: Predicate
+            Claim: Predicate
+            Conclusion: Predicate
+        }
+
+    let private enclosure term =
+        function
+        | ValueRange.Empty -> Ok(Predicate.LessOrEqual(Term.Constant 1I, Term.Constant 0I))
+        | ValueRange.Bounded(lower, upper) ->
+            Ok(
+                Predicate.And
+                    [
+                        Predicate.LessOrEqual(Term.Constant lower, term)
+                        Predicate.LessOrEqual(term, Term.Constant upper)
+                    ]
+            )
+        | _ -> Error "Foreign result coverage has no established finite enclosure"
+
+    /// Pointer and other irrelevant actuals stay in Application provenance but
+    /// are not invented as integer variables. Only endpoint actuals enter D.
+    let project lower upper arguments resultRange destination abiRange =
+        let bound =
+            function
+            | ForeignResultBound.Constant value -> Term.Constant value
+            | ForeignResultBound.Argument index -> Term.Argument index
+
+        let required =
+            [ lower; upper ]
+            |> List.choose (function
+                | ForeignResultBound.Argument index -> Some index
+                | _ -> None)
+            |> List.distinct
+            |> List.sort
+
+        let actuals = Map.ofList arguments
+
+        let domains =
+            required
+            |> List.map (fun index ->
+                match actuals.TryFind index with
+                | Some range -> enclosure (Term.Argument index) range
+                | None -> Error(sprintf "Foreign result hypothesis names absent argument %d" index))
+            |> List.fold
+                (fun state item ->
+                    state
+                    |> Result.bind (fun held -> item |> Result.map (fun value -> value :: held)))
+                (Ok [])
+            |> Result.map List.rev
+
+        if actuals.Count <> List.length arguments then
+            Error "Foreign result actual argument indices are duplicated"
+        else
+            domains
+            |> Result.bind (fun domains ->
+                (match abiRange with
+                 | ValueRange.Bounded _ -> enclosure Term.Result abiRange
+                 | _ -> Error "Foreign result coverage has no established finite ABI enclosure")
+                |> Result.bind (fun abi ->
+                    enclosure Term.Result resultRange
+                    |> Result.bind (fun result ->
+                        enclosure Term.Result destination
+                        |> Result.map (fun destination ->
+                            let domain = Predicate.And domains
+
+                            let hypothesis =
+                                Predicate.And
+                                    [
+                                        Predicate.LessOrEqual(bound lower, Term.Result)
+                                        Predicate.LessOrEqual(Term.Result, bound upper)
+                                    ]
+
+                            let premises = Predicate.And [ domain; hypothesis; abi ]
+                            // This must hold for every actual tuple in D. A single
+                            // feasible tuple cannot hide a contradictory interval.
+                            let abiLower, abiUpper =
+                                match abiRange with
+                                | ValueRange.Bounded(lower, upper) -> Term.Constant lower, Term.Constant upper
+                                | _ -> invalidOp "Finite ABI enclosure was not retained"
+
+                            let totality =
+                                Predicate.Implies(
+                                    domain,
+                                    Predicate.And
+                                        [
+                                            Predicate.LessOrEqual(bound lower, bound upper)
+                                            Predicate.LessOrEqual(bound lower, abiUpper)
+                                            Predicate.LessOrEqual(abiLower, bound upper)
+                                            Predicate.LessOrEqual(abiLower, abiUpper)
+                                        ]
+                                )
+
+                            let claim = Predicate.And [ result; destination ]
+
+                            {
+                                Arguments = required
+                                Premises = premises
+                                Totality = totality
+                                Claim = claim
+                                Conclusion = Predicate.And [ totality; Predicate.Implies(premises, claim) ]
+                            }))))
+
+    let ofModel model =
+        match model.Application.Hypothesis with
+        | None -> Error "Foreign result behavior contract is missing"
+        | Some _ when model.Abi.IsNone -> Error "Foreign result coverage has no actual ABI premise"
+        | Some hypothesis ->
+            project
+                hypothesis.Lower
+                hypothesis.Upper
+                (model.Application.Arguments
+                 |> List.map (fun actual -> actual.Index, actual.Enclosure))
+                model.ResultRange
+                model.Destination
+                model.AbiRange
+
+    let argumentName index = sprintf "foreign_arg_%d" index
+
+    let private term =
+        function
+        | Term.Constant value when value.Sign < 0 -> sprintf "(- %O)" (-value)
+        | Term.Constant value -> string value
+        | Term.Argument index -> argumentName index
+        | Term.Result -> "foreign_result"
+
+    let rec smtLib =
+        function
+        | Predicate.LessOrEqual(left, right) -> sprintf "(<= %s %s)" (term left) (term right)
+        | Predicate.And [] -> "true"
+        | Predicate.And predicates -> predicates |> List.map smtLib |> String.concat " " |> sprintf "(and %s)"
+        | Predicate.Implies(premise, conclusion) -> sprintf "(=> %s %s)" (smtLib premise) (smtLib conclusion)
+
+    let declarations projection =
+        (projection.Arguments
+         |> List.map (fun index -> sprintf "(declare-fun %s () Int)" (argumentName index)))
+        @ [ "(declare-fun foreign_result () Int)" ]
+
+    let premisesQuery projection =
+        [ "(set-logic QF_LIA)" ]
+        @ declarations projection
+        @ [ sprintf "(assert %s)" (smtLib projection.Premises); "(check-sat)" ]
+        |> String.concat "\n"
+
+    /// The unused Boolean declaration binds a query to its claim inventory; it
+    /// contributes no assumption to the integer premise-satisfiability check.
+    let anchoredPremisesQuery identity projection =
+        premisesQuery projection
+        |> fun query -> query.Replace("(check-sat)", sprintf "(declare-fun %s () Bool)\n(check-sat)" identity)
+
+/// Current source incidence and existing ledger citizens. Pending evidence is
+/// distinguishable from established incidence, neither is a solver discharge.
+type ForeignResultUse = {
+    Application: ForeignResultApplication
+    Participants: ParticipantEvidence
+    Claims: (ForeignResultProofRole * NodeId) list
+}
+
 [<RequireQualifiedAccess>]
 type ObligationBody =
     /// Finite program initialization phases supplied by Baker. This arithmetic
@@ -307,6 +528,9 @@ type ObligationBody =
     /// separately binds each (maximum executions, exact delta) contribution to
     /// current typed stores and actual memoization-instance activation counts.
     | FiniteAdditiveEffects of initial: bigint * contributions: (bigint * bigint) list * lower: bigint * upper: bigint
+    /// Conditional coverage under the external execution hypothesis. Unknown
+    /// inputs retain the claim but cannot supply a discharged projection.
+    | ForeignResultCoverage of ForeignResultCoverageModel
 
 /// The obligation record carried by an Obligation node.
 type ObligationInfo = {

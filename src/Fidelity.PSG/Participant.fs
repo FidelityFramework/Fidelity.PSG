@@ -74,6 +74,10 @@ type ParticipantRole =
     /// choice group; payloads use their field ordinal and constructor group.
     | BranchChoice | BranchGuard | BranchOperator | BranchTagRead | BranchSubject | BranchLiteral
     | BranchTrueArm | BranchFalseArm | BranchSelectedArm | BranchConstructor | BranchPayload
+    /// Exact external-result source account, grouped by its call. Context and
+    /// actual ordinals retain order; ABI/destination ordinals name proof roles.
+    | ForeignResultDeclaration | ForeignResultCall | ForeignResultContext
+    | ForeignResultHypothesis | ForeignResultActual | ForeignResultAbi | ForeignResultDestination
 
 /// One occurrence in a relation: the node, its role, its ordinal within the role (an
 /// argument or parameter position; 0 for a role without positions) and its group. The

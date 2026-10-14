@@ -93,14 +93,15 @@ let ``snapshot header has independent version schema and fingerprint bytes`` () 
     // Spec closure-representation §2.4: "The account retains typed relation
     // identities, roles, ordinals and operand order and multiplicity." The old
     // schema/digest names a shape without those newly published aggregate rows.
-    // Schema 24 retains neutral string-borrow snapshots, copies and allocations.
-    let prefix = Convert.FromHexString("46505347494458320200000018000000C4173B18C986F94D63435615CCCE2742E8835BE9E6812343C458BEE93219FDBA")
+    // Schema 25 retains typed conditional foreign-result accounts and the
+    // separate actual ABI range premise and optional source-issued anchors.
+    let prefix = Convert.FromHexString("46505347494458320200000019000000CF3D05B514934548D58C452FF237DC3625D90040F41AF5F33BA42B3089D4860E")
     Assert.Equal<byte>(prefix, bytes[..47])
     Assert.Equal<byte>([|64uy;0uy;0uy;0uy;0uy;0uy;0uy;0uy|], bytes[48..55])
     let header = child bytes 64 0
     let schema = child bytes header 0
     let producer = child bytes header 1
-    Assert.Equal<byte>([|24uy;0uy;0uy;0uy|], bytes[schema..schema + 3])
+    Assert.Equal<byte>([|25uy;0uy;0uy;0uy|], bytes[schema..schema + 3])
     Assert.Equal<byte>([|1uy;byte 'g'|], bytes[producer..producer + 1])
     Assert.Equal("g", (Binary.decode limits bytes |> take).Header.Producer)
 
@@ -199,9 +200,9 @@ let ``unknown format schema digest and union cases fail closed`` () =
     match Binary.decode limits (mutate 8 3uy) with
     | Result.Error(BinaryError.UnsupportedFormat 3u) -> () | other -> failwithf "%A" other
     // Binary_Images.md: "A schema, format or fingerprint mismatch is refused."
-    // Exercise the preceding schema 23 against this schema-24 reader.
-    match Binary.decode limits (mutate 12 23uy) with
-    | Result.Error(BinaryError.SchemaMismatch(24, 23)) -> () | other -> failwithf "%A" other
+    // Exercise the preceding schema against this reader.
+    match Binary.decode limits (mutate 12 24uy) with
+    | Result.Error(BinaryError.SchemaMismatch(25, 24)) -> () | other -> failwithf "%A" other
     match Binary.decode limits (mutate 16 (bytes[16] ^^^ 0xFFuy)) with
     | Result.Error BinaryError.ContractMismatch -> () | other -> failwithf "%A" other
     let unknown = indexedEncoded BinaryGenerated.write_Fidelity_PSG_NativeLiteral NativeLiteral.Unit

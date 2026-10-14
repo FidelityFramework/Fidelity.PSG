@@ -840,6 +840,7 @@ type BoundaryEmissionProjection = {
     DeclarationOnly: Set<NodeId>
     /// Link requirements come from this admitted source boundary domain.
     Links: Set<string>
+    ResultHypotheses: ForeignResultHypothesis list
 }
 
 /// Complete emission-domain facts published by their source owners. Absence is
@@ -859,6 +860,7 @@ type NumericWitnessProjection = {
     DeclaredScalars: Map<NTUKind, SettledSlot>
     OccurrenceRepresentations: Map<NodeId, Result<ValueRepresentation, string>>
     TypeRepresentations: Map<TypeIdentity, Result<ValueRepresentation, string>>
+    ForeignResultUses: ForeignResultUse list
 }
 
 type MemoryWitnessProjection = {

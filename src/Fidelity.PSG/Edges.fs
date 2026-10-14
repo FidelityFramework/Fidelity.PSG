@@ -107,6 +107,7 @@ type NumericDomain = {
     IndexTransports: NumericIndexTransport list
     IndexRequired: Set<NodeId>
     Unresolved: Map<NodeId, string>
+    ForeignResultUses: ForeignResultUse list
 }
 
 [<RequireQualifiedAccess>]
@@ -283,6 +284,7 @@ type BoundaryDomain = {
     DeclarationOnly: Set<NodeId>
     Links: Set<string>
     Failures: (NodeId * Set<NodeId> * string) list
+    ResultHypotheses: ForeignResultHypothesis list
 }
 
 type BoundaryCoverage = {
