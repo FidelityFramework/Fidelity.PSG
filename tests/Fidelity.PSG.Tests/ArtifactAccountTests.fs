@@ -23,6 +23,338 @@ let private hasViolation part (original: Revision) =
         Assert.Contains(failures, fun violation -> violation.Part = part)
     | other -> failwithf "An inconsistent artifact account was accepted: %A" other
 
+/// Finite contract-value fixture for the imported-entry family. It states source
+/// metadata; it does not grant source residence or execute the foreign function.
+let private importedEntryAccount () =
+    let signature = TypeIdentity.Function(unitType, unitType)
+
+    let constructor name kind parameters : ConstructorIdentity =
+        {
+            Declaration = { Module = []; Name = name }
+            Parameters = parameters
+            NativeKind = kind
+        }
+
+    let pointerType =
+        TypeIdentity.Application(constructor "FnPtr" (Some NTUKind.NTUfnptr) [ TypeParamKind.Type ], [ signature ])
+
+    let intrinsic operation =
+        SemanticKind.Intrinsic
+            {
+                Module = IntrinsicModule.FnPtr
+                Operation = operation
+                Category = IntrinsicCategory.Pure
+                FullName = "FnPtr." + operation
+            }
+
+    let original =
+        revision
+            [
+                { node 10 (SemanticKind.Binding("external", false, false, None)) [] with
+                    Type = signature
+                }
+                { node 11 (SemanticKind.VarRef("external", Some(NodeId 10))) [] with
+                    Type = signature
+                }
+                node 12 (intrinsic "ofExtern") []
+                { node 13 (SemanticKind.Application(NodeId 12, [ NodeId 11 ])) [ 12; 11 ] with
+                    Type = pointerType
+                }
+                { node 14 (SemanticKind.Binding("entry", false, false, None)) [ 13 ] with
+                    Type = pointerType
+                }
+                { node 15 (SemanticKind.VarRef("entry", Some(NodeId 14))) [] with
+                    Type = pointerType
+                }
+                node 16 (intrinsic "invoke") []
+                node 17 (SemanticKind.Application(NodeId 16, [ NodeId 15; NodeId 19 ])) [ 16; 15; 19 ]
+                node 19 (SemanticKind.Literal NativeLiteral.Unit) []
+            ]
+
+    let contract: BAREWire.Platform.ProcessLinkContract =
+        {
+            Identity = "fixture-libc"
+            Version = "1"
+            Source = "explicit-fixture-assumption"
+            Library = "c"
+            Runtime = "libc"
+            Os = "linux"
+            Arch = "x86_64"
+            LoadAt = "ProcessStartup"
+            LiveUntil = "ProcessTermination"
+            Unloading = "Forbidden"
+            ExportedLibrary = "Forbidden"
+        }
+
+    let fields =
+        [
+            "Identity", contract.Identity
+            "Version", contract.Version
+            "Source", contract.Source
+            "Library", contract.Library
+            "Runtime", contract.Runtime
+            "Os", contract.Os
+            "Arch", contract.Arch
+            "LoadAt", contract.LoadAt
+            "LiveUntil", contract.LiveUntil
+            "Unloading", contract.Unloading
+            "ExportedLibrary", contract.ExportedLibrary
+        ]
+
+    let namedType name =
+        TypeIdentity.Application(constructor name None [], [])
+
+    let fact form text references children parent ty : BoundaryDeclarationFact =
+        {
+            Form = form
+            Text = text
+            Numbers = []
+            References = references
+            Children = children
+            Parent = parent
+            SourceType = ty
+        }
+
+    let fieldRows =
+        fields
+        |> List.mapi (fun index (_, value) -> NodeId(40 + index), fact "string" [ value ] [] [] (Some(NodeId 30)) (namedType "string"))
+
+    let fieldIds = fieldRows |> List.map fst
+
+    let record =
+        fact "record" (fields |> List.map fst) fieldIds fieldIds (Some(NodeId 31)) (namedType "ProcessLinkContract")
+
+    let binding =
+        { fact "binding" [ "loading" ] [ NodeId 30 ] [ NodeId 30 ] None record.SourceType with
+            Numbers = [ 0I; 0I ]
+        }
+
+    let facts =
+        [
+            NodeId 30, record
+            NodeId 31, binding
+            NodeId 32, fact "record" [] [] [] None (namedType "PlatformDescription")
+            NodeId 33, fact "record" [] [] [] None (namedType "TargetCore")
+        ]
+        @ fieldRows
+        |> Map.ofList
+
+    let loading: BoundaryLoading =
+        {
+            Identity = NodeId 30
+            Binding = NodeId 31
+            Selector = "Fixture.loading"
+            Contract = contract
+            Platform = NodeId 32
+            Core = NodeId 33
+            DeclarationFacts = facts
+            Participants = facts.Keys |> Set.ofSeq
+        }
+
+    let imported: BoundaryImport =
+        {
+            Identity = NodeId 20
+            Binding = NodeId 10
+            Scope = NodeId 21
+            Library = "c"
+            Symbol = "fixture_external"
+            CallingConvention = "cdecl"
+            DeclarationPath = [ NodeId 10 ]
+            Parameters = []
+            Result = None
+            Participants = Set.singleton (NodeId 10)
+            SourceTypes = Map.empty
+            DeclarationFacts = Map.empty
+        }
+
+    let transport =
+        Set.ofList [ NodeId 10; NodeId 11; NodeId 12; NodeId 13; NodeId 14; NodeId 15 ]
+
+    let entry: BoundaryEntry =
+        {
+            Formation = NodeId 13
+            Operand = NodeId 11
+            Import = imported.Identity
+            Declaration = imported.Binding
+            Loading = loading.Identity
+            SourceType = pointerType
+            Transport = transport
+            Participants = Set.union transport loading.Participants
+        }
+
+    let call: BoundaryCall =
+        {
+            Site = NodeId 17
+            Import = imported.Identity
+            Callee = NodeId 15
+            Entry = Some entry.Formation
+            Arguments = []
+            ErasedUnitArguments = [ NodeId 19 ]
+            Result = None
+            ResultAdaptation = None
+            Participants = entry.Participants
+            SourceTypes = Map.empty
+        }
+
+    { original with
+        Codata =
+            { original.Codata with
+                FunctionPointers = Map.ofList [ entry.Formation, FunctionPointerPlan.ExternAddress entry.Formation ]
+            }
+        SourceReadings =
+            { original.SourceReadings with
+                ContextHeaders =
+                    Map.ofList
+                        [
+                            NodeId 21,
+                            {
+                                Identity = NodeId 21
+                                Name = "fixture"
+                                Ports = Map.empty
+                            }
+                        ]
+            }
+        Emission =
+            { original.Emission with
+                Boundary =
+                    { original.Emission.Boundary with
+                        Loading = Some loading
+                        Entries = Map.ofList [ entry.Formation, entry ]
+                        Imports = Map.ofList [ imported.Identity, imported ]
+                        Calls = Map.ofList [ call.Site, call ]
+                        DeclarationLeaves = Set.singleton imported.Binding
+                    }
+            }
+    }
+
+[<Theory>]
+[<InlineData(false)>]
+[<InlineData(true)>]
+let ``imported entry accounts retain exact loading literals and refreshed source metadata`` refreshed =
+    let original = importedEntryAccount ()
+    let loading = original.Emission.Boundary.Loading.Value
+
+    let loading =
+        if not refreshed then
+            loading
+        else
+            { loading with
+                Contract = { loading.Contract with Version = "2" }
+                DeclarationFacts =
+                    loading.DeclarationFacts.Add(
+                        NodeId 41,
+                        { loading.DeclarationFacts[NodeId 41] with
+                            Text = [ "2" ]
+                        }
+                    )
+            }
+
+    let original =
+        { original with
+            Emission =
+                { original.Emission with
+                    Boundary =
+                        { original.Emission.Boundary with
+                            Loading = Some loading
+                        }
+                }
+        }
+
+    Assert.Empty(Integrity.check original)
+    let bytes = Binary.encode BinaryTests.limits original |> BinaryTests.take
+    let copy = Binary.decode BinaryTests.limits bytes |> BinaryTests.take
+    Assert.Equal(original.Emission.Boundary, copy.Emission.Boundary)
+    Assert.Equal<Map<NodeId, FunctionPointerPlan>>(original.Codata.FunctionPointers, copy.Codata.FunctionPointers)
+
+[<Theory>]
+[<InlineData("loading-withdrawal", "Entries.Account")>]
+[<InlineData("loading-version", "Loading.Contract")>]
+[<InlineData("literal-withdrawal", "Loading.Contract")>]
+[<InlineData("import-withdrawal", "Entries.Account")>]
+[<InlineData("signature", "Entries.Signature")>]
+[<InlineData("transport", "Calls.Entry")>]
+[<InlineData("call-pointer", "Calls.Entry")>]
+[<InlineData("ordered-actual", "Calls.Entry")>]
+[<InlineData("plan", "Entries.Plan")>]
+let ``imported entry accounts refuse stale loading import signature or pointer correspondence`` change suffix =
+    let original = importedEntryAccount ()
+    let boundary = original.Emission.Boundary
+    let loading = boundary.Loading.Value
+    let entry = boundary.Entries[NodeId 13]
+    let call = boundary.Calls[NodeId 17]
+
+    let boundary =
+        match change with
+        | "loading-withdrawal" -> { boundary with Loading = None }
+        | "loading-version" ->
+            { boundary with
+                Loading =
+                    Some
+                        { loading with
+                            Contract = { loading.Contract with Version = "2" }
+                        }
+            }
+        | "literal-withdrawal" ->
+            { boundary with
+                Loading =
+                    Some
+                        { loading with
+                            DeclarationFacts = loading.DeclarationFacts.Remove(NodeId 41)
+                        }
+            }
+        | "import-withdrawal" -> { boundary with Imports = Map.empty }
+        | "signature" ->
+            { boundary with
+                Entries = Map.ofList [ entry.Formation, { entry with SourceType = unitType } ]
+            }
+        | "transport" ->
+            { boundary with
+                Entries =
+                    Map.ofList
+                        [
+                            entry.Formation,
+                            { entry with
+                                Transport = Set.remove call.Callee entry.Transport
+                            }
+                        ]
+            }
+        | "call-pointer" ->
+            { boundary with
+                Calls = Map.ofList [ call.Site, { call with Callee = NodeId 11 } ]
+            }
+        | "ordered-actual" ->
+            { boundary with
+                Calls = Map.ofList [ call.Site, { call with ErasedUnitArguments = [] } ]
+            }
+        | _ -> boundary
+
+    let altered =
+        { original with
+            Emission =
+                { original.Emission with
+                    Boundary = boundary
+                }
+            Codata =
+                if change = "plan" then
+                    { original.Codata with
+                        FunctionPointers = Map.empty
+                    }
+                else
+                    original.Codata
+        }
+
+    let part = "Emission.Boundary." + suffix
+    let reason =
+        match suffix with
+        | "Entries.Account" -> "The imported entry differs from its exact import, original declaration or selected loading account."
+        | "Loading.Contract" -> "The selected loading contract differs from its immutable declaration and exact eleven literal fields."
+        | "Entries.Signature" -> "The imported function pointer differs from its exact source declaration signature."
+        | "Calls.Entry" -> "The indirect call differs from its exact imported entry, source pointer transport or ordered native ABI."
+        | "Entries.Plan" -> "The imported entry lacks its formation-only ExternAddress plan."
+        | other -> failwithf "Unknown declared refusal %s" other
+    Assert.Contains(Integrity.check altered, fun violation -> violation.Part = part && violation.Reason = reason)
+    hasViolation part altered
+
 let private foreignResultAccount stated enclosure =
     let original = revision [node 1 (SemanticKind.Binding("read", false, false, None)) []
                              node 2 (SemanticKind.Application(NodeId 1, [NodeId 3])) [1; 3]

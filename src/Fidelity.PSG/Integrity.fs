@@ -935,62 +935,389 @@ module Integrity =
     let private boundaryRows (revision: Revision) =
         let boundary = revision.Emission.Boundary
         let memory = revision.Emission.Memory
-        let need part table node present = if present then [] else [missingRow part table node]
-        [ for KeyValue(key, imported) in boundary.Imports do
-              if key <> imported.Identity then yield defect "Emission.Boundary.Imports.Identity" key "An import is filed under a different identity."
-              yield! need "Emission.Boundary.Imports.Scope" "SourceReadings.ContextHeaders" imported.Scope
-                  (revision.SourceReadings.ContextHeaders.ContainsKey imported.Scope)
-              yield! need "Emission.Boundary.Imports.Binding" "the import's DeclarationFacts" imported.Binding
-                  (revision.Nodes.ContainsKey imported.Binding || imported.DeclarationFacts.ContainsKey imported.Binding)
-              for formal, _ in imported.Parameters do
-                  yield! need "Emission.Boundary.Imports.Parameters" "the import's SourceTypes" formal (imported.SourceTypes.ContainsKey formal)
-              for id in imported.DeclarationPath do
-                  yield! need "Emission.Boundary.Imports.DeclarationPath" "the import's DeclarationFacts or its context header" id
-                      (revision.Nodes.ContainsKey id || imported.DeclarationFacts.ContainsKey id || revision.SourceReadings.ContextHeaders.ContainsKey id)
-          for KeyValue(scope, imports) in boundary.ByScope do
-              for id in imports do
-                  match boundary.Imports.TryFind id with
-                  | Some imported when imported.Scope = scope -> ()
-                  | _ -> yield missingRow "Emission.Boundary.ByScope (values)" "Imports with the declared Scope" id
-          for KeyValue(key, call) in boundary.Calls do
-              if key <> call.Site then yield defect "Emission.Boundary.Calls.Site" key "A boundary call is filed under a different site."
-              match boundary.Imports.TryFind call.Import with
-              | None -> yield missingRow "Emission.Boundary.Calls.Import" "Emission.Boundary.Imports" call.Import
-              | Some imported ->
-                  match revision.Nodes.TryFind call.Site with
-                  | Some {Kind = SemanticKind.Application(callee, _)} when callee = call.Callee -> ()
-                  | _ -> yield defect "Emission.Boundary.Calls.Callee" call.Callee "The call's callee differs from its live source application's callee."
-                  yield! need "Emission.Boundary.Calls.Callee" "Nodes (actual callee occurrence)" call.Callee (revision.Nodes.ContainsKey call.Callee)
-                  for operand in call.Arguments do
-                      if not (imported.Parameters |> List.contains (operand.Formal, operand.Abi)) then
-                          yield defect "Emission.Boundary.Calls.Arguments" operand.Formal "A boundary operand differs from its imported formal/ABI account."
-                      yield! need "Emission.Boundary.Calls.Arguments" "Nodes (actual operand)" operand.Actual (revision.Nodes.ContainsKey operand.Actual)
-          // A runtime borrow requires the source-published snapshot account.
-          // The memory owner already checks the exact copy and allocation rows.
-          for KeyValue(_, call) in boundary.IntrinsicWrites do
-              match boundary.ByteViews.TryFind call.Buffer with
-              | Some view when view.StaticOrigins.IsEmpty ->
-                  match memory.Operations.TryFind view.ExtentSource with
-                  | Some(MemoryWitnessOperation.StringView snapshot)
-                      when snapshot.Site = view.ExtentSource && snapshot.Direction = MemoryStringViewDirection.FromBytes ->
-                      match memory.ArrayCopies.TryFind snapshot.Snapshot with
-                      | Some copy when copy.Allocation.IsNone ->
-                          yield missingRow "Emission.Boundary.ByteViews.SnapshotAllocation" "the snapshot copy with a stated allocation" copy.Site
-                      | _ -> ()
-                  | _ ->
-                      yield missingRow "Emission.Boundary.ByteViews.Snapshot" "Emission.Memory.Operations with the exact FromBytes StringView" view.ExtentSource
-              | Some _ -> ()
-              | None ->
-                  yield missingRow "Emission.Boundary.IntrinsicWrites.Buffer" "Emission.Boundary.ByteViews with the exact buffer" call.Buffer
-          for KeyValue(_, proofs) in boundary.IntrinsicWriteProofs do
-              for proof in proofs do
-                  match revision.CurrentClaims.TryFind proof.Obligation with
-                  | Some claim when claim.Body = proof.Body -> ()
-                  | _ -> yield missingRow "Emission.Boundary.IntrinsicWriteProofs (values)" "CurrentClaims with the exact proof body" proof.Obligation
-          for KeyValue(key, imported) in boundary.IntrinsicWriteImports do
-              if key <> imported.Identity then yield defect "Emission.Boundary.IntrinsicWriteImports.Identity" key "An intrinsic import is filed under a different identity."
-              yield! need "Emission.Boundary.IntrinsicWriteImports.Scope" "SourceReadings.ContextHeaders" imported.Scope
-                  (revision.SourceReadings.ContextHeaders.ContainsKey imported.Scope) ]
+
+        let need part table node present =
+            if present then [] else [ missingRow part table node ]
+
+        let loadingFields (row: BoundaryLoading) =
+            let contract = row.Contract
+
+            [
+                "Identity", contract.Identity
+                "Version", contract.Version
+                "Source", contract.Source
+                "Library", contract.Library
+                "Runtime", contract.Runtime
+                "Os", contract.Os
+                "Arch", contract.Arch
+                "LoadAt", contract.LoadAt
+                "LiveUntil", contract.LiveUntil
+                "Unloading", contract.Unloading
+                "ExportedLibrary", contract.ExportedLibrary
+            ]
+
+        let immutableRead (entry: BoundaryEntry) id =
+            match revision.Nodes.TryFind id, revision.SourceReadings.BindingUses.TryFind id with
+            | Some {
+                       Kind = SemanticKind.VarRef(_, Some binding)
+                   },
+              Some useRow ->
+                useRow.Binding = binding
+                && useRow.Class = SourceBindingClass.ImmutableValue
+                && not useRow.IsProgramSlotIntent
+                && not useRow.IsPartialApplication
+                && entry.Transport.Contains binding
+            | _ -> false
+
+        let transportMember (entry: BoundaryEntry) id =
+            if id = entry.Declaration then
+                true
+            else
+                match revision.Nodes.TryFind id with
+                | Some { Kind = SemanticKind.VarRef _ } -> immutableRead entry id
+                | Some {
+                           Kind = SemanticKind.Binding(_, false, false, None)
+                           Children = [ child ]
+                       } -> entry.Transport.Contains child
+                | Some {
+                           Kind = SemanticKind.Intrinsic {
+                                                             Module = IntrinsicModule.FnPtr
+                                                             Operation = "ofExtern"
+                                                         }
+                       } -> true
+                | Some {
+                           Kind = SemanticKind.Application(callee, [ operand ])
+                           Children = children
+                       } when id = entry.Formation ->
+                    operand = entry.Operand
+                    && children = [ callee; operand ]
+                    && entry.Transport.Contains callee
+                | Some {
+                           Kind = SemanticKind.TypeAnnotation(inner, _)
+                           Children = [ child ]
+                       } -> inner = child && entry.Transport.Contains child
+                | _ -> false
+
+        [
+            for KeyValue(key, imported) in boundary.Imports do
+                if key <> imported.Identity then
+                    yield defect "Emission.Boundary.Imports.Identity" key "An import is filed under a different identity."
+
+                yield!
+                    need
+                        "Emission.Boundary.Imports.Scope"
+                        "SourceReadings.ContextHeaders"
+                        imported.Scope
+                        (revision.SourceReadings.ContextHeaders.ContainsKey imported.Scope)
+
+                yield!
+                    need
+                        "Emission.Boundary.Imports.Binding"
+                        "the import's DeclarationFacts"
+                        imported.Binding
+                        (revision.Nodes.ContainsKey imported.Binding
+                         || imported.DeclarationFacts.ContainsKey imported.Binding)
+
+                for formal, _ in imported.Parameters do
+                    yield!
+                        need
+                            "Emission.Boundary.Imports.Parameters"
+                            "the import's SourceTypes"
+                            formal
+                            (imported.SourceTypes.ContainsKey formal)
+
+                for id in imported.DeclarationPath do
+                    yield!
+                        need
+                            "Emission.Boundary.Imports.DeclarationPath"
+                            "the import's DeclarationFacts or its context header"
+                            id
+                            (revision.Nodes.ContainsKey id
+                             || imported.DeclarationFacts.ContainsKey id
+                             || revision.SourceReadings.ContextHeaders.ContainsKey id)
+            for KeyValue(scope, imports) in boundary.ByScope do
+                for id in imports do
+                    match boundary.Imports.TryFind id with
+                    | Some imported when imported.Scope = scope -> ()
+                    | _ -> yield missingRow "Emission.Boundary.ByScope (values)" "Imports with the declared Scope" id
+            for loading in Option.toList boundary.Loading do
+                let facts = loading.DeclarationFacts
+                let fields = loadingFields loading
+
+                if
+                    fields |> List.exists (snd >> System.String.IsNullOrWhiteSpace)
+                    || System.String.IsNullOrWhiteSpace loading.Selector
+                then
+                    yield
+                        defect
+                            "Emission.Boundary.Loading.Provenance"
+                            loading.Identity
+                            "The selected loading assumption has a blank selector, provenance or policy field."
+
+                let recordMatches =
+                    match facts.TryFind loading.Identity, facts.TryFind loading.Binding with
+                    | Some record, Some binding when
+                        record.Form = "record"
+                        && binding.Form = "binding"
+                        && binding.Numbers = [ 0I; 0I ]
+                        && binding.References = [ loading.Identity ]
+                        && binding.Children = [ loading.Identity ]
+                        && record.Parent = Some loading.Binding
+                        && record.Text.Length = fields.Length
+                        && record.References = record.Children
+                        && record.References.Length = fields.Length
+                        && record.Numbers.IsEmpty
+                        && (Set.ofList record.Text).Count = fields.Length
+                        && record.SourceType = binding.SourceType
+                        ->
+                        List.zip record.Text record.References
+                        |> List.forall (fun (label, node) ->
+                            match List.tryFind (fst >> (=) label) fields, facts.TryFind node with
+                            | Some(_, value), Some fact ->
+                                fact.Form = "string"
+                                && fact.Text = [ value ]
+                                && fact.Numbers.IsEmpty
+                                && fact.References.IsEmpty
+                                && fact.Children.IsEmpty
+                                && fact.Parent = Some loading.Identity
+                            | _ -> false)
+                    | _ -> false
+
+                if not recordMatches then
+                    yield
+                        defect
+                            "Emission.Boundary.Loading.Contract"
+                            loading.Identity
+                            "The selected loading contract differs from its immutable declaration and exact eleven literal fields."
+
+                for id in [ loading.Identity; loading.Binding; loading.Platform; loading.Core ] do
+                    yield!
+                        need
+                            "Emission.Boundary.Loading.DeclarationFacts"
+                            "the selected loading/platform/core source declaration facts"
+                            id
+                            (facts.ContainsKey id)
+
+                if not (Set.isSubset (facts.Keys |> Set.ofSeq) loading.Participants) then
+                    yield
+                        defect
+                            "Emission.Boundary.Loading.Participants"
+                            loading.Identity
+                            "The loading support omits a current declaration fact."
+            for KeyValue(key, entry) in boundary.Entries do
+                if key <> entry.Formation then
+                    yield defect "Emission.Boundary.Entries.Formation" key "An imported entry is filed under a different actual formation."
+
+                match boundary.Loading, boundary.Imports.TryFind entry.Import with
+                | Some loading, Some imported when
+                    entry.Loading = loading.Identity
+                    && entry.Declaration = imported.Binding
+                    && imported.Library = loading.Contract.Library
+                    ->
+                    let sourceSignature =
+                        revision.Nodes.TryFind imported.Binding |> Option.map _.Type
+
+                    let formation = revision.Nodes.TryFind entry.Formation
+
+                    let signatureMatches =
+                        match formation, entry.SourceType with
+                        | Some node, TypeIdentity.Application(constructor, [ signature ]) ->
+                            node.Type = entry.SourceType
+                            && constructor.NativeKind = Some NTUKind.NTUfnptr
+                            && sourceSignature = Some signature
+                        | _ -> false
+
+                    if not signatureMatches then
+                        yield
+                            defect
+                                "Emission.Boundary.Entries.Signature"
+                                entry.Formation
+                                "The imported function pointer differs from its exact source declaration signature."
+
+                    if
+                        not (
+                            entry.Transport.Contains entry.Formation
+                            && entry.Transport.Contains entry.Operand
+                            && entry.Transport.Contains entry.Declaration
+                            && (entry.Transport |> Set.forall (transportMember entry))
+                        )
+                    then
+                        yield
+                            defect
+                                "Emission.Boundary.Entries.Transport"
+                                entry.Formation
+                                "The imported entry lacks its exact immutable source operand transport."
+
+                    if
+                        not (
+                            Set.isSubset entry.Transport entry.Participants
+                            && Set.isSubset imported.Participants entry.Participants
+                            && Set.isSubset loading.Participants entry.Participants
+                        )
+                    then
+                        yield
+                            defect
+                                "Emission.Boundary.Entries.Participants"
+                                entry.Formation
+                                "The imported entry omits current import, loading or transport support."
+                | _ ->
+                    yield
+                        defect
+                            "Emission.Boundary.Entries.Account"
+                            entry.Formation
+                            "The imported entry differs from its exact import, original declaration or selected loading account."
+
+                if
+                    revision.Codata.FunctionPointers.TryFind entry.Formation
+                    <> Some(FunctionPointerPlan.ExternAddress entry.Formation)
+                then
+                    yield
+                        defect
+                            "Emission.Boundary.Entries.Plan"
+                            entry.Formation
+                            "The imported entry lacks its formation-only ExternAddress plan."
+            for KeyValue(site, plan) in revision.Codata.FunctionPointers do
+                match plan with
+                | FunctionPointerPlan.ExternAddress formation when site <> formation || not (boundary.Entries.ContainsKey formation) ->
+                    yield
+                        defect "Codata.FunctionPointers.ExternAddress" site "An ExternAddress plan lacks its exact actual formation entry."
+                | _ -> ()
+            for KeyValue(key, call) in boundary.Calls do
+                if key <> call.Site then
+                    yield defect "Emission.Boundary.Calls.Site" key "A boundary call is filed under a different site."
+
+                match boundary.Imports.TryFind call.Import with
+                | None -> yield missingRow "Emission.Boundary.Calls.Import" "Emission.Boundary.Imports" call.Import
+                | Some imported ->
+                    match call.Entry with
+                    | None ->
+                        match revision.Nodes.TryFind call.Site with
+                        | Some {
+                                   Kind = SemanticKind.Application(callee, _)
+                               } when callee = call.Callee -> ()
+                        | _ ->
+                            yield
+                                defect
+                                    "Emission.Boundary.Calls.Callee"
+                                    call.Callee
+                                    "The call's callee differs from its live source application's callee."
+                    | Some formation ->
+                        let actuals = call.Arguments |> List.map _.Actual
+
+                        let sourceCall =
+                            match revision.Nodes.TryFind call.Site with
+                            | Some {
+                                       Kind = SemanticKind.Application(intrinsic, pointer :: arguments)
+                                       Children = children
+                                   } ->
+                                pointer = call.Callee
+                                && arguments = actuals @ call.ErasedUnitArguments
+                                && children = intrinsic :: pointer :: arguments
+                                && (revision.Nodes.TryFind intrinsic
+                                    |> Option.exists (fun node ->
+                                        match node.Kind with
+                                        | SemanticKind.Intrinsic {
+                                                                     Module = IntrinsicModule.FnPtr
+                                                                     Operation = "invoke"
+                                                                 } -> true
+                                        | _ -> false))
+                            | _ -> false
+
+                        match boundary.Entries.TryFind formation with
+                        | Some entry when
+                            entry.Formation = formation
+                            && entry.Import = call.Import
+                            && entry.Transport.Contains call.Callee
+                            && (call.Callee = entry.Formation || immutableRead entry call.Callee)
+                            && sourceCall
+                            && (call.Arguments |> List.map (fun operand -> operand.Formal, operand.Abi)) = imported.Parameters
+                            && call.Result = imported.Result
+                            ->
+                            ()
+                        | _ ->
+                            yield
+                                defect
+                                    "Emission.Boundary.Calls.Entry"
+                                    call.Site
+                                    "The indirect call differs from its exact imported entry, source pointer transport or ordered native ABI."
+
+                    yield!
+                        need
+                            "Emission.Boundary.Calls.Callee"
+                            "Nodes (actual callee occurrence)"
+                            call.Callee
+                            (revision.Nodes.ContainsKey call.Callee)
+
+                    for operand in call.Arguments do
+                        if not (imported.Parameters |> List.contains (operand.Formal, operand.Abi)) then
+                            yield
+                                defect
+                                    "Emission.Boundary.Calls.Arguments"
+                                    operand.Formal
+                                    "A boundary operand differs from its imported formal/ABI account."
+
+                        yield!
+                            need
+                                "Emission.Boundary.Calls.Arguments"
+                                "Nodes (actual operand)"
+                                operand.Actual
+                                (revision.Nodes.ContainsKey operand.Actual)
+            // A runtime borrow requires the source-published snapshot account.
+            // The memory owner already checks the exact copy and allocation rows.
+            for KeyValue(_, call) in boundary.IntrinsicWrites do
+                match boundary.ByteViews.TryFind call.Buffer with
+                | Some view when view.StaticOrigins.IsEmpty ->
+                    match memory.Operations.TryFind view.ExtentSource with
+                    | Some(MemoryWitnessOperation.StringView snapshot) when
+                        snapshot.Site = view.ExtentSource
+                        && snapshot.Direction = MemoryStringViewDirection.FromBytes
+                        ->
+                        match memory.ArrayCopies.TryFind snapshot.Snapshot with
+                        | Some copy when copy.Allocation.IsNone ->
+                            yield
+                                missingRow
+                                    "Emission.Boundary.ByteViews.SnapshotAllocation"
+                                    "the snapshot copy with a stated allocation"
+                                    copy.Site
+                        | _ -> ()
+                    | _ ->
+                        yield
+                            missingRow
+                                "Emission.Boundary.ByteViews.Snapshot"
+                                "Emission.Memory.Operations with the exact FromBytes StringView"
+                                view.ExtentSource
+                | Some _ -> ()
+                | None ->
+                    yield
+                        missingRow
+                            "Emission.Boundary.IntrinsicWrites.Buffer"
+                            "Emission.Boundary.ByteViews with the exact buffer"
+                            call.Buffer
+            for KeyValue(_, proofs) in boundary.IntrinsicWriteProofs do
+                for proof in proofs do
+                    match revision.CurrentClaims.TryFind proof.Obligation with
+                    | Some claim when claim.Body = proof.Body -> ()
+                    | _ ->
+                        yield
+                            missingRow
+                                "Emission.Boundary.IntrinsicWriteProofs (values)"
+                                "CurrentClaims with the exact proof body"
+                                proof.Obligation
+            for KeyValue(key, imported) in boundary.IntrinsicWriteImports do
+                if key <> imported.Identity then
+                    yield
+                        defect
+                            "Emission.Boundary.IntrinsicWriteImports.Identity"
+                            key
+                            "An intrinsic import is filed under a different identity."
+
+                yield!
+                    need
+                        "Emission.Boundary.IntrinsicWriteImports.Scope"
+                        "SourceReadings.ContextHeaders"
+                        imported.Scope
+                        (revision.SourceReadings.ContextHeaders.ContainsKey imported.Scope)
+        ]
 
     /// Source-authored artifact correspondence is data. These comparisons do
     /// not infer scope, admit residence, or establish an arithmetic proposition.
@@ -1210,6 +1537,14 @@ module Integrity =
         let boundary = revision.Emission.Boundary
         let declarationFact id = boundary.Imports |> Map.exists (fun _ imported -> imported.DeclarationFacts.ContainsKey id)
         let boundaryType id = boundary.Imports |> Map.exists (fun _ imported -> imported.SourceTypes.ContainsKey id)
+        let loadingFact id = boundary.Loading |> Option.exists (fun loading -> loading.DeclarationFacts.ContainsKey id)
+        let loadingSupport id = body id || loadingFact id || source.ContextHeaders.ContainsKey id
+        let entryDeclaration id = boundary.Entries |> Map.exists (fun _ entry ->
+            entry.Declaration = id && (boundary.Imports.TryFind entry.Import |> Option.exists (fun imported ->
+                imported.Binding = id && (body id || imported.DeclarationFacts.ContainsKey id))))
+        let entryLoading id = boundary.Entries |> Map.exists (fun _ entry ->
+            entry.Loading = id && (boundary.Loading |> Option.exists (fun loading -> loading.Identity = id && loadingFact id)))
+        let entrySupport id = body id || loadingFact id || declarationFact id || boundaryType id
         let foreignBodyFact id =
             revision.CurrentClaims
             |> Map.exists (fun _ claim ->
@@ -1259,7 +1594,8 @@ module Integrity =
                          "Emission.Boundary.IntrinsicWriteImports.Scope"
                          "Emission.Boundary.Calls.Arguments"; "Emission.Boundary.IntrinsicWriteProofs (values)"
                          "Emission.Numeric.ForeignResultUses.Claims"
-                         "Emission.Boundary.Imports.DeclarationFacts" ]
+                         "Emission.Boundary.Imports.DeclarationFacts"
+                         "Emission.Boundary.Loading.DeclarationFacts" ]
         let supportParts =
             Set.ofList [ "Emission.Callable.Supports (values)"; "Emission.Callable.Declarations.Participants"
                          "Emission.Callable.Calls.Participants"; "Emission.Callable.ProgramInstances.Participants"
@@ -1278,7 +1614,8 @@ module Integrity =
                          "Emission.Storage.ProgramInitializationOrders.Participants"
                          "Emission.Storage.EnvironmentResidences.AuthorityInputs"
                          "Emission.Storage.EnvironmentResidences.BindingPath"
-                         "Emission.Storage.EnvironmentResidences.DeclarationInputs" ]
+                         "Emission.Storage.EnvironmentResidences.DeclarationInputs"
+                         "Emission.Boundary.Loading.Participants"; "Emission.Boundary.Entries.Participants" ]
         let role (part: string) (id: NodeId) =
             // These mixed row/source identities are checked with their typed
             // roles by callableAggregates. Row identity is not a runtime body.
@@ -1290,6 +1627,16 @@ module Integrity =
             if explicitParts.Contains part || supportParts.Contains part || aggregatePart || inactivityPart || part.StartsWith("SourceReadings.", System.StringComparison.Ordinal) then true
             else
                 match part with
+                | "Emission.Boundary.Loading.Identity" | "Emission.Boundary.Loading.Binding"
+                | "Emission.Boundary.Loading.Platform" | "Emission.Boundary.Loading.Core" -> loadingFact id
+                | "Emission.Boundary.Loading.DeclarationFacts" | "Emission.Boundary.Loading.Participants" -> loadingSupport id
+                | "Emission.Boundary.Entries" | "Emission.Boundary.Entries.Formation"
+                | "Emission.Boundary.Entries.Operand" -> body id
+                | "Emission.Boundary.Entries.Import" -> boundary.Imports.ContainsKey id
+                | "Emission.Boundary.Entries.Declaration" -> entryDeclaration id
+                | "Emission.Boundary.Entries.Loading" -> entryLoading id
+                | "Emission.Boundary.Entries.Transport" | "Emission.Boundary.Entries.Participants" -> entrySupport id
+                | "Emission.Boundary.Calls.Entry" -> boundary.Entries.ContainsKey id
                 | "Emission.Callable.Carriers.Contract" | "Codata.CallableCarriers.Contract" -> callable.Contracts.ContainsKey id
                 | "Emission.Callable.Carriers.Lifetime" | "Codata.CallableCarriers.Lifetime" -> true
                 | "Emission.Numeric.OccurrenceRepresentations (values)" | "Emission.Numeric.TypeRepresentations (values)" -> callable.AggregateSlots.ContainsKey id

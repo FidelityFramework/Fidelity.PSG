@@ -111,6 +111,29 @@ type BoundaryImport = {
 
 type BoundaryOperand = { Actual: NodeId; Formal: NodeId; Abi: BoundaryScalar; Adaptation: Meet option }
 
+/// A source-stated loading assumption; node identities describe this revision.
+type BoundaryLoading = {
+    Identity: NodeId
+    Binding: NodeId
+    Selector: string
+    Contract: BAREWire.Platform.ProcessLinkContract
+    Platform: NodeId
+    Core: NodeId
+    DeclarationFacts: Map<NodeId, BoundaryDeclarationFact>
+    Participants: Set<NodeId>
+}
+
+type BoundaryEntry = {
+    Formation: NodeId
+    Operand: NodeId
+    Import: NodeId
+    Declaration: NodeId
+    Loading: NodeId
+    SourceType: TypeIdentity
+    Transport: Set<NodeId>
+    Participants: Set<NodeId>
+}
+
 type BoundaryByteView = {
     Site: NodeId
     Source: NodeId
@@ -177,6 +200,7 @@ type BoundaryCall = {
     Site: NodeId
     Import: NodeId
     Callee: NodeId
+    Entry: NodeId option
     Arguments: BoundaryOperand list
     ErasedUnitArguments: NodeId list
     Result: BoundaryScalar option
@@ -190,6 +214,7 @@ type BoundaryCall = {
 type BoundaryPlatformPremise = {
     Id: string
     Description: string option
+    Loading: string option
     LibraryPath: string option
     SourcePaths: Set<string>
     Architecture: string option

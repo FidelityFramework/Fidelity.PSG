@@ -50,7 +50,7 @@ let private renewWithSlots slotIds revision =
 let private renew revision = renewWithSlots [101] revision
 
 let private nativeTarget : BoundaryPlatformPremise =
-    { Id = "native-entry-contract-control"; Description = None; LibraryPath = None
+    { Id = "native-entry-contract-control"; Description = None; Loading = None; LibraryPath = None
       SourcePaths = Set.singleton "contract-test.clef"; Architecture = Some "x86_64"; OS = Some "linux"
       RuntimeClaim = Some RuntimeModel.Libc; Substrate = Some SubstrateKind.CPU
       Dimensions = Map.ofList ["Register", 64; "Pointer", 64]

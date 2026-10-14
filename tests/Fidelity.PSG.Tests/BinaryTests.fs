@@ -93,15 +93,15 @@ let ``snapshot header has independent version schema and fingerprint bytes`` () 
     // Spec closure-representation §2.4: "The account retains typed relation
     // identities, roles, ordinals and operand order and multiplicity." The old
     // schema/digest names a shape without those newly published aggregate rows.
-    // Schema 25 retains typed conditional foreign-result accounts and the
-    // separate actual ABI range premise and optional source-issued anchors.
-    let prefix = Convert.FromHexString("46505347494458320200000019000000CF3D05B514934548D58C452FF237DC3625D90040F41AF5F33BA42B3089D4860E")
+    // Schema 26 adds selected process-link loading and imported-entry accounts,
+    // optional indirect-call correspondence and the formation-only address plan.
+    let prefix = Convert.FromHexString("4650534749445832020000001A0000000E06192544456CE6F3D01A933E5383671D24FB6F5F9482043D796D517D9CD020")
     Assert.Equal<byte>(prefix, bytes[..47])
     Assert.Equal<byte>([|64uy;0uy;0uy;0uy;0uy;0uy;0uy;0uy|], bytes[48..55])
     let header = child bytes 64 0
     let schema = child bytes header 0
     let producer = child bytes header 1
-    Assert.Equal<byte>([|25uy;0uy;0uy;0uy|], bytes[schema..schema + 3])
+    Assert.Equal<byte>([|26uy;0uy;0uy;0uy|], bytes[schema..schema + 3])
     Assert.Equal<byte>([|1uy;byte 'g'|], bytes[producer..producer + 1])
     Assert.Equal("g", (Binary.decode limits bytes |> take).Header.Producer)
 

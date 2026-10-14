@@ -525,6 +525,7 @@ type SequenceTemplateCopy = {
 type FunctionPointerPlan =
     | Address of symbol: string * lambda: NodeId
     | Invoke of pointer: NodeId * arguments: NodeId list * parameters: TypeIdentity list * result: TypeIdentity
+    | ExternAddress of formation: NodeId
 
 /// A quoted source condition's standing at its declaration dependencies.
 type PredicateStatus = Established | Contradicted | Pending
@@ -825,6 +826,8 @@ type StorageWitnessProjection = {
 
 type BoundaryEmissionProjection = {
     Imports: Map<NodeId, BoundaryImport>
+    Loading: BoundaryLoading option
+    Entries: Map<NodeId, BoundaryEntry>
     ByScope: Map<NodeId, NodeId list>
     Calls: Map<NodeId, BoundaryCall>
     ByteViews: Map<NodeId, BoundaryByteView>

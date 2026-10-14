@@ -1664,7 +1664,7 @@ let private boundaryCalleeFacts =
          SourceTypes = [1;3;4] |> List.map(fun id -> NodeId id, numericOperationFacts.Nodes[NodeId id].Type) |> Map.ofList
          DeclarationFacts = Map.ofList [NodeId 72, declared]}
     let call : BoundaryCall =
-        {Site = NodeId 1; Import = NodeId 72; Callee = NodeId 2
+        {Site = NodeId 1; Import = NodeId 72; Callee = NodeId 2; Entry = None
          Arguments = [3;4] |> List.map(fun id -> {Actual = NodeId id; Formal = NodeId id; Abi = BoundaryScalar.Integer(32, true); Adaptation = None})
          ErasedUnitArguments = []; Result = Some(BoundaryScalar.Integer(32, true)); ResultAdaptation = None; Participants = Set.singleton(NodeId 8000); SourceTypes = imported.SourceTypes}
     let callable =

@@ -32,7 +32,7 @@ module Empty =
           EnvironmentResidences = Map.empty; ProgramInitializationOrders = Map.empty }
 
     let boundary : BoundaryEmissionProjection =
-        { Imports = Map.empty; ByScope = Map.empty; Calls = Map.empty; ByteViews = Map.empty
+        { Imports = Map.empty; Loading = None; Entries = Map.empty; ByScope = Map.empty; Calls = Map.empty; ByteViews = Map.empty
           StringExtents = Map.empty; IntrinsicWriteImports = Map.empty; IntrinsicWrites = Map.empty
           IntrinsicWriteProofs = Map.empty; DeclarationLeaves = Set.empty; DeclarationOnly = Set.empty
           Links = Set.empty; ResultHypotheses = [] }

@@ -261,6 +261,8 @@ type BoundaryDomain = {
     Meets: Map<NodeId, Meet list>
     Declarations: BoundaryDeclaration list
     Imports: NodeId list
+    Loading: BoundaryLoading option
+    Entries: NodeId list
     Calls: NodeId list
     ByteViews: BoundaryByteView list
     StringExtents: BoundaryStringExtent list
@@ -654,6 +656,7 @@ type EdgeRole =
     /// Complete rooted activation census and typed affine transitions for a
     /// finite program cell. The arithmetic certificate supplies no lifetime.
     | FiniteCellRange
+    | BoundaryEntry of BoundaryEntry
 
 /// One directed relation. Sources retain ordered participant occurrences;
 /// structural projections may be single-source while joint facts are n-ary.
