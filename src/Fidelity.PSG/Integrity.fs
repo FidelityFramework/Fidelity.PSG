@@ -1182,9 +1182,23 @@ module Integrity =
                         record.Form = "record"
                         && binding.Form = "binding"
                         && binding.Numbers = [ 0I; 0I ]
-                        && binding.References = [ loading.Identity ]
-                        && binding.Children = [ loading.Identity ]
-                        && record.Parent = Some loading.Binding
+                        && (if binding.References = [ loading.Identity ] && binding.Children = [ loading.Identity ] then
+                                record.Parent = Some loading.Binding
+                            else
+                                match binding.References, binding.Children with
+                                | [ annotation ], [ child ] when annotation = child ->
+                                    match facts.TryFind annotation with
+                                    | Some value ->
+                                        value.Form = "annotation"
+                                        && value.Text.IsEmpty
+                                        && value.Numbers.IsEmpty
+                                        && value.References = [ loading.Identity ]
+                                        && value.Children = [ loading.Identity ]
+                                        && value.Parent = Some loading.Binding
+                                        && record.Parent = Some annotation
+                                        && value.SourceType = record.SourceType
+                                    | None -> false
+                                | _ -> false)
                         && record.Text.Length = fields.Length
                         && record.References = record.Children
                         && record.References.Length = fields.Length
