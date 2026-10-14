@@ -2206,9 +2206,9 @@ module IntegrityNamed =
           "Demand.Operands (values)", (revision.Demand.Operands |> Map.toList |> List.collect (fun (_, row) -> [ row ]))
           "Demand.Relations", (revision.Demand.Relations |> Map.toList |> List.collect (fun (key, _) -> [ key ]))
           "Demand.Relations (values)", (revision.Demand.Relations |> Map.toList |> List.collect (fun (_, row) -> (row |> List.collect (fun v1 -> (idsOfEagerDemandRelation v1)))))
-          "Obligations.Body", (revision.Obligations |> List.collect (fun row -> (idsOfObligationBody row.Body)))
+          "Obligations.Body.ForeignResultCoverage", (revision.Obligations |> List.collect (fun row -> (match row.Body with Fidelity.PSG.ObligationBody.ForeignResultCoverage(a0) -> (idsOfForeignResultCoverageModel a0) | _ -> [])))
           "CurrentClaims", (revision.CurrentClaims |> Map.toList |> List.collect (fun (key, _) -> [ key ]))
-          "CurrentClaims.Body", (revision.CurrentClaims |> Map.toList |> List.collect (fun (_, row) -> (idsOfObligationBody row.Body)))
+          "CurrentClaims.Body.ForeignResultCoverage", (revision.CurrentClaims |> Map.toList |> List.collect (fun (_, row) -> (match row.Body with Fidelity.PSG.ObligationBody.ForeignResultCoverage(a0) -> (idsOfForeignResultCoverageModel a0) | _ -> [])))
           "ObligationSources", (revision.ObligationSources |> Map.toList |> List.collect (fun (key, _) -> [ key ]))
           "ObligationSources (values)", (revision.ObligationSources |> Map.toList |> List.collect (fun (_, row) -> (row |> List.collect (fun v1 -> (v1 |> List.collect (fun v2 -> [ v2 ])))))) ]
 

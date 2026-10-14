@@ -155,7 +155,21 @@ let rec parts (path: string) (value: string) (ty: Type) : (string * string) list
                 FSharpType.GetRecordFields(row, flags)
                 |> Array.toList
                 |> List.filter (fun field -> holds field.PropertyType)
-                |> List.map (fun field -> path + "." + field.Name, each (collect 1 field.PropertyType ("row." + field.Name)))
+                |> List.collect (fun field ->
+                    let fieldPath = path + "." + field.Name
+                    let fieldValue = "row." + field.Name
+                    if field.PropertyType = named "ObligationBody" then
+                        FSharpType.GetUnionCases(field.PropertyType, flags)
+                        |> Array.toList
+                        |> List.choose (fun case ->
+                            let fields = case.GetFields()
+                            if fields |> Array.exists (fun item -> holds item.PropertyType) then
+                                let names = fields |> Array.mapi (fun index _ -> sprintf "a%d" index)
+                                let bodies = Array.map2 (fun (item: PropertyInfo) name -> collect 1 item.PropertyType name) fields names |> Array.filter ((<>) "[]")
+                                let pattern = sprintf "%s.%s(%s)" (sourceName field.PropertyType) case.Name (String.concat ", " names)
+                                Some(fieldPath + "." + case.Name, each (sprintf "(match %s with %s -> %s | _ -> [])" fieldValue pattern (String.concat " @ " bodies)))
+                            else None)
+                    else [fieldPath, each (collect 1 field.PropertyType fieldValue)])
             elif holds row then [ path + " (values)", each (collect 1 row "row") ]
             else []
         if isMap ty then

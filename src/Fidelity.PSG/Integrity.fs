@@ -784,6 +784,41 @@ module Integrity =
 
     /// Agreement of stored foreign hypotheses, invocation incidence and current
     /// ledger citizens. This performs no inference or conditional discharge.
+    let private foreignHypothesisFact (revision: Revision) (hypothesis: ForeignResultHypothesis) id =
+        hypothesis.Quote = id
+        && List.contains hypothesis revision.Emission.Boundary.ResultHypotheses
+
+    let private foreignApplicationFact (revision: Revision) (application: ForeignResultApplication) id =
+        let boundary = revision.Emission.Boundary
+
+        revision.Nodes.ContainsKey id
+        || (application.Declaration = id
+            && (boundary.Imports
+                |> Map.exists (fun _ imported ->
+                    imported.DeclarationFacts.ContainsKey id || imported.SourceTypes.ContainsKey id)))
+        || (List.contains id application.Context
+            && revision.SourceReadings.ContextHeaders.ContainsKey id)
+        || (application.Hypothesis
+            |> Option.exists (fun hypothesis -> foreignHypothesisFact revision hypothesis id))
+
+    let private foreignAbiFact (revision: Revision) (model: ForeignResultCoverageModel) id =
+        revision.Emission.Boundary.Calls.TryFind model.Application.Call
+        |> Option.exists (fun call ->
+            revision.Emission.Boundary.Imports.TryFind call.Import
+            |> Option.exists (fun imported ->
+                imported.Binding = model.Application.Declaration
+                && imported.DeclarationFacts.ContainsKey id))
+
+    let private foreignDestinationFact (revision: Revision) (model: ForeignResultCoverageModel) id =
+        revision.Emission.Numeric.Values.TryFind model.Application.Call
+        |> Option.exists (fun carrier -> carrier.Declaration = Some id)
+
+    let private foreignClaimFact revision (model: ForeignResultCoverageModel) id =
+        foreignApplicationFact revision model.Application id
+        || (model.Abi = Some id && foreignAbiFact revision model id)
+        || (model.DestinationDeclaration = Some id
+            && foreignDestinationFact revision model id)
+
     let private foreignResultRows (revision: Revision) =
         let hypotheses = revision.Emission.Boundary.ResultHypotheses
         let uses = revision.Emission.Numeric.ForeignResultUses
@@ -838,11 +873,36 @@ module Integrity =
               if models.Length <> account.Claims.Length then
                   yield fail call "Claims" "A claim citizen lacks its exact current conditional model, role or invocation."
               for _, _, model in models do
-                  for identity, carrier in [model.AbiIdentity, model.Abi; model.DestinationIdentity, model.DestinationDeclaration] do
+                  for abi in Option.toList model.Abi do
+                      if not (foreignAbiFact revision model abi) then
+                          yield
+                              fail
+                                  abi
+                                  "Abi"
+                                  "A conditional ABI premise lacks its own call's imported declaration fact."
+
+                  for destination in Option.toList model.DestinationDeclaration do
+                      if not (foreignDestinationFact revision model destination) then
+                          yield
+                              fail
+                                  destination
+                                  "Destination"
+                                  "A conditional destination premise differs from its own call's selected numeric carrier."
+
+                  for identity, carrier in
+                      [
+                          model.AbiIdentity, model.Abi
+                          model.DestinationIdentity, model.DestinationDeclaration
+                      ] do
                       match identity with
                       | Some value when System.String.IsNullOrWhiteSpace value || carrier.IsNone ->
-                          yield fail call "Provenance" "A stated foreign-result premise anchor is blank or lacks its current premise node."
+                          yield
+                              fail
+                                  call
+                                  "Provenance"
+                                  "A stated foreign-result premise anchor is blank or lacks its current premise node."
                       | _ -> ()
+
               let complete = expected @ (models |> List.collect (fun (role, _, model) ->
                   (model.Abi |> Option.map (participant call ParticipantRole.ForeignResultAbi (ordinal role)) |> Option.toList) @
                   (model.DestinationDeclaration |> Option.map (participant call ParticipantRole.ForeignResultDestination (ordinal role)) |> Option.toList)))
@@ -1150,34 +1210,11 @@ module Integrity =
         let boundary = revision.Emission.Boundary
         let declarationFact id = boundary.Imports |> Map.exists (fun _ imported -> imported.DeclarationFacts.ContainsKey id)
         let boundaryType id = boundary.Imports |> Map.exists (fun _ imported -> imported.SourceTypes.ContainsKey id)
-        let hypothesisFact (hypothesis: ForeignResultHypothesis) id =
-            hypothesis.Quote = id && List.contains hypothesis boundary.ResultHypotheses
-
-        let foreignApplicationFact (application: ForeignResultApplication) id =
-            body id
-            || (application.Declaration = id && (declarationFact id || boundaryType id))
-            || (List.contains id application.Context && source.ContextHeaders.ContainsKey id)
-            || (application.Hypothesis
-                |> Option.exists (fun hypothesis -> hypothesisFact hypothesis id))
-
-        let foreignClaimFact (model: ForeignResultCoverageModel) id =
-            foreignApplicationFact model.Application id
-            || (model.Abi = Some id
-                && (boundary.Calls.TryFind model.Application.Call
-                    |> Option.exists (fun call ->
-                        boundary.Imports.TryFind call.Import
-                        |> Option.exists (fun imported ->
-                            imported.Binding = model.Application.Declaration
-                            && imported.DeclarationFacts.ContainsKey id))))
-            || (model.DestinationDeclaration = Some id
-                && (revision.Emission.Numeric.Values.TryFind model.Application.Call
-                    |> Option.exists (fun carrier -> carrier.Declaration = Some id)))
-
         let foreignBodyFact id =
             revision.CurrentClaims
             |> Map.exists (fun _ claim ->
                 match claim.Body with
-                | ObligationBody.ForeignResultCoverage model -> foreignClaimFact model id
+                | ObligationBody.ForeignResultCoverage model -> foreignClaimFact revision model id
                 | _ -> false)
 
         let declarationType id =
@@ -1290,12 +1327,14 @@ module Integrity =
                 | "Emission.Boundary.Imports.Scope" -> source.ContextHeaders.ContainsKey id
                 | "Emission.Boundary.ResultHypotheses.Quote" ->
                     boundary.ResultHypotheses
-                    |> List.exists (fun hypothesis -> hypothesisFact hypothesis id)
+                    |> List.exists (fun hypothesis -> foreignHypothesisFact revision hypothesis id)
                 | "Emission.Numeric.ForeignResultUses.Application" ->
                     revision.Emission.Numeric.ForeignResultUses
-                    |> List.exists (fun account -> foreignApplicationFact account.Application id)
+                    |> List.exists (fun account -> foreignApplicationFact revision account.Application id)
+                | "Obligations.Body.ForeignResultCoverage"
+                | "CurrentClaims.Body.ForeignResultCoverage" -> body id || foreignBodyFact id
                 | "Obligations.Body"
-                | "CurrentClaims.Body" -> body id || foreignBodyFact id
+                | "CurrentClaims.Body" -> body id
                 | "Emission.Boundary.IntrinsicWriteImports.Scope" -> source.ContextHeaders.ContainsKey id
                 | "Emission.Boundary.Imports.Parameters" | "Emission.Boundary.Imports.SourceTypes" -> boundaryType id
                 | "Emission.Boundary.ByScope (values)" | "Emission.Boundary.Calls.Import" -> boundary.Imports.ContainsKey id
