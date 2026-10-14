@@ -283,7 +283,8 @@ let private renewCopy revision =
     let account site values =
         let participants =
             (prior.Slots |> List.collect _.Participants) @
-            (values |> List.collect (fun (row: CallableAggregateValue) -> row.Participants)) @
+            (values |> List.collect (fun (row: CallableAggregateValue) ->
+                row.Participants @ (row.Tag |> Option.map _.Participants |> Option.defaultValue []))) @
             (prior.Carriers |> List.collect _.Lifetime) @ (prior.Contracts |> List.collect _.Participants)
         let sources =
             participants |> List.map _.Node |> List.distinct |> List.choose (fun id ->
@@ -322,6 +323,224 @@ let private copyFixture () =
     |> publish {held.Emission.Callable with AggregateValues = Map.ofList [NodeId 1, [copy]; NodeId 2, [original]]}
     |> renewCopy
 
+let private projectFixture union =
+    let held =
+        fixture union false false
+        |> changeRow elideSecond
+        |> zeroComponent union
+        |> renew
+
+    let prior = held.Emission.Callable.AggregateValues[NodeId 1] |> List.exactlyOne
+
+    let constructionTag =
+        prior.Tag
+        |> Option.map (fun tag ->
+            let participants =
+                tag.Participants
+                |> List.map (fun p ->
+                    { p with
+                        Group = NodeId 2
+                        Node =
+                            if p.Role = ParticipantRole.AggregateConstructor then
+                                NodeId 2
+                            else
+                                p.Node
+                    })
+
+            { tag with
+                Constructor = NodeId 2
+                Participants = participants
+            })
+
+    let constructionParticipants =
+        prior.Participants
+        |> List.map (fun p ->
+            { p with
+                Group = NodeId 2
+                Node =
+                    if
+                        p.Role = ParticipantRole.AggregateValue
+                        || p.Role = ParticipantRole.AggregateSource
+                    then
+                        NodeId 2
+                    else
+                        p.Node
+            })
+
+    let construction =
+        { prior with
+            Occurrence = NodeId 2
+            Aggregate = NodeId 2
+            Tag = constructionTag
+            Participants = constructionParticipants
+        }
+
+    let inputs = [ NodeId 2; NodeId 30 ]
+
+    let projectedTag =
+        construction.Tag
+        |> Option.map (fun tag ->
+            { tag with
+                TagRead = None
+                Participants =
+                    tag.Participants
+                    |> List.filter (fun p -> p.Role <> ParticipantRole.AggregateTag)
+            })
+
+    let projectedParticipants =
+        (prior.Participants
+         |> List.choose (fun p ->
+             match p.Role with
+             | ParticipantRole.AggregateInput
+             | ParticipantRole.AggregateWrite -> None
+             | ParticipantRole.AggregateSource -> Some { p with Node = NodeId 3 }
+             | _ -> Some p))
+        @ (inputs
+           |> List.mapi (fun ordinal id -> p ParticipantRole.AggregateInput ordinal 1 (NodeId.value id)))
+
+    let projected =
+        { prior with
+            Aggregate = NodeId 3
+            Operation = CallableAggregateOperation.Project
+            FormationInputs = inputs
+            Value = None
+            SelectedAlternative = None
+            Tag = projectedTag
+            Participants = projectedParticipants
+        }
+
+    let kind =
+        if union then
+            SemanticKind.DUEliminate(NodeId 3, 0, "Some", held.Emission.Callable.AggregateSlots[NodeId 101].SourceType)
+        else
+            SemanticKind.FieldGet(NodeId 3, "invoke")
+
+    let nodes =
+        held.Nodes
+            .Add(
+                NodeId 2,
+                { held.Nodes[NodeId 1] with
+                    Id = NodeId 2
+                }
+            )
+            .Add(
+                NodeId 1,
+                { held.Nodes[NodeId 1] with
+                    Kind = kind
+                    Type = held.Emission.Callable.AggregateSlots[NodeId 101].SourceType
+                    Children = [ NodeId 3 ]
+                }
+            )
+            .Add(NodeId 3, node 3 (SemanticKind.VarRef("holder", Some(NodeId 4))) [])
+            .Add(NodeId 4, node 4 (SemanticKind.Binding("holder", false, false, None)) [ 2 ])
+            .Add(NodeId 5, node 5 (SemanticKind.DUGetTag(NodeId 2, unitType)) [ 2 ])
+
+    let representations = held.Emission.Numeric.OccurrenceRepresentations
+
+    let representations =
+        representations.Add(NodeId 2, representations[NodeId 1]).Add(NodeId 3, representations[NodeId 1])
+
+    let numeric =
+        { held.Emission.Numeric with
+            OccurrenceRepresentations = representations
+        }
+
+    { held with
+        Nodes = nodes
+        Emission = { held.Emission with Numeric = numeric }
+    }
+    |> publish
+        { held.Emission.Callable with
+            AggregateValues = Map.ofList [ NodeId 1, [ projected ]; NodeId 2, [ construction ] ]
+        }
+    |> renewCopy
+
+[<Theory>]
+[<InlineData(false)>]
+[<InlineData(true)>]
+let ``I5 projections retain the exact alias subject and supplying construction`` union =
+    let held = projectFixture union
+    Assert.Empty(Integrity.callableAggregates held)
+    let projected = held.Emission.Callable.AggregateValues[NodeId 1] |> List.exactlyOne
+    Assert.NotEqual(projected.Aggregate, projected.FormationInputs.Head)
+
+    let changedKind =
+        if union then
+            SemanticKind.DUEliminate(NodeId 2, 0, "Some", held.Emission.Callable.AggregateSlots[NodeId 101].SourceType)
+        else
+            SemanticKind.FieldGet(NodeId 2, "invoke")
+
+    let changedNode =
+        { held.Nodes[NodeId 1] with
+            Kind = changedKind
+            Children = [ NodeId 2 ]
+        }
+
+    let wrongSubject =
+        { held with
+            Nodes = held.Nodes.Add(NodeId 1, changedNode)
+        }
+        |> renewCopy
+
+    wrongSubject
+    |> failure "I5" "The callable projection differs from its live aggregate subject and slot."
+
+    let wrongInputs =
+        held
+        |> changeRow (fun row ->
+            let inputs = [ NodeId 30; NodeId 2 ]
+
+            let participants =
+                (row.Participants
+                 |> List.filter (fun p -> p.Role <> ParticipantRole.AggregateInput))
+                @ (inputs
+                   |> List.mapi (fun ordinal id -> p ParticipantRole.AggregateInput ordinal 1 (NodeId.value id)))
+
+            { row with
+                FormationInputs = inputs
+                Participants = participants
+            })
+        |> renewCopy
+
+    wrongInputs
+    |> failure "I5" "The callable projection differs from its supplying construction."
+
+    if union then
+        let other =
+            { held.Nodes[NodeId 2] with
+                Id = NodeId 7
+            }
+
+        let wrongTag =
+            { held with
+                Nodes = held.Nodes.Add(other.Id, other)
+            }
+            |> changeRow (fun row ->
+                let tag =
+                    row.Tag
+                    |> Option.map (fun tag ->
+                        let participants =
+                            tag.Participants
+                            |> List.map (fun p ->
+                                { p with
+                                    Group = other.Id
+                                    Node =
+                                        if p.Role = ParticipantRole.AggregateConstructor then
+                                            other.Id
+                                        else
+                                            p.Node
+                                })
+
+                        { tag with
+                            Constructor = other.Id
+                            Participants = participants
+                        })
+
+                { row with Tag = tag })
+            |> renewCopy
+
+        wrongTag
+        |> failure "I5" "The callable projection differs from its supplying construction."
 [<Theory>]
 [<InlineData(0)>]
 [<InlineData(1)>]
@@ -643,30 +862,110 @@ let ``absent callable needs no invented contract even when other case has scalar
     let held = fixture true false true
     let payload = if scalarPayload then Some(NodeId 91) else None
     let ordinal = if scalarPayload then Some 0 else None
+
     let tagParticipants =
-        [p ParticipantRole.AggregateConstructor 0 1 1; p ParticipantRole.AggregateTag 0 1 5] @
-        (if scalarPayload then [p ParticipantRole.AggregatePayload 0 1 91] else [])
-    let absent = held |> changeRow (fun row ->
-        { row with
-            Alternatives = []; Selector = None; FormationInputs = []; Value = None; SelectedAlternative = None
-            Bytes = 0; Alignment = 1
-            Tag = Some {row.Tag.Value with CaseOrdinal = 1; PayloadOrdinal = ordinal; Payload = payload; Participants = tagParticipants}
-            Participants = [p ParticipantRole.AggregateValue 0 1 1; p ParticipantRole.AggregateSource 0 1 1; p ParticipantRole.AggregateSlot 0 1 101] })
+        [
+            p ParticipantRole.AggregateConstructor 0 1 1
+            p ParticipantRole.AggregateTag 0 1 5
+        ]
+        @ (if scalarPayload then
+               [ p ParticipantRole.AggregatePayload 0 1 91 ]
+           else
+               [])
+
+    let absent =
+        held
+        |> changeRow (fun row ->
+            { row with
+                Alternatives = []
+                Selector = None
+                FormationInputs = []
+                Value = None
+                SelectedAlternative = None
+                Bytes = 0
+                Alignment = 1
+                Tag =
+                    Some
+                        { row.Tag.Value with
+                            CaseOrdinal = 1
+                            PayloadOrdinal = ordinal
+                            Payload = payload
+                            Participants = tagParticipants
+                        }
+                Participants =
+                    [
+                        p ParticipantRole.AggregateValue 0 1 1
+                        p ParticipantRole.AggregateSource 0 1 1
+                        p ParticipantRole.AggregateSlot 0 1 101
+                    ]
+            })
+
     let c = absent.Emission.Callable
+
     let slot =
         { c.AggregateSlots[NodeId 101] with
             Contract = Error "No callable formation exists in the selected case."
-            Participants = [p ParticipantRole.AggregateSlot 0 101 101] }
-    let absentProjection = {c with Contracts = Map.empty; Carriers = Map.empty; AggregateSlots = c.AggregateSlots.Add(NodeId 101, slot)}
+            Participants = [ p ParticipantRole.AggregateSlot 0 101 101 ]
+        }
+
+    let absentProjection =
+        { c with
+            Contracts = Map.empty
+            Carriers = Map.empty
+            AggregateSlots = c.AggregateSlots.Add(NodeId 101, slot)
+        }
+
     let absent =
-        {absent with Nodes = absent.Nodes.Add(NodeId 1, {absent.Nodes[NodeId 1] with Kind = SemanticKind.UnionCase("Other", 1, payload); Children = Option.toList payload})}
+        { absent with
+            Nodes =
+                absent.Nodes.Add(
+                    NodeId 1,
+                    { absent.Nodes[NodeId 1] with
+                        Kind = SemanticKind.UnionCase("Other", 1, payload)
+                        Children = Option.toList payload
+                    }
+                )
+        }
         |> publish absentProjection
         |> zeroComponent true
         |> renew
+
     Assert.Empty(Integrity.callableAggregates absent)
     Assert.Empty(absent.Emission.Callable.AggregateDependencies[NodeId 1].Contracts)
     Assert.Empty(absent.Emission.Callable.AggregateDependencies[NodeId 1].Carriers)
+    // Another held constructor with identical case/payload facts is still a
+    // different construction occurrence. Renewed accounts cannot merge them.
+    let other =
+        { absent.Nodes[NodeId 1] with
+            Id = NodeId 2
+        }
 
+    let crossed =
+        { absent with
+            Nodes = absent.Nodes.Add(other.Id, other)
+        }
+        |> changeRow (fun row ->
+            let tag = row.Tag.Value
+
+            let participants =
+                [ p ParticipantRole.AggregateConstructor 0 2 2 ]
+                @ (if scalarPayload then
+                       [ p ParticipantRole.AggregatePayload 0 2 91 ]
+                   else
+                       [])
+
+            let tag =
+                { tag with
+                    Constructor = other.Id
+                    TagRead = None
+                    Participants = participants
+                }
+
+            { row with Tag = Some tag })
+        |> renew
+
+    crossed
+    |> failure "I5" "The construction tag names another constructor occurrence."
 [<Fact>]
 let ``I4 equal source types cannot conceal different physical scalar conventions`` () =
     let held = fixture false false false

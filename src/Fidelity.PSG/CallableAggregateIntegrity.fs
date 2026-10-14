@@ -221,6 +221,56 @@ module internal CallableAggregateIntegrity =
                      source.Bytes = row.Bytes && source.Alignment = row.Alignment
                  | _ -> false)
             | _ -> false
+        let projectSubject (row: CallableAggregateValue) (slot: CallableAggregateSlot) held =
+            match revision.Nodes.TryFind row.Occurrence, slot.Path, held with
+            | Some {
+                       Kind = SemanticKind.FieldGet(subject, name)
+                   },
+              _,
+              _ -> subject = row.Aggregate && recordField slot held = Some name
+            | Some {
+                       Kind = SemanticKind.TupleGet(subject, ordinal)
+                   },
+              [ CallableAggregatePathStep.RecordField expected ],
+              _ -> subject = row.Aggregate && ordinal = expected
+            | Some {
+                       Kind = SemanticKind.DUEliminate(subject, caseOrdinal, name, payloadType)
+                   },
+              [ CallableAggregatePathStep.UnionPayload(expected, 0) ],
+              ValueRepresentation.Union(cases, _) ->
+                subject = row.Aggregate
+                && caseOrdinal = expected
+                && payloadType = slot.SourceType
+                && (cases |> List.tryItem expected |> Option.map fst) = Some name
+            | _ -> false
+
+        let supplyingProjection (row: CallableAggregateValue) =
+            let semanticTag (tag: CallableAggregateTag option) =
+                tag
+                |> Option.map (fun tag -> tag.Constructor, tag.CaseOrdinal, tag.PayloadOrdinal, tag.Payload)
+
+            match row.FormationInputs with
+            | [ construction; actual ] when row.Value.IsNone && row.SelectedAlternative.IsNone ->
+                let matching =
+                    callable.AggregateValues.TryFind construction
+                    |> Option.defaultValue []
+                    |> List.filter (fun source ->
+                        source.Slot = row.Slot
+                        && source.Operation = CallableAggregateOperation.Construct)
+
+                match matching with
+                | [ source ] ->
+                    source.Occurrence = construction
+                    && source.Aggregate = construction
+                    && source.Value = Some actual
+                    && source.Alternatives = row.Alternatives
+                    && source.Selector = row.Selector
+                    && source.Bytes = row.Bytes
+                    && source.Alignment = row.Alignment
+                    && semanticTag source.Tag = semanticTag row.Tag
+                | _ -> false
+            | _ -> false
+
         let nominalConstructor = function
             | TypeIdentity.Application(constructor, _) | TypeIdentity.Union(constructor, _) -> Some constructor
             | _ -> None
@@ -331,6 +381,9 @@ module internal CallableAggregateIntegrity =
               | _ -> ()
               if row.Operation = CallableAggregateOperation.Construct && row.Aggregate <> site then
                   yield failure "I5" site "A construction row names another aggregate occurrence."
+              if row.Operation = CallableAggregateOperation.Construct &&
+                 (row.Tag |> Option.exists (fun tag -> tag.Constructor <> site)) then
+                  yield failure "I5" site "The construction tag names another constructor occurrence."
               if row.Bytes < 0 || row.Alignment <= 0 || (row.Alignment &&& (row.Alignment - 1)) <> 0 then
                   yield failure "I1" site "Component storage has no admitted extent and alignment."
               match callable.AggregateSlots.TryFind row.Slot with
@@ -342,6 +395,11 @@ module internal CallableAggregateIntegrity =
                       yield failure "I5" site "A record component carries union tag evidence."
                   match representation row with
                   | Some(Ok held) ->
+                      if row.Operation = CallableAggregateOperation.Project then
+                          if not (projectSubject row slot held) then
+                              yield failure "I5" site "The callable projection differs from its live aggregate subject and slot."
+                          if not (supplyingProjection row) then
+                              yield failure "I5" site "The callable projection differs from its supplying construction."
                       match componentAt slot.Path held with
                       | Some(identity, data) when identity = slot.Identity && dataOnly data ->
                           let expected, placementsValid = componentData row
