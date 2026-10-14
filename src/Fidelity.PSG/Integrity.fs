@@ -1150,6 +1150,36 @@ module Integrity =
         let boundary = revision.Emission.Boundary
         let declarationFact id = boundary.Imports |> Map.exists (fun _ imported -> imported.DeclarationFacts.ContainsKey id)
         let boundaryType id = boundary.Imports |> Map.exists (fun _ imported -> imported.SourceTypes.ContainsKey id)
+        let hypothesisFact (hypothesis: ForeignResultHypothesis) id =
+            hypothesis.Quote = id && List.contains hypothesis boundary.ResultHypotheses
+
+        let foreignApplicationFact (application: ForeignResultApplication) id =
+            body id
+            || (application.Declaration = id && (declarationFact id || boundaryType id))
+            || (List.contains id application.Context && source.ContextHeaders.ContainsKey id)
+            || (application.Hypothesis
+                |> Option.exists (fun hypothesis -> hypothesisFact hypothesis id))
+
+        let foreignClaimFact (model: ForeignResultCoverageModel) id =
+            foreignApplicationFact model.Application id
+            || (model.Abi = Some id
+                && (boundary.Calls.TryFind model.Application.Call
+                    |> Option.exists (fun call ->
+                        boundary.Imports.TryFind call.Import
+                        |> Option.exists (fun imported ->
+                            imported.Binding = model.Application.Declaration
+                            && imported.DeclarationFacts.ContainsKey id))))
+            || (model.DestinationDeclaration = Some id
+                && (revision.Emission.Numeric.Values.TryFind model.Application.Call
+                    |> Option.exists (fun carrier -> carrier.Declaration = Some id)))
+
+        let foreignBodyFact id =
+            revision.CurrentClaims
+            |> Map.exists (fun _ claim ->
+                match claim.Body with
+                | ObligationBody.ForeignResultCoverage model -> foreignClaimFact model id
+                | _ -> false)
+
         let declarationType id =
             boundary.Imports |> Map.exists(fun _ imported ->
                 imported.DeclarationFacts.TryFind id |> Option.exists(fun fact ->
@@ -1258,6 +1288,14 @@ module Integrity =
                 | "Emission.Boundary.ResultHypotheses.Declaration"
                 | "Emission.Boundary.DeclarationLeaves" | "Emission.Boundary.DeclarationOnly" -> body id || declarationFact id || boundaryType id || source.ContextHeaders.ContainsKey id
                 | "Emission.Boundary.Imports.Scope" -> source.ContextHeaders.ContainsKey id
+                | "Emission.Boundary.ResultHypotheses.Quote" ->
+                    boundary.ResultHypotheses
+                    |> List.exists (fun hypothesis -> hypothesisFact hypothesis id)
+                | "Emission.Numeric.ForeignResultUses.Application" ->
+                    revision.Emission.Numeric.ForeignResultUses
+                    |> List.exists (fun account -> foreignApplicationFact account.Application id)
+                | "Obligations.Body"
+                | "CurrentClaims.Body" -> body id || foreignBodyFact id
                 | "Emission.Boundary.IntrinsicWriteImports.Scope" -> source.ContextHeaders.ContainsKey id
                 | "Emission.Boundary.Imports.Parameters" | "Emission.Boundary.Imports.SourceTypes" -> boundaryType id
                 | "Emission.Boundary.ByScope (values)" | "Emission.Boundary.Calls.Import" -> boundary.Imports.ContainsKey id
