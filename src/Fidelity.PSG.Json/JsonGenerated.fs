@@ -1253,6 +1253,7 @@ module internal JsonGenerated =
         | global.Fidelity.PSG.ProgramStorageShape.``Bytes`` -> union "Bytes" []
         | global.Fidelity.PSG.ProgramStorageShape.``Scalar``(a0) -> union "Scalar" [("Item", write_Fidelity_PSG_SettledSlot a0)]
         | global.Fidelity.PSG.ProgramStorageShape.``ValueView``(a0) -> union "ValueView" [("Item", write_Fidelity_PSG_TypeIdentity a0)]
+        | global.Fidelity.PSG.ProgramStorageShape.``NativeEntry``(a0) -> union "NativeEntry" [("formation", write_Fidelity_PSG_NodeId a0)]
 
     and write_Fidelity_PSG_RecurrencePowerStep (value: global.Fidelity.PSG.RecurrencePowerStep) : JsonValue =
         JsonValue.Object [("Odd", writeBool value.``Odd``); ("Exponent", writeBigInteger value.``Exponent``); ("Matrix", (writeList (writeList writeBigInteger)) value.``Matrix``)]

@@ -688,25 +688,138 @@ module Integrity =
     /// capacity calculation is needed to compare these stored accounts.
     let private programStorageRows (revision: Revision) =
         let check part (storage: ProgramStorageInventory) =
-            let identityName = function
+            let identityName =
+                function
                 | ProgramStorageIdentity.Allocation id -> sprintf "allocation:%d" (NodeId.value id)
                 | ProgramStorageIdentity.BindingSlot id -> sprintf "binding:%d" (NodeId.value id)
-            [ for KeyValue(identity, entry) in storage.Entries do
-                  let id = match identity with ProgramStorageIdentity.Allocation id | ProgramStorageIdentity.BindingSlot id -> id
-                  if identity <> entry.Identity then yield defect (part + ".Entries.Identity") id "A storage entry is filed under a different identity."
-                  match storage.Reservations.TryFind entry.SpaceNode with
-                  | Some reservation when reservation.Space = entry.Space -> ()
-                  | _ -> yield missingRow (part + ".Entries.SpaceNode") "Reservations with the exact declared space" entry.SpaceNode
-              for KeyValue(space, reservation) in storage.Reservations do
-                  let entries = storage.Entries |> Map.toList |> List.filter(fun (_, entry) -> entry.SpaceNode = space)
-                  let expected : BAREWire.Platform.StorageRequest list =
-                      entries |> List.map(fun (identity, entry) -> {Name = identityName identity; Length = int64 entry.Bytes; Alignment = entry.Alignment})
-                  if entries.IsEmpty || Array.toList reservation.Requests <> expected then
-                      yield defect (part + ".Reservations") space "The ordered reserved objects differ from the storage entries for this space." ]
-        check "Codata.ProgramStorage" revision.Codata.ProgramStorage @
-        check "Emission.Storage.ProgramStorage" revision.Emission.Storage.ProgramStorage @
-        (if revision.Codata.ProgramStorage = revision.Emission.Storage.ProgramStorage then []
-         else [{Part = "Emission.Storage.ProgramStorage"; Node = None; Reason = "The program storage account differs from Codata.ProgramStorage."}])
+
+            [
+                for KeyValue(identity, entry) in storage.Entries do
+                    let id =
+                        match identity with
+                        | ProgramStorageIdentity.Allocation id
+                        | ProgramStorageIdentity.BindingSlot id -> id
+
+                    if identity <> entry.Identity then
+                        yield defect (part + ".Entries.Identity") id "A storage entry is filed under a different identity."
+
+                    match storage.Reservations.TryFind entry.SpaceNode with
+                    | Some reservation when reservation.Space = entry.Space -> ()
+                    | _ -> yield missingRow (part + ".Entries.SpaceNode") "Reservations with the exact declared space" entry.SpaceNode
+
+                    match entry.Shape with
+                    | ProgramStorageShape.NativeEntry formation ->
+                        let source = revision.Nodes.TryFind id
+
+                        let initializer =
+                            revision.Emission.Storage.Startup
+                            |> Option.bind (fun startup ->
+                                if not (startup.ValueBindings.Contains id) then
+                                    None
+                                else
+                                    startup.Initializers |> List.tryFind (fun row -> row.Binding = id))
+
+                        let correspondence =
+                            match identity, source, initializer, revision.Emission.Boundary.Entries.TryFind formation with
+                            | ProgramStorageIdentity.BindingSlot binding,
+                              Some {
+                                       Kind = SemanticKind.Binding(_, false, false, None)
+                                       Children = [ actual ]
+                                       Type = ty
+                                   },
+                              Some startup,
+                              Some native ->
+                                binding = id
+                                && actual = startup.Initializer
+                                && ty = entry.SourceType
+                                && ty = native.SourceType
+                                && native.Formation = formation
+                                && native.Transport.Contains binding
+                                && native.Transport.Contains actual
+                                && Set.isSubset
+                                    (Set.ofList [ binding; actual; formation; native.Operand; native.Declaration ])
+                                    entry.Participants
+                                && (revision.Emission.Boundary.Loading
+                                    |> Option.exists (fun loading -> loading.Identity = native.Loading))
+                                && revision.Emission.Boundary.Imports.ContainsKey native.Import
+                            | _ -> false
+
+                        if not correspondence then
+                            yield
+                                defect
+                                    (part + ".Entries.NativeEntry")
+                                    id
+                                    "The native entry slot lacks its exact immutable startup initializer and current imported-entry loading correspondence."
+
+                        let layout =
+                            match revision.Platform.Pointer with
+                            | Ok bits when bits > 0 && bits % 8 = 0 ->
+                                entry.Bytes = bits / 8
+                                && entry.Alignment > 0
+                                && (entry.Alignment &&& (entry.Alignment - 1)) = 0
+                            | _ -> false
+
+                        if not layout then
+                            yield
+                                defect
+                                    (part + ".Entries.NativeEntry.Layout")
+                                    id
+                                    "The native entry slot differs from its declared positive Pointer extent and power-of-two alignment."
+
+                        for KeyValue(read, node) in revision.Nodes do
+                            match node.Kind with
+                            | SemanticKind.VarRef(_, Some binding) when binding = id ->
+                                match
+                                    revision.SourceReadings.BindingUses.TryFind read, revision.Emission.Boundary.Entries.TryFind formation
+                                with
+                                | Some bindingUse, Some native when
+                                    bindingUse.Binding = id
+                                    && bindingUse.Class = SourceBindingClass.ImmutableValue
+                                    && bindingUse.IsProgramSlotIntent
+                                    && bindingUse.HasProgramSlotAuthority
+                                    && native.Transport.Contains read
+                                    ->
+                                    ()
+                                | _ ->
+                                    yield
+                                        defect
+                                            (part + ".Entries.NativeEntry.Read")
+                                            read
+                                            "The native entry slot read lacks its exact immutable binding, storage and entry transport account."
+                            | _ -> ()
+                    | _ -> ()
+                for KeyValue(space, reservation) in storage.Reservations do
+                    let entries =
+                        storage.Entries
+                        |> Map.toList
+                        |> List.filter (fun (_, entry) -> entry.SpaceNode = space)
+
+                    let expected: BAREWire.Platform.StorageRequest list =
+                        entries
+                        |> List.map (fun (identity, entry) ->
+                            {
+                                Name = identityName identity
+                                Length = int64 entry.Bytes
+                                Alignment = entry.Alignment
+                            })
+
+                    if entries.IsEmpty || Array.toList reservation.Requests <> expected then
+                        yield
+                            defect (part + ".Reservations") space "The ordered reserved objects differ from the storage entries for this space."
+            ]
+
+        check "Codata.ProgramStorage" revision.Codata.ProgramStorage
+        @ check "Emission.Storage.ProgramStorage" revision.Emission.Storage.ProgramStorage
+        @ (if revision.Codata.ProgramStorage = revision.Emission.Storage.ProgramStorage then
+               []
+           else
+               [
+                   {
+                       Part = "Emission.Storage.ProgramStorage"
+                       Node = None
+                       Reason = "The program storage account differs from Codata.ProgramStorage."
+                   }
+               ])
 
     /// A kernel's ordered scalar steps repeat the numeric owner's settled rows.
     /// Topology declarations, copied ingress premises and metadata omissions are
@@ -964,7 +1077,16 @@ module Integrity =
               Some useRow ->
                 useRow.Binding = binding
                 && useRow.Class = SourceBindingClass.ImmutableValue
-                && not useRow.IsProgramSlotIntent
+                && (not useRow.IsProgramSlotIntent
+                    || (useRow.HasProgramSlotAuthority
+                        && (let identity = ProgramStorageIdentity.BindingSlot binding
+                            match revision.Codata.ProgramStorage.Entries.TryFind identity,
+                                  revision.Emission.Storage.ProgramStorage.Entries.TryFind identity with
+                            | Some stored, Some emitted ->
+                                stored = emitted
+                                && stored.Shape = ProgramStorageShape.NativeEntry entry.Formation
+                                && stored.SourceType = entry.SourceType
+                            | _ -> false)))
                 && not useRow.IsPartialApplication
                 && entry.Transport.Contains binding
             | _ -> false
