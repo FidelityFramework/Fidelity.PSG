@@ -786,6 +786,7 @@ module Integrity =
     /// Import membership is not executable residency or general ID authority.
     let private boundaryRows (revision: Revision) =
         let boundary = revision.Emission.Boundary
+        let memory = revision.Emission.Memory
         let need part table node present = if present then [] else [missingRow part table node]
         [ for KeyValue(key, imported) in boundary.Imports do
               if key <> imported.Identity then yield defect "Emission.Boundary.Imports.Identity" key "An import is filed under a different identity."
@@ -816,6 +817,23 @@ module Integrity =
                       if not (imported.Parameters |> List.contains (operand.Formal, operand.Abi)) then
                           yield defect "Emission.Boundary.Calls.Arguments" operand.Formal "A boundary operand differs from its imported formal/ABI account."
                       yield! need "Emission.Boundary.Calls.Arguments" "Nodes (actual operand)" operand.Actual (revision.Nodes.ContainsKey operand.Actual)
+          // A runtime borrow requires the source-published snapshot account.
+          // The memory owner already checks the exact copy and allocation rows.
+          for KeyValue(_, call) in boundary.IntrinsicWrites do
+              match boundary.ByteViews.TryFind call.Buffer with
+              | Some view when view.StaticOrigins.IsEmpty ->
+                  match memory.Operations.TryFind view.ExtentSource with
+                  | Some(MemoryWitnessOperation.StringView snapshot)
+                      when snapshot.Site = view.ExtentSource && snapshot.Direction = MemoryStringViewDirection.FromBytes ->
+                      match memory.ArrayCopies.TryFind snapshot.Snapshot with
+                      | Some copy when copy.Allocation.IsNone ->
+                          yield missingRow "Emission.Boundary.ByteViews.SnapshotAllocation" "the snapshot copy with a stated allocation" copy.Site
+                      | _ -> ()
+                  | _ ->
+                      yield missingRow "Emission.Boundary.ByteViews.Snapshot" "Emission.Memory.Operations with the exact FromBytes StringView" view.ExtentSource
+              | Some _ -> ()
+              | None ->
+                  yield missingRow "Emission.Boundary.IntrinsicWrites.Buffer" "Emission.Boundary.ByteViews with the exact buffer" call.Buffer
           for KeyValue(_, proofs) in boundary.IntrinsicWriteProofs do
               for proof in proofs do
                   match revision.CurrentClaims.TryFind proof.Obligation with
