@@ -5,9 +5,9 @@ module internal BinaryGenerated =
     [<Literal>]
     let Format = 2u
     [<Literal>]
-    let Schema = 23
+    let Schema = 24
     [<Literal>]
-    let Fingerprint = "02E3AF994F7ED25B32F20B69C7F8629A2FC7BA37BAF515A5B62AA64C905C3814"
+    let Fingerprint = "C4173B18C986F94D63435615CCCE2742E8835BE9E6812343C458BEE93219FDBA"
     [<Literal>]
     let NamedTypes = 272
     [<Literal>]
@@ -329,8 +329,9 @@ module internal BinaryGenerated =
         let! state = (writeList (fun state (v1_0, v1_1, v1_2) -> enterWrite state |> Result.bind (fun state -> write_Fidelity_PSG_NodeId state v1_0 |> Result.bind (fun state -> writeBool state v1_1 |> Result.bind (fun state -> (writeList write_Fidelity_PSG_NodeId) state v1_2 |> Result.bind (fun state -> Ok(leaveWrite state))))))) state value.``StringComparisons``
         let! state = (writeList (fun state (v1_0, v1_1, v1_2) -> enterWrite state |> Result.bind (fun state -> write_Fidelity_PSG_NodeId state v1_0 |> Result.bind (fun state -> writeBool state v1_1 |> Result.bind (fun state -> (writeList write_Fidelity_PSG_NodeId) state v1_2 |> Result.bind (fun state -> Ok(leaveWrite state))))))) state value.``StringLengthComparisons``
         let! state = (writeList write_Fidelity_PSG_MemoryArrayAccessWitness) state value.``StringComparisonReads``
-        let! state = (writeList write_Fidelity_PSG_MemoryStringViewWitness) state value.``StringComparisonSnapshots``
-        let! state = (writeList write_Fidelity_PSG_MemoryArrayCopyWitness) state value.``StringComparisonCopies``
+        let! state = (writeList write_Fidelity_PSG_MemoryStringViewWitness) state value.``StringBorrowSnapshots``
+        let! state = (writeList write_Fidelity_PSG_MemoryArrayCopyWitness) state value.``StringBorrowCopies``
+        let! state = (writeList write_Fidelity_PSG_MemoryArrayAllocationWitness) state value.``StringBorrowAllocations``
         let! state = (writeList (fun state (v1_0, v1_1) -> enterWrite state |> Result.bind (fun state -> write_Fidelity_PSG_NodeId state v1_0 |> Result.bind (fun state -> write_Fidelity_PSG_IntrinsicWriteImport state v1_1 |> Result.bind (fun state -> Ok(leaveWrite state)))))) state value.``IntrinsicDeclarations``
         let! state = (writeList write_Fidelity_PSG_IntrinsicWriteImport) state value.``IntrinsicImports``
         let! state = (writeList write_Fidelity_PSG_IntrinsicWriteCall) state value.``IntrinsicCalls``
@@ -6639,7 +6640,7 @@ module internal BinaryGenerated =
     }
 
     and read_Fidelity_PSG_BoundaryDomain (state: ReadState) : Result<global.Fidelity.PSG.BoundaryDomain * ReadState, BinaryError> = result {
-        let! state = enterReadFields 24 state
+        let! state = enterReadFields 25 state
         let! a0, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_BoundarySourcePremise) state
         let! a1, state = (readOption read_Fidelity_PSG_BoundaryPlatformPremise) state
         let! a2, state = (readMap read_Fidelity_PSG_NodeId (readList read_Fidelity_PSG_Meet)) state
@@ -6655,16 +6656,17 @@ module internal BinaryGenerated =
         let! a12, state = (readList read_Fidelity_PSG_MemoryArrayAccessWitness) state
         let! a13, state = (readList read_Fidelity_PSG_MemoryStringViewWitness) state
         let! a14, state = (readList read_Fidelity_PSG_MemoryArrayCopyWitness) state
-        let! a15, state = (readList (fun state -> enterReadFields 2 state |> Result.bind (fun state -> read_Fidelity_PSG_NodeId state |> Result.bind (fun (v1_0, state) -> read_Fidelity_PSG_IntrinsicWriteImport state |> Result.bind (fun (v1_1, state) -> finishRead (v1_0, v1_1) state))))) state
-        let! a16, state = (readList read_Fidelity_PSG_IntrinsicWriteImport) state
-        let! a17, state = (readList read_Fidelity_PSG_IntrinsicWriteCall) state
-        let! a18, state = (readList read_Fidelity_PSG_IntrinsicWriteProof) state
-        let! a19, state = (readOption (fun state -> enterReadFields 11 state |> Result.bind (fun state -> readString state |> Result.bind (fun (v1_0, state) -> (readList readU8) state |> Result.bind (fun (v1_1, state) -> readI32 state |> Result.bind (fun (v1_2, state) -> readI32 state |> Result.bind (fun (v1_3, state) -> readI32 state |> Result.bind (fun (v1_4, state) -> readString state |> Result.bind (fun (v1_5, state) -> readI64 state |> Result.bind (fun (v1_6, state) -> readI32 state |> Result.bind (fun (v1_7, state) -> readI32 state |> Result.bind (fun (v1_8, state) -> read_Fidelity_PSG_NodeId state |> Result.bind (fun (v1_9, state) -> (readList (fun state -> enterReadFields 5 state |> Result.bind (fun state -> (readList read_Fidelity_PSG_NodeId) state |> Result.bind (fun (v3_0, state) -> readString state |> Result.bind (fun (v3_1, state) -> readI32 state |> Result.bind (fun (v3_2, state) -> readI32 state |> Result.bind (fun (v3_3, state) -> readI32 state |> Result.bind (fun (v3_4, state) -> finishRead (v3_0, v3_1, v3_2, v3_3, v3_4) state)))))))) state |> Result.bind (fun (v1_10, state) -> finishRead (v1_0, v1_1, v1_2, v1_3, v1_4, v1_5, v1_6, v1_7, v1_8, v1_9, v1_10) state)))))))))))))) state
-        let! a20, state = (readSet read_Fidelity_PSG_NodeId) state
+        let! a15, state = (readList read_Fidelity_PSG_MemoryArrayAllocationWitness) state
+        let! a16, state = (readList (fun state -> enterReadFields 2 state |> Result.bind (fun state -> read_Fidelity_PSG_NodeId state |> Result.bind (fun (v1_0, state) -> read_Fidelity_PSG_IntrinsicWriteImport state |> Result.bind (fun (v1_1, state) -> finishRead (v1_0, v1_1) state))))) state
+        let! a17, state = (readList read_Fidelity_PSG_IntrinsicWriteImport) state
+        let! a18, state = (readList read_Fidelity_PSG_IntrinsicWriteCall) state
+        let! a19, state = (readList read_Fidelity_PSG_IntrinsicWriteProof) state
+        let! a20, state = (readOption (fun state -> enterReadFields 11 state |> Result.bind (fun state -> readString state |> Result.bind (fun (v1_0, state) -> (readList readU8) state |> Result.bind (fun (v1_1, state) -> readI32 state |> Result.bind (fun (v1_2, state) -> readI32 state |> Result.bind (fun (v1_3, state) -> readI32 state |> Result.bind (fun (v1_4, state) -> readString state |> Result.bind (fun (v1_5, state) -> readI64 state |> Result.bind (fun (v1_6, state) -> readI32 state |> Result.bind (fun (v1_7, state) -> readI32 state |> Result.bind (fun (v1_8, state) -> read_Fidelity_PSG_NodeId state |> Result.bind (fun (v1_9, state) -> (readList (fun state -> enterReadFields 5 state |> Result.bind (fun state -> (readList read_Fidelity_PSG_NodeId) state |> Result.bind (fun (v3_0, state) -> readString state |> Result.bind (fun (v3_1, state) -> readI32 state |> Result.bind (fun (v3_2, state) -> readI32 state |> Result.bind (fun (v3_3, state) -> readI32 state |> Result.bind (fun (v3_4, state) -> finishRead (v3_0, v3_1, v3_2, v3_3, v3_4) state)))))))) state |> Result.bind (fun (v1_10, state) -> finishRead (v1_0, v1_1, v1_2, v1_3, v1_4, v1_5, v1_6, v1_7, v1_8, v1_9, v1_10) state)))))))))))))) state
         let! a21, state = (readSet read_Fidelity_PSG_NodeId) state
-        let! a22, state = (readSet readString) state
-        let! a23, state = (readList (fun state -> enterReadFields 3 state |> Result.bind (fun state -> read_Fidelity_PSG_NodeId state |> Result.bind (fun (v1_0, state) -> (readSet read_Fidelity_PSG_NodeId) state |> Result.bind (fun (v1_1, state) -> readString state |> Result.bind (fun (v1_2, state) -> finishRead (v1_0, v1_1, v1_2) state)))))) state
-        return! finishRead ({ ``Premises`` = a0; ``Platform`` = a1; ``Meets`` = a2; ``Declarations`` = a3; ``Imports`` = a4; ``Calls`` = a5; ``ByteViews`` = a6; ``StringExtents`` = a7; ``StringOriginRelations`` = a8; ``StringOriginRoots`` = a9; ``StringComparisons`` = a10; ``StringLengthComparisons`` = a11; ``StringComparisonReads`` = a12; ``StringComparisonSnapshots`` = a13; ``StringComparisonCopies`` = a14; ``IntrinsicDeclarations`` = a15; ``IntrinsicImports`` = a16; ``IntrinsicCalls`` = a17; ``IntrinsicProofs`` = a18; ``StringStorage`` = a19; ``DeclarationLeaves`` = a20; ``DeclarationOnly`` = a21; ``Links`` = a22; ``Failures`` = a23 } : global.Fidelity.PSG.BoundaryDomain) state
+        let! a22, state = (readSet read_Fidelity_PSG_NodeId) state
+        let! a23, state = (readSet readString) state
+        let! a24, state = (readList (fun state -> enterReadFields 3 state |> Result.bind (fun state -> read_Fidelity_PSG_NodeId state |> Result.bind (fun (v1_0, state) -> (readSet read_Fidelity_PSG_NodeId) state |> Result.bind (fun (v1_1, state) -> readString state |> Result.bind (fun (v1_2, state) -> finishRead (v1_0, v1_1, v1_2) state)))))) state
+        return! finishRead ({ ``Premises`` = a0; ``Platform`` = a1; ``Meets`` = a2; ``Declarations`` = a3; ``Imports`` = a4; ``Calls`` = a5; ``ByteViews`` = a6; ``StringExtents`` = a7; ``StringOriginRelations`` = a8; ``StringOriginRoots`` = a9; ``StringComparisons`` = a10; ``StringLengthComparisons`` = a11; ``StringComparisonReads`` = a12; ``StringBorrowSnapshots`` = a13; ``StringBorrowCopies`` = a14; ``StringBorrowAllocations`` = a15; ``IntrinsicDeclarations`` = a16; ``IntrinsicImports`` = a17; ``IntrinsicCalls`` = a18; ``IntrinsicProofs`` = a19; ``StringStorage`` = a20; ``DeclarationLeaves`` = a21; ``DeclarationOnly`` = a22; ``Links`` = a23; ``Failures`` = a24 } : global.Fidelity.PSG.BoundaryDomain) state
     }
 
     and read_Fidelity_PSG_BoundaryEmissionProjection (state: ReadState) : Result<global.Fidelity.PSG.BoundaryEmissionProjection * ReadState, BinaryError> = result {
