@@ -63,10 +63,14 @@ module internal CallableAggregateIntegrity =
                   let unitResult =
                       contract.ResultRepresentation = ValueRepresentation.Scalar SettledSlot.Unit
                       && TypeIdentity.isUnit contract.ResultType
+                  let unitParameterOmission =
+                      contract.OmittedParameters = [0] &&
+                      (match contract.ParameterTypes with [ty] -> TypeIdentity.isUnit ty | _ -> false) &&
+                      contract.ParameterRepresentations.IsEmpty && unitResult
                   if convention.ParameterConversions <> expected ||
                      convention.ResultConversion <> CallableConversion.Identity contract.ResultRepresentation ||
-                     not contract.OmittedParameters.IsEmpty || contract.EnvironmentBytes.IsSome ||
-                     (contract.ParameterRepresentations |> List.map fst) <> [0 .. contract.ParameterTypes.Length - 1] ||
+                     (not contract.OmittedParameters.IsEmpty && not unitParameterOmission) || contract.EnvironmentBytes.IsSome ||
+                     (contract.ParameterRepresentations |> List.map fst) <> (if unitParameterOmission then [] else [0 .. contract.ParameterTypes.Length - 1]) ||
                      (contract.ParameterRepresentations |> List.exists (snd >> scalar >> not)) || not (scalar contract.ResultRepresentation || unitResult) then
                       yield failure "I4" site "The compiler-owned portable convention lacks exact scalar identity conversions or explicit environment absence."
                   let dimension name declared =

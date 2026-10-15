@@ -1148,7 +1148,7 @@ module Integrity =
                 if contract.Parameter <> invocation.Parameter ||
                    contract.Signature.CallingConvention <> BAREWire.Descriptors.CallConv.CDecl ||
                    invocation.Signature.CallingConvention <> "CDecl" ||
-                   parameters.IsEmpty || (parameters |> List.exists Option.isNone) || not resultMatches ||
+                   (parameters.IsEmpty && contract.Signature.ReturnType <> BAREWire.Descriptors.TypeRef.Void) || (parameters |> List.exists Option.isNone) || not resultMatches ||
                    List.choose id parameters <> invocation.Signature.Parameters then
                     yield defect (part + ".Signature") key "The callback signature differs from its complete nonempty integer-formal CDecl receiving quotation and exact integer or void result."
                 if [contract.Binding; contract.Scope; contract.Hypothesis.Identity; contract.Hypothesis.Version; contract.Hypothesis.Source]
@@ -1162,6 +1162,19 @@ module Integrity =
                       revision.Emission.Callable.Declarations.TryFind entry.Implementation,
                       revision.Emission.Callable.Carriers.TryFind entry.Formation with
                 | Some invocation, Some declaration, Some carrier ->
+                    let unitParameterOmission =
+                        invocation.Contract.Signature.Parameters.Length = 0 &&
+                        invocation.Contract.Signature.ReturnType = BAREWire.Descriptors.TypeRef.Void &&
+                        invocation.Signature.Parameters.IsEmpty && invocation.Signature.Result.IsNone &&
+                        (match declaration.Parameters with
+                         | [(_, ty, formal)] ->
+                             entry.Formals = [formal] && TypeIdentity.isUnit ty &&
+                             (revision.Nodes.TryFind formal |> Option.exists (fun node -> TypeIdentity.isUnit node.Type)) &&
+                             revision.Emission.Callable.UnitNodes.Contains formal &&
+                             revision.Emission.Numeric.OccurrenceRepresentations.TryFind formal = Some(Ok(ValueRepresentation.Scalar SettledSlot.Unit))
+                         | _ -> false)
+                    if invocation.Signature.Parameters.IsEmpty && not unitParameterOmission then
+                        yield defect (part + ".UnitParameters") key "A zero-argument void callback requires its exact sole source unit formal and current unit representation."
                     let lifetime = carrier.Contract |> Result.toOption |> Option.bind revision.Emission.Callable.Contracts.TryFind
                     let lifetimeMatches =
                         match lifetime with
@@ -1177,10 +1190,12 @@ module Integrity =
                              not (revision.Emission.Callable.Contracts.ContainsKey id) || id = identity)) -> ()
                     | _ -> yield defect (part + ".Participants") key "The closed entry omits its own original callable contract or names another contract as support."
                     if carrier.Kind <> CallableKind.NativeEntry || carrier.Formation <> key || carrier.Implementation <> entry.Implementation ||
-                       Option.isSome carrier.Environment || carrier.EnvironmentValue.IsSome || not carrier.OmittedParameters.IsEmpty ||
+                       Option.isSome carrier.Environment || carrier.EnvironmentValue.IsSome ||
+                       carrier.OmittedParameters <> (if unitParameterOmission then Set.ofList entry.Formals else Set.empty) ||
                        not declaration.Captures.IsEmpty || declaration.Result <> entry.Body ||
                        (declaration.Parameters |> List.map (fun (_, _, id) -> id)) <> entry.Formals ||
-                       entry.Formals.Length <> invocation.Signature.Parameters.Length || entry.ParameterAdaptations.Length <> entry.Formals.Length then
+                       (not unitParameterOmission && entry.Formals.Length <> invocation.Signature.Parameters.Length) || entry.ParameterAdaptations.Length <> entry.Formals.Length ||
+                       (unitParameterOmission && entry.ParameterAdaptations <> [None]) then
                         yield defect (part + ".Declaration") key "The closed entry differs from its original capture-free implementation, body or complete ordered native formals."
                     let addressMatches =
                         match revision.Codata.FunctionPointers.TryFind key, revision.Emission.Callable.NativeEntries.TryFind entry.Implementation with
