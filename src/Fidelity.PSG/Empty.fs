@@ -32,10 +32,11 @@ module Empty =
           EnvironmentResidences = Map.empty; ProgramInitializationOrders = Map.empty }
 
     let boundary : BoundaryEmissionProjection =
-        { Imports = Map.empty; Loading = None; Entries = Map.empty; ByScope = Map.empty; Calls = Map.empty; ByteViews = Map.empty
+        { ResourceEvidence = None; Imports = Map.empty; Loading = None; Entries = Map.empty; ByScope = Map.empty; Calls = Map.empty; ByteViews = Map.empty
           StringExtents = Map.empty; IntrinsicWriteImports = Map.empty; IntrinsicWrites = Map.empty
           IntrinsicWriteProofs = Map.empty; DeclarationLeaves = Set.empty; DeclarationOnly = Set.empty
-          Links = Set.empty; ResourceDeclarations = Map.empty; ResultHypotheses = []; CallbackInvocations = Map.empty; ClosedEntries = Map.empty }
+          Links = Set.empty; ResourceDeclarations = Map.empty; ResourceAccesses = Map.empty
+          ResultHypotheses = []; CallbackInvocations = Map.empty; ClosedEntries = Map.empty }
 
     let numeric : NumericWitnessProjection =
         { Values = Map.empty; Operations = Map.empty; OperationRequired = Set.empty

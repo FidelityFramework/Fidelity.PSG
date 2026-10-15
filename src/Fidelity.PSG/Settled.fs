@@ -14,7 +14,13 @@ type MeetKind = ExtendUnsigned | ExtendSigned | Truncate | ExtendFloat | Truncat
 type Meet = { Consumer: NodeId; Operand: NodeId; From: int; To: int; Adapt: MeetKind }
 
 [<RequireQualifiedAccess>]
-type BoundaryScalar = Integer of bits: int * signed: bool | Boolean | Entry of invocation: NodeId
+type BoundaryScalar =
+    | Integer of bits: int * signed: bool
+    | Boolean
+    | Entry of invocation: NodeId
+    /// Exact resource declaration owns the opaque native ABI and nullability.
+    /// This is neither a source integer nor permission to expose an address.
+    | ResourceHandle of declaration: NodeId * nullable: bool
 
 /// The physical target carriers settled from a quoted native entry signature.
 /// This has no C symbol: the code is the original Clef declaration.
@@ -35,6 +41,9 @@ type SettledSlot =
     | Pointer of words: int
     | Unit
     | Opaque of what: string
+    /// Nonnull, nonspatial logical handle. Alignment is settled independently
+    /// from the selected target layout; width does not imply alignment.
+    | CHandle of handleType: TypeIdentity * bits: int * alignment: int
 
 type SettledField = { Name: string; Slot: SettledSlot; Offset: int option; Size: int option; Align: int option }
 
@@ -279,6 +288,54 @@ type IntrinsicWriteProof = {
     Participants: Set<NodeId>
 }
 
+/// Native result ordinal zero is converted indivisibly into the enclosing
+/// call's logical Option result. No intermediate source pointer is introduced.
+type BoundaryResourceAcquisition = {
+    Declaration: NodeId
+    Tag: SettledSlot
+    NoneCase: int
+    SomeCase: int
+    Conversion: NodeId
+    Cleanup: NodeId
+}
+
+/// The enclosing call owns the exact unary actual/formal vector. Cleanup is
+/// the original acquisition's alias/exit obligation, not a new release promise.
+type BoundaryResourceRelease = {
+    Declaration: NodeId
+    Acquisition: NodeId
+    Cleanup: NodeId
+}
+
+[<RequireQualifiedAccess>]
+type BoundaryResourceUse =
+    | AcquireNullable of BoundaryResourceAcquisition
+    | ReleaseOwned of BoundaryResourceRelease
+
+[<RequireQualifiedAccess>]
+type BoundaryResourceAccessKind = OptionTag | OptionPayload | ImmutableAlias
+
+type BoundaryResourceSelection = {
+    Decision: NodeId
+    Scrutinee: NodeId
+    Arm: int
+    CaseOrdinal: int option
+    Guard: (NodeId * bool) option
+}
+
+/// Per-read lineage, distinct from call incidence. Selection records actual
+/// source guard polarity; it does not define true as the Some alternative.
+type BoundaryResourceAccess = {
+    Site: NodeId
+    Source: NodeId
+    Acquisition: NodeId
+    Declaration: NodeId
+    Kind: BoundaryResourceAccessKind
+    Selection: BoundaryResourceSelection list
+    Cleanup: NodeId
+    Participants: Set<NodeId>
+}
+
 type BoundaryCall = {
     Site: NodeId
     Import: NodeId
@@ -288,6 +345,7 @@ type BoundaryCall = {
     ErasedUnitArguments: NodeId list
     Result: BoundaryScalar option
     ResultAdaptation: Meet option
+    Resource: BoundaryResourceUse option
     Participants: Set<NodeId>
     SourceTypes: Map<NodeId, TypeIdentity>
 }

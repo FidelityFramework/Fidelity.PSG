@@ -1291,7 +1291,197 @@ module Integrity =
               if not supportedFacts || required |> List.exists (facts.ContainsKey >> not) || row.Participants <> (facts.Keys |> Set.ofSeq) then
                   yield defect "Emission.Boundary.ResourceDeclarations.Participants" key "The resource declaration has missing or unrelated source support." ]
 
+        // Passive replay of resource evidence. A well-formed claim may still
+        // be refuted; this reader checks its source correspondence, not safety.
+        let resourceClaim kind citizen =
+            revision.CurrentClaims.TryFind citizen
+            |> Option.filter (fun info -> info.Kind = kind && List.contains info revision.Obligations)
+        let conversionAt citizen =
+            resourceClaim "foreign-resource-nullable-conversion" citizen
+            |> Option.bind (fun info -> match info.Body with ObligationBody.ResourceConversion model -> Some model | _ -> None)
+        let cleanupAt citizen =
+            resourceClaim "foreign-resource-cleanup" citizen
+            |> Option.bind (fun info -> match info.Body with ObligationBody.ResourceCleanup model -> Some model | _ -> None)
+        let evaluationFor (owners: Set<NodeId>) =
+            boundary.ResourceEvidence |> Option.toList |> List.collect (fun evidence ->
+                evidence.Relations |> List.filter (fun row -> row.Sources |> List.tryHead |> Option.exists owners.Contains))
+        let supportAt site citizen (resource: BoundaryResourceDeclaration) (cleanup: ResourceCleanupModel) =
+            let required =
+                Set.union resource.Participants
+                    (cleanup.Relations |> List.collect (fun row -> row.Target :: row.Sources) |> Set.ofList)
+            match revision.ObligationSources.TryFind citizen with
+            | Some [sources] -> List.tryHead sources = Some site && Set.isSubset required (Set.ofList sources)
+            | _ -> false
+        let casesCurrent (cleanup: ResourceCleanupModel) =
+            let sites = cleanup.Relations |> List.map _.Target |> List.distinct
+            let expected =
+                sites |> List.choose (fun site ->
+                    match revision.Nodes.TryFind site with
+                    | Some { Kind = SemanticKind.CaseElimination(subject, arms) } ->
+                        Some { Site = site; Subject = subject
+                               Domain = [cleanup.ConversionModel.NoneCase; cleanup.ConversionModel.SomeCase]
+                               Arms = arms |> List.map (fun arm ->
+                                   { Ordinal = match arm.Pattern with Pattern.Union(_, ordinal, _, _) -> Some ordinal | _ -> None
+                                     Body = arm.Body
+                                     BooleanResult = match revision.Nodes.TryFind arm.Body with
+                                                     | Some { Kind = SemanticKind.Literal(NativeLiteral.Bool value) } -> Some value
+                                                     | _ -> None }) }
+                    | _ -> None)
+            let literals = sites |> List.choose (fun site ->
+                match revision.Nodes.TryFind site with
+                | Some { Kind = SemanticKind.Literal(NativeLiteral.Bool value) } -> Some(site, value)
+                | _ -> None)
+            List.sort expected = List.sort cleanup.Cases && List.sort literals = List.sort cleanup.LiteralGuards
+        let representationCurrent (call: BoundaryCall) (account: BoundaryResourceAcquisition) (model: ResourceConversionModel) =
+            match account.Tag, revision.Emission.Numeric.OccurrenceRepresentations.TryFind call.Site, revision.Platform.Pointer with
+            | SettledSlot.Integer(tagBits, _),
+              Some(Ok(ValueRepresentation.Union([("None", []); ("Some", [ValueRepresentation.Scalar(SettledSlot.CHandle(handle, bits, alignment))])], Some(offset, bytes, optionAlignment)))),
+              Ok selectedBits ->
+                model.HandleType = handle && model.PointerBits = bits && model.SelectedPointerBits = selectedBits
+                && model.HandleBytes = bits / 8 && model.HandleAlignment = alignment
+                && model.PayloadOffset = offset && model.OptionBytes = bytes && model.OptionAlignment = optionAlignment
+                && model.TagBits = tagBits && model.TagBytes = tagBits / 8
+                && account.NoneCase = model.NoneCase && account.SomeCase = model.SomeCase
+            | _ -> false
+        let callIncidence (call: BoundaryCall) =
+            match revision.Nodes.TryFind call.Site, boundary.Imports.TryFind call.Import with
+            | Some { Kind = SemanticKind.Application(callee, actuals); Children = children }, Some imported ->
+                call.Entry.IsNone && callee = call.Callee && children = callee :: actuals
+                && actuals = (call.Arguments |> List.map _.Actual) @ call.ErasedUnitArguments
+                && (call.Arguments |> List.map (fun operand -> operand.Formal, operand.Abi)) = imported.Parameters
+                && call.Result = imported.Result
+            | _ -> false
+        let resourceCall (call: BoundaryCall) =
+            match call.Resource with
+            | Some(BoundaryResourceUse.AcquireNullable account) ->
+                match boundary.ResourceDeclarations.TryFind account.Declaration,
+                      boundary.Imports.TryFind call.Import, conversionAt account.Conversion, cleanupAt account.Cleanup with
+                | Some resource, Some imported, Some conversion, Some cleanup ->
+                    callIncidence call && imported.Binding = resource.Acquisition
+                    && call.Result = Some(BoundaryScalar.ResourceHandle(resource.Identity, true))
+                    && conversion.Acquisition = call.Site && conversion.Declaration = resource.Identity && conversion.Import = call.Import
+                    && conversion.OptionType = resource.ResultType && conversion.HandleType = resource.HandleType
+                    && conversion.PointerBits = resource.PointerBits && representationCurrent call account conversion
+                    && (boundary.ResourceEvidence |> Option.exists (fun evidence ->
+                        conversion.Core = evidence.Core && evidence.Premises.ContainsKey evidence.Core && evidence.Premises.ContainsKey evidence.Platform))
+                    && cleanup.Acquisition = call.Site && cleanup.Declaration = resource.Identity && cleanup.Release = resource.Release
+                    && cleanup.Conversion = account.Conversion && cleanup.ConversionModel = conversion
+                    && (match cleanup.Relations |> List.filter (fun row -> row.Role = ResourceEvaluationRole.Root) with
+                        | [{ Sources = [owner; _] }] ->
+                            List.sort cleanup.Relations = List.sort (evaluationFor (Set.singleton owner))
+                        | _ -> false)
+                    && casesCurrent cleanup
+                    && supportAt call.Site account.Conversion resource cleanup && supportAt call.Site account.Cleanup resource cleanup
+                | _ -> false
+            | Some(BoundaryResourceUse.ReleaseOwned account) ->
+                match cleanupAt account.Cleanup, boundary.Calls.TryFind account.Acquisition, boundary.Imports.TryFind call.Import with
+                | Some cleanup, Some acquisition, Some imported ->
+                    callIncidence call && cleanup.Acquisition = account.Acquisition && cleanup.Declaration = account.Declaration
+                    && (match acquisition.Resource with
+                        | Some(BoundaryResourceUse.AcquireNullable original) -> original.Declaration = account.Declaration && original.Cleanup = account.Cleanup
+                        | _ -> false)
+                    && (cleanup.Points |> List.exists (fun point ->
+                        point.Site = call.Site && point.Port = EvaluationPort.Exit
+                        && (match point.Event, call.Arguments with
+                            | Some(ResourceFlowEvent.Release(actual, binding)), [operand] -> actual = operand.Actual && binding = imported.Binding
+                            | _ -> false)))
+                | _ -> false
+            | None ->
+                not ((call.Result |> Option.toList) @ (call.Arguments |> List.map _.Abi)
+                     |> List.exists (function BoundaryScalar.ResourceHandle _ -> true | _ -> false))
+        let resourceAccess key (access: BoundaryResourceAccess) =
+            match cleanupAt access.Cleanup, boundary.ResourceDeclarations.TryFind access.Declaration,
+                  boundary.Calls.TryFind access.Acquisition, revision.Nodes.TryFind access.Site, revision.Nodes.TryFind access.Source with
+            | Some cleanup, Some resource, Some acquisition, Some node, Some source ->
+                let incidence, expectedEvent =
+                    match access.Kind, node.Kind, node.Children with
+                    | BoundaryResourceAccessKind.OptionTag, SemanticKind.CaseElimination(subject, _), _
+                    | BoundaryResourceAccessKind.OptionTag, SemanticKind.DUGetTag(subject, _), _ ->
+                        subject = access.Source && source.Type = resource.ResultType, None
+                    | BoundaryResourceAccessKind.OptionPayload, SemanticKind.DUEliminate(subject, ordinal, "Some", _), _ ->
+                        subject = access.Source && ordinal = cleanup.ConversionModel.SomeCase
+                        && source.Type = resource.ResultType && node.Type = resource.HandleType, Some(ResourceFlowEvent.Payload access.Source)
+                    | BoundaryResourceAccessKind.ImmutableAlias, _, _ ->
+                        let original =
+                            match node.Kind, node.Children with
+                            | SemanticKind.VarRef(_, Some binding), _ -> Some binding
+                            | SemanticKind.Binding(_, false, false, _), [initializer] -> Some initializer
+                            | SemanticKind.TypeAnnotation(inner, _), [actual] when inner = actual -> Some inner
+                            | _ -> None
+                        let event =
+                            if node.Type = resource.ResultType then Some(ResourceFlowEvent.OptionAlias access.Source)
+                            elif node.Type = resource.HandleType then Some(ResourceFlowEvent.HandleAlias access.Source)
+                            else None
+                        original = Some access.Source && node.Type = source.Type && event.IsSome, event
+                    | _ -> false, None
+                let selections = access.Selection |> List.forall (fun selection ->
+                    match revision.Nodes.TryFind selection.Decision with
+                    | Some { Kind = SemanticKind.CaseElimination(subject, arms) }
+                        when subject = selection.Scrutinee && selection.Arm >= 0 && selection.Arm < arms.Length ->
+                        let arm = arms[selection.Arm]
+                        (match arm.Pattern with Pattern.Union(_, ordinal, _, _) -> Some ordinal | _ -> None) = selection.CaseOrdinal
+                        && arm.Guard.IsNone && selection.Guard.IsNone
+                    | _ -> false)
+                let contexts = cleanup.Points |> List.filter (fun point -> point.Site = access.Site) |> List.map _.Context |> List.distinct
+                let occurrences = cleanup.Points |> List.map (fun point -> point.Site, point.Context) |> List.distinct
+                let selectionAt context =
+                    context |> List.mapi (fun index ordinal ->
+                        occurrences |> List.tryFind (fun (_, parent) -> parent = List.take index context)
+                        |> Option.bind (fun (site, _) -> cleanup.Cases |> List.tryFind (fun row -> row.Site = site))
+                        |> Option.bind (fun row ->
+                            if ordinal > 0 && ordinal <= row.Arms.Length then
+                                let arm = row.Arms[ordinal - 1]
+                                Some { Decision = row.Site; Scrutinee = row.Subject; Arm = ordinal - 1; CaseOrdinal = arm.Ordinal; Guard = None }
+                            else None)) |> List.choose id
+                let selectionCurrent =
+                    if node.Type = resource.HandleType && access.Kind <> BoundaryResourceAccessKind.OptionTag then
+                        match contexts |> List.map selectionAt |> List.distinct with
+                        | [expected] -> access.Selection = expected
+                        | _ -> false
+                    else not contexts.IsEmpty && access.Selection.IsEmpty
+                key = access.Site && cleanup.Acquisition = access.Acquisition && cleanup.Declaration = access.Declaration
+                && (match acquisition.Resource with
+                    | Some(BoundaryResourceUse.AcquireNullable original) -> original.Declaration = access.Declaration && original.Cleanup = access.Cleanup
+                    | _ -> false)
+                && incidence && selections && selectionCurrent
+                && (expectedEvent |> Option.forall (fun event ->
+                    cleanup.Points |> List.exists (fun point -> point.Site = access.Site && point.Port = EvaluationPort.Exit && point.Event = Some event)))
+                && Set.isSubset (Set.ofList [access.Site; access.Source; access.Cleanup]) access.Participants
+            | _ -> false
+
         [
+            let resourceCalls = boundary.Calls.Values |> Seq.filter (fun call -> call.Resource.IsSome) |> Seq.toList
+            if not resourceCalls.IsEmpty || not boundary.ResourceAccesses.IsEmpty then
+                match boundary.ResourceEvidence with
+                | Some evidence ->
+                    let rootsAgree = evidence.Roots |> List.forall (fun (owner, implementation, body) ->
+                        match revision.Nodes.TryFind owner, revision.Nodes.TryFind implementation with
+                        | Some { Kind = SemanticKind.Binding(_, false, _, _); Children = [actual] },
+                          Some { Kind = SemanticKind.Lambda(_, actualBody, [], _, _) } -> actual = implementation && actualBody = body
+                        | _ -> false)
+                    let models = resourceCalls |> List.choose (fun call ->
+                        match call.Resource with
+                        | Some(BoundaryResourceUse.AcquireNullable account) -> cleanupAt account.Cleanup
+                        | _ -> None)
+                    let modelRoots = models |> List.collect (fun model ->
+                        model.Relations |> List.choose (fun row ->
+                            match row.Role, row.Sources with
+                            | ResourceEvaluationRole.Root, [owner; implementation] -> Some(owner, implementation, row.Target)
+                            | _ -> None)) |> List.distinct |> List.sort
+                    let modelRelations = models |> List.collect _.Relations |> List.distinct |> List.sort
+                    if not rootsAgree || modelRoots <> List.sort evidence.Roots || modelRelations <> List.sort evidence.Relations then
+                        yield { Part = "Emission.Boundary.ResourceEvaluation"; Node = None
+                                Reason = "The complete original resource evaluation census or retained root incidence changed." }
+                    if List.sort evidence.Accesses <> (boundary.ResourceAccesses |> Map.keys |> Seq.sort |> Seq.toList) then
+                        yield { Part = "Emission.Boundary.ResourceAccesses"; Node = None
+                                Reason = "The resource access inventory was withdrawn, duplicated or changed." }
+                | None -> yield { Part = "Emission.Boundary.ResourceEvaluation"; Node = None; Reason = "Resource evidence requires its independently issued original source census." }
+            for KeyValue(_, call) in boundary.Calls do
+                if not (resourceCall call) then
+                    yield defect "Emission.Boundary.Calls.Resource" call.Site "The resource call differs from its exact current conversion, cleanup or original source incidence."
+            for KeyValue(key, access) in boundary.ResourceAccesses do
+                if not (resourceAccess key access) then
+                    yield defect "Emission.Boundary.ResourceAccesses.Incidence" key "The resource access differs from its exact source case, payload or immutable alias incidence."
             for KeyValue(key, resource) in boundary.ResourceDeclarations do
                 yield! resourceDeclaration key resource
             for KeyValue(key, invocation) in boundary.CallbackInvocations do
@@ -2085,6 +2275,88 @@ module Integrity =
         let entryLoading id = boundary.Entries |> Map.exists (fun _ entry ->
             entry.Loading = id && (boundary.Loading |> Option.exists (fun loading -> loading.Identity = id && loadingFact id)))
         let entrySupport id = body id || loadingFact id || declarationFact id || boundaryType id
+        let resourceDeclaration id = boundary.ResourceDeclarations.ContainsKey id
+        let resourceFact declaration id =
+            boundary.ResourceDeclarations.TryFind declaration
+            |> Option.exists (fun row -> row.DeclarationFacts.ContainsKey id)
+        let resourceCore id =
+            boundary.ResourceEvidence
+            |> Option.exists (fun evidence -> evidence.Core = id && evidence.Premises.ContainsKey id)
+        let resourceProvenanceReference (evidence: BoundaryResourceEvidence) id =
+            evidence.Premises |> Map.exists (fun owner premise ->
+                match CallableAggregateIntegrity.lexicalMembers premise.Shape with
+                | Some members when List.contains id members -> true
+                | _ ->
+                    match CallableAggregateIntegrity.immutableBindingInitializer premise.Shape, premise.Shape.Parent with
+                    | Some(false, child), Some scope when child = id && premise.Shape.References = premise.Shape.Children ->
+                        evidence.Premises.TryFind scope
+                        |> Option.bind (fun parent -> CallableAggregateIntegrity.lexicalMembers parent.Shape)
+                        |> Option.exists (fun members -> (members |> List.filter ((=) owner)).Length = 1)
+                    | _ -> false)
+        let resourceClaim kind id =
+            revision.CurrentClaims.TryFind id |> Option.exists (fun claim ->
+                claim.Kind = kind &&
+                match claim.Body with
+                | ObligationBody.ResourceConversion _ -> kind = "foreign-resource-nullable-conversion"
+                | ObligationBody.ResourceCleanup _ -> kind = "foreign-resource-cleanup"
+                | _ -> false)
+        let resourceConversionRole (model: ResourceConversionModel) id =
+            let metadata =
+                [ model.Declaration, resourceDeclaration model.Declaration
+                  model.Import, boundary.Imports.ContainsKey model.Import
+                  model.Core, resourceCore model.Core ]
+                |> List.filter (fst >> (=) id)
+            if metadata.IsEmpty then body id else metadata |> List.forall snd
+        let resourceCleanupRole (model: ResourceCleanupModel) id =
+            let metadata =
+                [ model.Release, resourceFact model.Declaration model.Release
+                  model.Conversion, resourceClaim "foreign-resource-nullable-conversion" model.Conversion ]
+                @ (model.Points |> List.collect (fun point ->
+                    match point.Event with
+                    | Some(ResourceFlowEvent.Release(actual, declaration)) ->
+                        let current =
+                            boundary.Calls.TryFind point.Site |> Option.exists (fun call ->
+                                match call.Resource, call.Arguments, boundary.Imports.TryFind call.Import with
+                                | Some(BoundaryResourceUse.ReleaseOwned useAccount), [operand], Some imported ->
+                                    call.Site = point.Site && operand.Actual = actual &&
+                                    imported.Identity = call.Import && imported.Binding = declaration &&
+                                    imported.DeclarationFacts.ContainsKey declaration &&
+                                    useAccount.Acquisition = model.Acquisition && useAccount.Declaration = model.Declaration &&
+                                    (revision.CurrentClaims.TryFind useAccount.Cleanup |> Option.exists (fun claim ->
+                                        claim.Body = ObligationBody.ResourceCleanup model))
+                                | _ -> false)
+                        [declaration, current]
+                    | _ -> []))
+                |> List.filter (fst >> (=) id)
+            (if metadata.IsEmpty then true else metadata |> List.forall snd) &&
+            (if not metadata.IsEmpty && id <> model.ConversionModel.Declaration && id <> model.ConversionModel.Import && id <> model.ConversionModel.Core then
+                 true
+             else resourceConversionRole model.ConversionModel id)
+        let resourceBodyRole cleanup id =
+            revision.CurrentClaims.Values |> Seq.exists (fun claim ->
+                match claim.Body with
+                | ObligationBody.ResourceConversion model when not cleanup -> resourceConversionRole model id
+                | ObligationBody.ResourceCleanup model when cleanup -> resourceCleanupRole model id
+                | _ -> false)
+        let resourceUseRole (useAccount: BoundaryResourceUse) id =
+            match useAccount with
+            | BoundaryResourceUse.AcquireNullable row ->
+                (id = row.Declaration && resourceDeclaration id) ||
+                (id = row.Conversion && resourceClaim "foreign-resource-nullable-conversion" id) ||
+                (id = row.Cleanup && resourceClaim "foreign-resource-cleanup" id)
+            | BoundaryResourceUse.ReleaseOwned row ->
+                (id = row.Declaration && resourceDeclaration id) ||
+                (id = row.Acquisition && body id) ||
+                (id = row.Cleanup && resourceClaim "foreign-resource-cleanup" id)
+        let resourceAccessSupport (row: BoundaryResourceAccess) id =
+            body id || resourceFact row.Declaration id || resourceCore id ||
+            (id = row.Cleanup && resourceClaim "foreign-resource-cleanup" id) ||
+            (boundary.Calls.TryFind row.Acquisition |> Option.exists (fun call ->
+                match call.Resource with
+                | Some(BoundaryResourceUse.AcquireNullable acquisition) ->
+                    acquisition.Declaration = row.Declaration && acquisition.Conversion = id &&
+                    resourceClaim "foreign-resource-nullable-conversion" id
+                | _ -> false))
         let foreignBodyFact id =
             revision.CurrentClaims
             |> Map.exists (fun _ claim ->
@@ -2174,6 +2446,25 @@ module Integrity =
                             resourceContext revision row declaration |> Option.exists(fun (scope,_) -> scope=id))))
                 | part when part.StartsWith("Emission.Boundary.ResourceDeclarations", System.StringComparison.Ordinal) ->
                     boundary.ResourceDeclarations.Values |> Seq.exists (fun row -> row.DeclarationFacts.ContainsKey id)
+                | "Emission.Boundary.ResourceAccesses" | "Emission.Boundary.ResourceAccesses.Site"
+                | "Emission.Boundary.ResourceAccesses.Source" | "Emission.Boundary.ResourceAccesses.Acquisition"
+                | "Emission.Boundary.ResourceAccesses.Selection" -> body id
+                | "Emission.Boundary.ResourceAccesses.Declaration" -> resourceDeclaration id
+                | "Emission.Boundary.ResourceAccesses.Cleanup" -> resourceClaim "foreign-resource-cleanup" id
+                | "Emission.Boundary.ResourceAccesses.Participants" ->
+                    boundary.ResourceAccesses.Values |> Seq.exists (fun row ->
+                        row.Participants.Contains id && resourceAccessSupport row id)
+                | "Emission.Boundary.ResourceEvidence.Platform" ->
+                    boundary.ResourceEvidence |> Option.exists (fun evidence -> evidence.Platform = id && evidence.Premises.ContainsKey id)
+                | "Emission.Boundary.ResourceEvidence.Core" -> resourceCore id
+                | "Emission.Boundary.ResourceEvidence.Premises" ->
+                    boundary.ResourceEvidence |> Option.exists (fun evidence ->
+                        evidence.Premises.ContainsKey id || resourceProvenanceReference evidence id)
+                | "Emission.Boundary.ResourceEvidence.Roots" | "Emission.Boundary.ResourceEvidence.Relations" -> body id
+                | "Emission.Boundary.ResourceEvidence.Accesses" -> boundary.ResourceAccesses.ContainsKey id && body id
+                | "Emission.Boundary.Calls.Resource" ->
+                    boundary.Calls.Values |> Seq.exists (fun call -> call.Resource |> Option.exists (fun row -> resourceUseRole row id))
+                | "Emission.Boundary.Imports.Result" | "Emission.Boundary.Calls.Result" -> resourceDeclaration id
                 | "Emission.Boundary.CallbackInvocations" | "Emission.Boundary.CallbackInvocations.Identity"
                 | "Emission.Boundary.ClosedEntries.Invocation" -> boundary.CallbackInvocations.ContainsKey id
                 | "Emission.Boundary.CallbackInvocations.Import" -> boundary.Imports.ContainsKey id
@@ -2268,10 +2559,12 @@ module Integrity =
                     |> List.exists (fun account -> foreignApplicationFact revision account.Application id)
                 | "Obligations.Body.ForeignResultCoverage"
                 | "CurrentClaims.Body.ForeignResultCoverage" -> body id || foreignBodyFact id
+                | "Obligations.Body.ResourceConversion" | "CurrentClaims.Body.ResourceConversion" -> resourceBodyRole false id
+                | "Obligations.Body.ResourceCleanup" | "CurrentClaims.Body.ResourceCleanup" -> resourceBodyRole true id
                 | "Obligations.Body"
                 | "CurrentClaims.Body" -> body id
                 | "Emission.Boundary.IntrinsicWriteImports.Scope" -> source.ContextHeaders.ContainsKey id
-                | "Emission.Boundary.Imports.Parameters" -> boundaryType id || boundary.CallbackInvocations.ContainsKey id
+                | "Emission.Boundary.Imports.Parameters" -> boundaryType id || boundary.CallbackInvocations.ContainsKey id || resourceDeclaration id
                 | "Emission.Boundary.Imports.SourceTypes" -> boundaryType id
                 | "Emission.Boundary.ByScope (values)" | "Emission.Boundary.Calls.Import" -> boundary.Imports.ContainsKey id
                 | "Emission.Spatial.Kernels.Scope" | "Emission.Spatial.Hardware.Scope" -> body id || source.ContextHeaders.ContainsKey id

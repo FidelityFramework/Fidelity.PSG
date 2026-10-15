@@ -6,41 +6,6 @@ type BindingDemandEvidence = {
     Participants: Participant list
 }
 
-/// Ports of a local evaluation contract. Operand indices identify incidences
-/// within the target node, not runtime states or new semantic node identities.
-[<RequireQualifiedAccess>]
-type EvaluationPort =
-    | Entry
-    | OperandEntry of int
-    | OperandExit of int
-    | Ready
-    | Exit
-
-[<RequireQualifiedAccess>]
-type EvaluationTransfer =
-    | Continue
-    | WhenTrue
-    | WhenFalse
-    | Resume
-
-/// A value demand does not re-execute a referenced declaration's initializer.
-[<RequireQualifiedAccess>]
-type EvaluationAccess =
-    | Value
-    | Storage
-
-/// Explicitly unsettled local contracts; these are not source diagnostics or
-/// permission for a witness to reconstruct missing control semantics.
-[<RequireQualifiedAccess>]
-type EvaluationResidual =
-    | MissingOperand
-    | InvalidShape
-    | MatchSelection
-    | ExceptionFlow
-    | CollectionIteration
-    | CountedIteration
-    | Delegation
-
 /// How an edge participates in the graph's projections.
 [<RequireQualifiedAccess>]
 type LoopRangeResidual =
@@ -78,6 +43,17 @@ type BoundarySourcePremise = {
     HasExtern: bool
     /// The boundary owner only reads these closed scalar metadata forms.
     Metadata: Map<string, string list * bigint list * NodeId list * TypeIdentity option>
+}
+
+/// Scoped original source evidence for resource replay. Analytical graph F
+/// remains private; this projection is independent of the proof models.
+type BoundaryResourceEvidence = {
+    Platform: NodeId
+    Core: NodeId
+    Premises: Map<NodeId, BoundarySourcePremise>
+    Roots: (NodeId * NodeId * NodeId) list
+    Relations: ResourceEvaluationRelation list
+    Accesses: NodeId list
 }
 
 type NumericDomain = {
@@ -256,11 +232,15 @@ type StringOriginRelation = {
 }
 
 type BoundaryDomain = {
+    ResourceEvidence: BoundaryResourceEvidence option
     Premises: Map<NodeId, BoundarySourcePremise>
     Platform: BoundaryPlatformPremise option
     Meets: Map<NodeId, Meet list>
     Declarations: BoundaryDeclaration list
     ResourceDeclarations: NodeId list
+    ResourceAccesses: NodeId list
+    ResourceEvaluationRoots: (NodeId * NodeId * NodeId) list
+    ResourceEvaluationRelations: ResourceEvaluationRelation list
     Imports: NodeId list
     Loading: BoundaryLoading option
     Entries: NodeId list
@@ -330,6 +310,7 @@ type EdgeRole =
     | BoundaryDeclaration of BoundaryDeclaration
     | BoundaryDomain of BoundaryDomain
     | BoundaryResourceDeclaration of BoundaryResourceDeclaration
+    | BoundaryResourceAccess of BoundaryResourceAccess
     | BoundaryImport of BoundaryImport
     | BoundaryCall of BoundaryCall
     | BoundaryOperand of BoundaryOperand

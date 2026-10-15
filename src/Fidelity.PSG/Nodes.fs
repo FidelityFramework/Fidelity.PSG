@@ -156,6 +156,490 @@ type DimensionalRule =
     | SameDimension
     | Comparison
 
+/// Ports identify actual local source incidences, never runtime addresses.
+[<RequireQualifiedAccess>]
+type EvaluationPort =
+    | Entry
+    | OperandEntry of int
+    | OperandExit of int
+    | Ready
+    | Exit
+    | FailureExit
+
+[<RequireQualifiedAccess>]
+type EvaluationTransfer =
+    | Continue
+    | WhenTrue
+    | WhenFalse
+    | Resume
+    /// The original shallow CaseElimination selects its actual ordinal.
+    | WhenCase of int
+    | WhenOtherCases of int list
+
+[<RequireQualifiedAccess>]
+type EvaluationAccess = Value | Storage
+
+[<RequireQualifiedAccess>]
+type EvaluationResidual =
+    | MissingOperand | InvalidShape | MatchSelection | ExceptionFlow
+    | CollectionIteration | CountedIteration | Delegation
+
+/// A conversion alternative over opaque native results. Origin labels are
+/// static source identities, never native pointer bits.
+type ResourceConversionArm = {
+    NativeNonNull: bool
+    CaseOrdinal: int
+    PayloadOrigin: NodeId option
+}
+
+type ResourceConversionModel = {
+    Acquisition: NodeId
+    Declaration: NodeId
+    Import: NodeId
+    OptionType: TypeIdentity
+    HandleType: TypeIdentity
+    Core: NodeId
+    PointerBits: int
+    SelectedPointerBits: int
+    HandleBytes: int
+    HandleAlignment: int
+    TagBits: int
+    TagBytes: int
+    NoneCase: int
+    SomeCase: int
+    CaseCount: int
+    PayloadOffset: int
+    OptionBytes: int
+    OptionAlignment: int
+    Arms: ResourceConversionArm list
+}
+
+/// Observations of the existing evaluation owner's rows, not another flow
+/// producer. Their complete ordered census is a current boundary premise.
+[<RequireQualifiedAccess>]
+type ResourceEvaluationRole =
+    | Root
+    | Operand of EvaluationAccess
+    | Flow of EvaluationPort * EvaluationPort * EvaluationTransfer
+    | Pending of EvaluationResidual
+
+type ResourceEvaluationRelation = {
+    Role: ResourceEvaluationRole
+    Ordinal: int
+    Sources: NodeId list
+    Target: NodeId
+}
+
+[<RequireQualifiedAccess>]
+type ResourceFlowEvent =
+    | Acquisition
+    | OptionAlias of source: NodeId
+    | HandleAlias of source: NodeId
+    | Payload of source: NodeId
+    | Release of actual: NodeId * declaration: NodeId
+
+type ResourceFlowPoint = {
+    Label: int
+    Site: NodeId
+    /// Original operand ordinals from the retained root. Shared source nodes
+    /// can be demanded at distinct occurrences without cross-connecting them.
+    Context: int list
+    Port: EvaluationPort
+    Event: ResourceFlowEvent option
+}
+
+[<RequireQualifiedAccess>]
+type ResourceFlowConnection = Local | OperandEntry | OperandExit
+
+type ResourceFlowEdge = {
+    From: int
+    To: int
+    Relation: int
+    Connection: ResourceFlowConnection
+    Transfer: EvaluationTransfer
+}
+
+type ResourceFlowCaseArm = {
+    Ordinal: int option
+    Body: NodeId
+    BooleanResult: bool option
+}
+
+type ResourceFlowCase = {
+    Site: NodeId
+    Subject: NodeId
+    Domain: int list
+    Arms: ResourceFlowCaseArm list
+}
+
+/// One arbitrary path through the complete finite source contract. Unknown
+/// feasibility/cycles are Pending; these stored events are not host pass flags.
+type ResourceCleanupModel = {
+    Acquisition: NodeId
+    Declaration: NodeId
+    Release: NodeId
+    Conversion: NodeId
+    ConversionModel: ResourceConversionModel
+    Entry: int
+    Points: ResourceFlowPoint list
+    Relations: ResourceEvaluationRelation list
+    Edges: ResourceFlowEdge list
+    Cases: ResourceFlowCase list
+    LiteralGuards: (NodeId * bool) list
+    Exits: int list
+}
+
+/// Mathematical transcription of stored finite resource evidence. This owner
+/// reads no program graph and supplies no resource or execution authority.
+[<RequireQualifiedAccess>]
+module ResourceProof =
+    [<RequireQualifiedAccess>]
+    type Sort = Boolean | Integer
+
+    /// One typed logical vocabulary shared by SMT-LIB and passive dialect
+    /// transcribers. No consumer parses strings or reconstructs this formula.
+    [<RequireQualifiedAccess>]
+    type Expr =
+        | Boolean of bool
+        | Integer of bigint
+        | Variable of string
+        | Not of Expr
+        | And of Expr list
+        | Or of Expr list
+        | Implies of Expr * Expr
+        | Equal of Expr * Expr
+        | LessThan of Expr * Expr
+        | LessOrEqual of Expr * Expr
+        | Multiply of Expr * Expr
+        | Modulo of Expr * Expr
+        | Add of Expr list
+        | IfThenElse of Expr * Expr * Expr
+
+    type Projection = {
+        Declarations: (string * Sort) list
+        Premises: Expr
+        Conclusion: Expr
+        Alternatives: Expr list
+    }
+
+    let private integer = Expr.Integer
+    let private number (value: int) = integer (bigint value)
+    let private node value = integer (bigint (NodeId.value value))
+    let private boolean = Expr.Boolean
+    let private andAlso = Expr.And
+    let private orElse = Expr.Or
+    let private equal left right = Expr.Equal(left, right)
+    let private nonnegative value = Expr.LessOrEqual(number 0, number value)
+    let private positive value = Expr.LessThan(number 0, number value)
+    let private implies left right = Expr.Implies(left, right)
+    let private notTerm = Expr.Not
+    let private nonnullName = "resource_nonnull"
+    let private nonnull = Expr.Variable nonnullName
+
+    /// A single sort reader for both output transcribers. Ill-sorted or
+    /// undeclared terms are refused rather than assigned a consumer default.
+    let sortOf declarations expression =
+        let variables = Map.ofList declarations
+        let rec read = function
+            | Expr.Boolean _ -> Ok Sort.Boolean
+            | Expr.Integer _ -> Ok Sort.Integer
+            | Expr.Variable name -> variables.TryFind name |> Option.map Ok |> Option.defaultValue (Error(sprintf "Resource proof variable '%s' is undeclared." name))
+            | Expr.Not value -> require Sort.Boolean [value] Sort.Boolean
+            | Expr.And values | Expr.Or values -> require Sort.Boolean values Sort.Boolean
+            | Expr.Implies(left, right) -> require Sort.Boolean [left; right] Sort.Boolean
+            | Expr.LessThan(left, right) | Expr.LessOrEqual(left, right) -> require Sort.Integer [left; right] Sort.Boolean
+            | Expr.Multiply(left, right) | Expr.Modulo(left, right) -> require Sort.Integer [left; right] Sort.Integer
+            | Expr.Add values -> require Sort.Integer values Sort.Integer
+            | Expr.Equal(left, right) ->
+                read left |> Result.bind (fun expected -> require expected [right] Sort.Boolean)
+            | Expr.IfThenElse(condition, yes, no) ->
+                require Sort.Boolean [condition] Sort.Boolean
+                |> Result.bind (fun _ -> read yes)
+                |> Result.bind (fun expected -> require expected [no] expected)
+        and require expected values result =
+            values |> List.fold (fun state value ->
+                state |> Result.bind (fun _ -> read value |> Result.bind (fun actual ->
+                    if actual = expected then Ok result else Error "Resource proof expression has incompatible logical sorts."))) (Ok result)
+        if variables.Count <> declarations.Length then Error "Resource proof declarations are duplicated."
+        else read expression
+
+    let rec smtLib = function
+        | Expr.Boolean true -> "true"
+        | Expr.Boolean false -> "false"
+        | Expr.Integer value when value.Sign < 0 -> sprintf "(- %O)" (-value)
+        | Expr.Integer value -> string value
+        | Expr.Variable name -> name
+        | Expr.Not value -> sprintf "(not %s)" (smtLib value)
+        | Expr.And [] -> "true"
+        | Expr.Or [] -> "false"
+        | Expr.And values -> sprintf "(and %s)" (values |> List.map smtLib |> String.concat " ")
+        | Expr.Or values -> sprintf "(or %s)" (values |> List.map smtLib |> String.concat " ")
+        | Expr.Add [] -> "0"
+        | Expr.Add [value] -> smtLib value
+        | Expr.Add values -> sprintf "(+ %s)" (values |> List.map smtLib |> String.concat " ")
+        | Expr.Implies(left, right) -> sprintf "(=> %s %s)" (smtLib left) (smtLib right)
+        | Expr.Equal(left, right) -> sprintf "(= %s %s)" (smtLib left) (smtLib right)
+        | Expr.LessThan(left, right) -> sprintf "(< %s %s)" (smtLib left) (smtLib right)
+        | Expr.LessOrEqual(left, right) -> sprintf "(<= %s %s)" (smtLib left) (smtLib right)
+        | Expr.Multiply(left, right) -> sprintf "(* %s %s)" (smtLib left) (smtLib right)
+        | Expr.Modulo(left, right) -> sprintf "(mod %s %s)" (smtLib left) (smtLib right)
+        | Expr.IfThenElse(condition, yes, no) -> sprintf "(ite %s %s %s)" (smtLib condition) (smtLib yes) (smtLib no)
+
+    let declarations projection =
+        projection.Declarations |> List.map (fun (name, sort) ->
+            sprintf "(declare-fun %s () %s)" name (match sort with Sort.Boolean -> "Bool" | Sort.Integer -> "Int"))
+
+    let ofConversion (model: ResourceConversionModel) : Result<Projection, string> =
+        if model.TagBits < 0 || model.TagBits > 64 then
+            Error "The finite resource profile requires an established tag width of at most 64 bits."
+        else
+            let maximumTag = (1I <<< model.TagBits) - 1I
+            let caseFits ordinal = andAlso [nonnegative ordinal; Expr.LessOrEqual(number ordinal, integer maximumTag); Expr.LessThan(number ordinal, number model.CaseCount)]
+            let arms = model.Arms |> List.map (fun arm ->
+                let origin = arm.PayloadOrigin |> Option.map (fun origin -> equal (node origin) (node model.Acquisition)) |> Option.defaultValue (boolean false)
+                andAlso [
+                    implies (boolean arm.NativeNonNull) (andAlso [equal (number arm.CaseOrdinal) (number model.SomeCase); origin])
+                    implies (notTerm (boolean arm.NativeNonNull)) (andAlso [equal (number arm.CaseOrdinal) (number model.NoneCase); boolean arm.PayloadOrigin.IsNone]) ])
+            let conclusion =
+                [ equal (number model.Arms.Length) (number 2)
+                  equal (number (model.Arms |> List.distinctBy _.NativeNonNull |> List.length)) (number 2)
+                  equal (number model.CaseCount) (number 2)
+                  notTerm (equal (number model.NoneCase) (number model.SomeCase))
+                  caseFits model.NoneCase; caseFits model.SomeCase
+                  positive model.PointerBits; equal (number model.PointerBits) (number model.SelectedPointerBits)
+                  equal (number model.PointerBits) (Expr.Multiply(number 8, number model.HandleBytes))
+                  positive model.HandleBytes; positive model.HandleAlignment
+                  positive model.TagBits; positive model.TagBytes
+                  equal (number model.TagBits) (Expr.Multiply(number 8, number model.TagBytes))
+                  Expr.LessOrEqual(number model.TagBytes, number model.PayloadOffset)
+                  Expr.LessOrEqual(Expr.Add[number model.PayloadOffset; number model.HandleBytes], number model.OptionBytes)
+                  positive model.OptionBytes; positive model.OptionAlignment
+                  equal (Expr.Modulo(number model.PayloadOffset, number model.HandleAlignment)) (number 0)
+                  equal (Expr.Modulo(number model.OptionBytes, number model.OptionAlignment)) (number 0)
+                  equal (Expr.Modulo(number model.OptionAlignment, number model.HandleAlignment)) (number 0) ] @ arms
+                |> andAlso
+            Ok { Declarations = [nonnullName, Sort.Boolean]
+                 Premises = boolean true; Conclusion = conclusion
+                 Alternatives = [notTerm nonnull; nonnull] }
+
+    let ofCleanup (model: ResourceCleanupModel) : Result<Projection, string> =
+        let points = model.Points |> List.map (fun point -> point.Label, point) |> Map.ofList
+        let cases = model.Cases |> List.map (fun case -> case.Site, case) |> Map.ofList
+        let literals = Map.ofList model.LiteralGuards
+        let origins =
+            model.Points |> List.choose (fun point -> point.Event |> Option.map (fun event -> point.Site, event))
+            |> List.distinct |> Map.ofList
+        let knownOrigins = origins |> Map.add model.Acquisition ResourceFlowEvent.Acquisition
+        let invalid message = Error("The finite resource cleanup profile is incomplete: " + message)
+        let relation index = model.Relations |> List.tryItem index
+        let findOperand site ordinal =
+            model.Relations |> List.choose (fun row ->
+                match row.Role, row.Sources with
+                | ResourceEvaluationRole.Operand EvaluationAccess.Value, [_; value]
+                    when row.Target = site && row.Ordinal = ordinal -> Some value
+                | _ -> None)
+            |> function [value] -> Some value | _ -> None
+        let siteOfOrigin = function
+            | ResourceFlowEvent.OptionAlias source | ResourceFlowEvent.HandleAlias source
+            | ResourceFlowEvent.Payload source | ResourceFlowEvent.Release(source, _) -> Some source
+            | ResourceFlowEvent.Acquisition -> None
+        let sourceKnown = knownOrigins |> Map.forall (fun _ event ->
+            siteOfOrigin event |> Option.forall knownOrigins.ContainsKey)
+        let rec hasOrigin seen site =
+            if site = model.Acquisition then true
+            elif Set.contains site seen then false
+            else knownOrigins.TryFind site |> Option.bind siteOfOrigin
+                 |> Option.exists (hasOrigin (Set.add site seen))
+        // The source owner refuses ambiguous merges. This reader also refuses
+        // a model that assigns different lineage events to one original site.
+        let eventsConsistent =
+            model.Points |> List.choose (fun point -> point.Event |> Option.map (fun event -> point.Site, event))
+            |> List.groupBy fst |> List.forall (fun (_, events) -> events |> List.map snd |> List.distinct |> List.length = 1)
+        let rec correlated seen site =
+            if site = model.Acquisition then true
+            elif Set.contains site seen then false
+            else
+                match knownOrigins.TryFind site with
+                | Some(ResourceFlowEvent.OptionAlias source) -> correlated (Set.add site seen) source
+                | _ -> false
+        let caseShape (case: ResourceFlowCase) =
+            correlated Set.empty case.Subject && not case.Arms.IsEmpty &&
+            case.Domain.Length = (List.distinct case.Domain).Length &&
+            (case.Domain |> List.sort) = ([model.ConversionModel.NoneCase; model.ConversionModel.SomeCase] |> List.sort) &&
+            (case.Arms |> List.choose _.Ordinal |> List.forall (fun ordinal -> List.contains ordinal case.Domain)) &&
+            (case.Arms |> List.choose _.Ordinal |> fun ordinals -> ordinals.Length = (List.distinct ordinals).Length) &&
+            (case.Arms |> List.mapi (fun index arm -> arm.Ordinal.IsSome || index = case.Arms.Length - 1) |> List.forall id)
+        let selectedCase (case: ResourceFlowCase) =
+            model.ConversionModel.Arms |> List.map (fun arm ->
+                let condition = if arm.NativeNonNull then nonnull else notTerm nonnull
+                condition, number arm.CaseOrdinal)
+        let caseIs (case: ResourceFlowCase) ordinal =
+            selectedCase case |> List.map (fun (condition, value) -> andAlso [condition; equal value (number ordinal)]) |> orElse
+        let caseArmCondition case index =
+            let arm = case.Arms[index]
+            match arm.Ordinal with
+            | Some ordinal -> caseIs case ordinal
+            | None ->
+                case.Arms |> List.take index |> List.choose _.Ordinal
+                |> List.map (caseIs case >> notTerm) |> andAlso
+        let guard site =
+            match literals.TryFind site, cases.TryFind site with
+            | Some value, None -> Some(boolean value)
+            | None, Some case when case.Arms |> List.forall (fun arm -> arm.BooleanResult.IsSome) ->
+                case.Arms |> List.mapi (fun index arm -> andAlso [caseArmCondition case index; boolean arm.BooleanResult.Value]) |> orElse |> Some
+            | _ -> None
+        let transfer row transfer =
+            match transfer with
+            | EvaluationTransfer.Continue -> Some(boolean true)
+            | EvaluationTransfer.WhenTrue | EvaluationTransfer.WhenFalse ->
+                findOperand row.Target 0 |> Option.bind guard
+                |> Option.map (fun expression -> if transfer = EvaluationTransfer.WhenTrue then expression else notTerm expression)
+            | EvaluationTransfer.WhenCase ordinal -> cases.TryFind row.Target |> Option.map (fun case -> caseIs case ordinal)
+            | EvaluationTransfer.WhenOtherCases ordinals ->
+                cases.TryFind row.Target |> Option.map (fun case -> ordinals |> List.map (caseIs case >> notTerm) |> andAlso)
+            | EvaluationTransfer.Resume -> None
+        let transfers = model.Edges |> List.map (fun edge ->
+            relation edge.Relation |> Option.bind (fun row ->
+                match edge.Connection with
+                | ResourceFlowConnection.Local -> transfer row edge.Transfer
+                | _ -> Some(boolean true)))
+        let unknownRows = model.Relations |> List.exists (fun row ->
+            match row.Role with
+            | ResourceEvaluationRole.Pending _ | ResourceEvaluationRole.Operand EvaluationAccess.Storage -> true
+            | _ -> false)
+        if points.Count <> model.Points.Length || not (points.ContainsKey model.Entry) || model.Points.IsEmpty then invalid "the evaluation point census is missing or duplicated."
+        elif cases.Count <> model.Cases.Length || not (model.Cases |> List.forall caseShape) then invalid "an Option case is unknown, ambiguous or unrelated to this conversion."
+        elif literals.Count <> model.LiteralGuards.Length then invalid "a guard has conflicting literal premises."
+        elif not sourceKnown || not eventsConsistent || not (knownOrigins |> Map.forall (fun site event ->
+            match event with ResourceFlowEvent.Release _ -> true | _ -> hasOrigin Set.empty site)) then invalid "handle lineage is missing or merged."
+        elif unknownRows || transfers |> List.exists Option.isNone then invalid "an actual flow relation or guard is unresolved."
+        elif model.Edges |> List.exists (fun edge -> not(points.ContainsKey edge.From && points.ContainsKey edge.To) || edge.From >= edge.To) then invalid "an endpoint is absent or evaluation is cyclic."
+        elif model.Exits.IsEmpty || model.Exits |> List.exists (points.ContainsKey >> not) then invalid "the exit census is absent."
+        else
+            ofConversion model.ConversionModel |> Result.map (fun conversion ->
+                let reached label = Expr.Variable(sprintf "resource_reached_%d" label)
+                let before label = Expr.Variable(sprintf "resource_live_before_%d" label)
+                let after label = Expr.Variable(sprintf "resource_live_after_%d" label)
+                let taken index = Expr.Variable(sprintf "resource_edge_%d" index)
+                let origin site = Expr.Variable(sprintf "resource_origin_%d" (NodeId.value site))
+                let incoming label = model.Edges |> List.mapi (fun index edge -> index, edge) |> List.filter (fun (_, edge) -> edge.To = label)
+                let outgoing label = model.Edges |> List.mapi (fun index edge -> index, edge) |> List.filter (fun (_, edge) -> edge.From = label)
+                let exactlyOne expressions =
+                    expressions |> List.map (fun expression -> Expr.IfThenElse(expression, number 1, number 0))
+                    |> Expr.Add |> fun sum -> equal sum (number 1)
+                let originPremises = knownOrigins |> Map.toList |> List.choose (fun (site, event) ->
+                    match event with
+                    | ResourceFlowEvent.Acquisition -> Some(equal (origin site) (node site))
+                    | ResourceFlowEvent.Release _ -> None
+                    | _ -> siteOfOrigin event |> Option.map (fun source -> equal (origin site) (origin source)))
+                let pathPremises = model.Points |> List.collect (fun point ->
+                    let incoming = incoming point.Label |> List.map (fst >> taken)
+                    let outgoing = outgoing point.Label |> List.map (fst >> taken)
+                    let transition =
+                        match point.Event with
+                        | Some ResourceFlowEvent.Acquisition -> equal (after point.Label) nonnull
+                        | Some(ResourceFlowEvent.Release _) -> equal (after point.Label) (boolean false)
+                        | _ -> equal (after point.Label) (before point.Label)
+                    [if point.Label = model.Entry then yield reached point.Label; yield notTerm (before point.Label)
+                     else yield equal (reached point.Label) (orElse incoming)
+                     yield implies (reached point.Label) (if List.contains point.Label model.Exits then notTerm(orElse outgoing) else exactlyOne outgoing)
+                     if point.Label <> model.Entry then yield implies (reached point.Label) (exactlyOne incoming)
+                     yield implies (reached point.Label) transition])
+                let edgePremises = model.Edges |> List.mapi (fun index edge ->
+                    implies (taken index) (andAlso [reached edge.From; reached edge.To; transfers[index].Value; equal (after edge.From) (before edge.To)]))
+                let acquisitionPoints = model.Points |> List.filter (fun point -> point.Event = Some ResourceFlowEvent.Acquisition)
+                let acquisitionReached = acquisitionPoints |> List.map (fun point -> reached point.Label) |> orElse
+                let exactPoint site context port label =
+                    let point = points[label]
+                    andAlso [equal (node point.Site) (node site); boolean(point.Context = context); boolean(point.Port = port)]
+                let edgeCorrespondence = model.Edges |> List.map (fun edge ->
+                    let row = model.Relations[edge.Relation]
+                    let fromPoint, toPoint = points[edge.From], points[edge.To]
+                    match edge.Connection, row.Role, row.Sources with
+                    | ResourceFlowConnection.Local, ResourceEvaluationRole.Flow(fromPort, toPort, actualTransfer), _ ->
+                        andAlso [exactPoint row.Target fromPoint.Context fromPort edge.From
+                                 exactPoint row.Target fromPoint.Context toPort edge.To
+                                 boolean(edge.Transfer = actualTransfer)]
+                    | ResourceFlowConnection.OperandEntry, ResourceEvaluationRole.Operand EvaluationAccess.Value, [_; child] ->
+                        andAlso [exactPoint row.Target fromPoint.Context (EvaluationPort.OperandEntry row.Ordinal) edge.From
+                                 exactPoint child (fromPoint.Context @ [row.Ordinal]) EvaluationPort.Entry edge.To
+                                 boolean(edge.Transfer = EvaluationTransfer.Continue)]
+                    | ResourceFlowConnection.OperandExit, ResourceEvaluationRole.Operand EvaluationAccess.Value, [_; child] ->
+                        andAlso [exactPoint child (toPoint.Context @ [row.Ordinal]) EvaluationPort.Exit edge.From
+                                 exactPoint row.Target toPoint.Context (EvaluationPort.OperandExit row.Ordinal) edge.To
+                                 boolean(edge.Transfer = EvaluationTransfer.Continue)]
+                    | _ -> boolean false)
+                let occurrences = model.Points |> List.map (fun point -> point.Site, point.Context) |> List.distinct
+                let relationCoverage = model.Relations |> List.mapi (fun relationIndex row ->
+                    match row.Role with
+                    | ResourceEvaluationRole.Root ->
+                        andAlso [equal (number row.Ordinal) (number 0)
+                                 exactPoint row.Target [] EvaluationPort.Entry model.Entry]
+                    | ResourceEvaluationRole.Flow _ | ResourceEvaluationRole.Operand EvaluationAccess.Value ->
+                        occurrences |> List.filter (fst >> (=) row.Target) |> List.collect (fun (_, context) ->
+                            let connections = match row.Role with ResourceEvaluationRole.Flow _ -> [ResourceFlowConnection.Local] | _ -> [ResourceFlowConnection.OperandEntry; ResourceFlowConnection.OperandExit]
+                            connections |> List.map (fun connection ->
+                                model.Edges |> List.filter (fun edge ->
+                                    edge.Relation = relationIndex && edge.Connection = connection &&
+                                    (if connection = ResourceFlowConnection.OperandExit then points[edge.To].Context else points[edge.From].Context) = context)
+                                |> List.length |> number |> fun count -> equal count (number 1))) |> andAlso
+                    | _ -> boolean false)
+                let failureExits = model.Points |> List.filter (fun point -> point.Port = EvaluationPort.FailureExit) |> List.map _.Label
+                let roots = model.Relations |> List.filter (fun row -> row.Role = ResourceEvaluationRole.Root)
+                let actualExits =
+                    failureExits @ (roots |> List.collect (fun row -> model.Points |> List.filter (fun point -> point.Site = row.Target && point.Context.IsEmpty && point.Port = EvaluationPort.Exit) |> List.map _.Label))
+                    |> List.distinct |> List.sort
+                let eventSafety = model.Points |> List.map (fun point ->
+                    let atExit = boolean(point.Port = EvaluationPort.Exit)
+                    let requirement =
+                        match point.Event with
+                        | None -> boolean true
+                        | Some ResourceFlowEvent.Acquisition -> andAlso [atExit; equal (node point.Site) (node model.Acquisition); notTerm(before point.Label)]
+                        | Some(ResourceFlowEvent.OptionAlias _) -> atExit
+                        | Some(ResourceFlowEvent.Payload source) | Some(ResourceFlowEvent.HandleAlias source) ->
+                            andAlso [atExit; before point.Label; nonnull; equal (origin source) (node model.Acquisition)]
+                        | Some(ResourceFlowEvent.Release(actual, declaration)) ->
+                            andAlso [atExit; before point.Label; equal (origin actual) (node model.Acquisition); equal (node declaration) (node model.Release)]
+                    implies (reached point.Label) requirement)
+                let conclusion =
+                    [conversion.Conclusion
+                     equal (node model.Acquisition) (node model.ConversionModel.Acquisition)
+                     equal (node model.Declaration) (node model.ConversionModel.Declaration)
+                     equal (number acquisitionPoints.Length) (number 1)
+                     equal (number roots.Length) (number 1)
+                     boolean(actualExits = (model.Exits |> List.distinct |> List.sort))
+                     boolean(model.Exits.Length = (List.distinct model.Exits).Length)
+                     notTerm(incoming model.Entry |> List.map (fst >> taken) |> orElse)]
+                    @ edgeCorrespondence @ relationCoverage @ eventSafety
+                    @ (model.Exits |> List.map (fun label -> implies (reached label) (notTerm(after label)))) |> andAlso
+                let declarations =
+                    conversion.Declarations @ (model.Points |> List.collect (fun point ->
+                        [sprintf "resource_reached_%d" point.Label, Sort.Boolean
+                         sprintf "resource_live_before_%d" point.Label, Sort.Boolean
+                         sprintf "resource_live_after_%d" point.Label, Sort.Boolean]))
+                    @ (model.Edges |> List.mapi (fun index _ -> sprintf "resource_edge_%d" index, Sort.Boolean))
+                    @ (knownOrigins |> Map.toList |> List.map (fun (site, _) -> sprintf "resource_origin_%d" (NodeId.value site), Sort.Integer))
+                { Declarations = declarations
+                  Premises = andAlso(originPremises @ pathPremises @ edgePremises @ [acquisitionReached])
+                  Conclusion = conclusion
+                  Alternatives = conversion.Alternatives })
+
+    /// Ordered probes retain the same claim anchor as an unused declaration,
+    /// exactly as the existing conditional foreign-result premise probe.
+    let anchoredPremisesQueries identity projection =
+        projection.Alternatives |> List.map (fun alternative ->
+            ["(set-logic QF_LIA)"] @ declarations projection @
+            [sprintf "(assert %s)" (smtLib projection.Premises)
+             sprintf "(assert %s)" (smtLib alternative)
+             sprintf "(declare-fun %s () Bool)" identity
+             "(check-sat)"] |> String.concat "\n")
+
+    let refutation identity projection =
+        declarations projection @
+        [sprintf "(assert %s)" (smtLib projection.Premises)
+         sprintf "(assert (= %s %s))" identity (smtLib projection.Conclusion)
+         sprintf "(assert (not %s))" identity]
+
 /// What an obligation asserts. Every constant is a literal fixed at saturation;
 /// the two dispatches transcribe, never compute.
 type MappedSpanModel = {
@@ -531,6 +1015,8 @@ type ObligationBody =
     /// Conditional coverage under the external execution hypothesis. Unknown
     /// inputs retain the claim but cannot supply a discharged projection.
     | ForeignResultCoverage of ForeignResultCoverageModel
+    | ResourceConversion of ResourceConversionModel
+    | ResourceCleanup of ResourceCleanupModel
 
 /// The obligation record carried by an Obligation node.
 type ObligationInfo = {

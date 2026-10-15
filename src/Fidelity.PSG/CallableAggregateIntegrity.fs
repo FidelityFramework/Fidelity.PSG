@@ -3,6 +3,22 @@ namespace Fidelity.PSG
 /// Structural checks of source-authored rows only. No origin, lifetime,
 /// representation or calling convention is inferred by this reader.
 module internal CallableAggregateIntegrity =
+    /// Lexical member identities precede attached executable children. Reading
+    /// this metadata does not require the inactive members' bodies.
+    let lexicalMembers (shape: BoundaryDeclarationFact) =
+        let count = shape.References.Length - shape.Children.Length
+        if shape.Form = "module" && count >= 0 && List.skip count shape.References = shape.Children then
+            Some(List.take count shape.References)
+        else None
+
+    /// The existing immutable binding protocol permits ordinary recursive code;
+    /// consumers that require a nonrecursive declaration check the returned flag.
+    let immutableBindingInitializer (shape: BoundaryDeclarationFact) =
+        match shape.Form, shape.Numbers, shape.Children with
+        | "binding", [mutableFlag; recursive], [child]
+            when mutableFlag = 0I && (recursive = 0I || recursive = 1I) -> Some((recursive = 1I), child)
+        | _ -> None
+
     let check (revision: Revision) : (string * NodeId * string) list =
         let callable = revision.Emission.Callable
         let failure rule site message = "Emission.Callable.Aggregates." + rule, site, message
@@ -94,16 +110,12 @@ module internal CallableAggregateIntegrity =
                       // executable children while retaining lexical members.
                       // Decode that stored sequence; a child alone is not
                       // evidence of program-image declaration membership.
-                      let memberCount = scope.Shape.References.Length - scope.Shape.Children.Length
                       let hasMember =
-                          memberCount >= 0 &&
-                          List.skip memberCount scope.Shape.References = scope.Shape.Children &&
-                          containsOnce lifetime.Binding (List.take memberCount scope.Shape.References)
-                      if scope.Shape.Form <> "module" ||
-                         not hasMember ||
-                         binding.Shape.Form <> "binding" || binding.Shape.Parent <> Some lifetime.Module ||
-                         binding.Shape.Children <> [lifetime.Implementation] ||
-                         (match binding.Shape.Numbers with [mutableFlag; recursive] -> mutableFlag <> 0I || (recursive <> 0I && recursive <> 1I) | _ -> true) ||
+                          lexicalMembers scope.Shape |> Option.exists (containsOnce lifetime.Binding)
+                      let hasInitializer =
+                          immutableBindingInitializer binding.Shape
+                          |> Option.exists (fun (_, child) -> child = lifetime.Implementation)
+                      if not hasMember || not hasInitializer || binding.Shape.Parent <> Some lifetime.Module ||
                          binding.HasExtern || implementation.HasExtern ||
                          implementation.Shape.Form <> "lambda" || not implementation.Reachable ||
                          implementation.Shape.Numbers <> [bigint declaration.Parameters.Length; 0I; 0I] ||
