@@ -1217,7 +1217,7 @@ module Integrity =
                         | Some receiving, [entry] when receiving.Import = call.Import && receiving.Formal = operand.Formal && operand.Adaptation.IsNone ->
                             let projection =
                                 match revision.Nodes.TryFind operand.Actual with
-                                | Some { Kind = (SemanticKind.FieldGet _ | SemanticKind.TupleGet _ | SemanticKind.DUEliminate _) } ->
+                                | Some { Kind = SemanticKind.FieldGet _ } ->
                                     let rows =
                                         revision.Emission.Callable.AggregateValues.TryFind operand.Actual
                                         |> Option.defaultValue []
@@ -1232,6 +1232,7 @@ module Integrity =
                                             revision.Emission.Callable.AggregateDependencies.ContainsKey operand.Actual
                                         | _ -> false
                                     | _ -> false
+                                | Some { Kind = (SemanticKind.TupleGet _ | SemanticKind.DUEliminate _) } -> false
                                 | Some _ -> true
                                 | None -> false
                             if not projection then
