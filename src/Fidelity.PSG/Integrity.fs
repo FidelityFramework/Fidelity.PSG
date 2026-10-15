@@ -1121,6 +1121,102 @@ module Integrity =
                 | _ -> false
 
         [
+            for KeyValue(key, invocation) in boundary.CallbackInvocations do
+                let part = "Emission.Boundary.CallbackInvocations"
+                if key <> invocation.Identity then
+                    yield defect (part + ".Identity") key "A callback invocation is filed under a different quotation."
+                match boundary.Imports.TryFind invocation.Import with
+                | Some imported when
+                    (imported.Parameters |> List.tryItem invocation.Parameter) = Some(invocation.Formal, BoundaryScalar.Entry invocation.Identity) ->
+                    for id in [invocation.Identity; invocation.Scope] do
+                        yield! need (part + ".Declaration") "the receiving import's exact quotation facts" id
+                            (imported.DeclarationFacts.ContainsKey id)
+                    if not (Set.isSubset (Set.ofList [invocation.Identity; invocation.Scope; invocation.Import; invocation.Formal]) invocation.Participants) then
+                        yield defect (part + ".Participants") key "The callback invocation omits its quotation, receiving import, formal or scope."
+                | _ -> yield defect (part + ".Formal") key "The callback invocation differs from its receiving import's original native ordinal and Entry formal."
+                let contract = invocation.Contract
+                let scalar = function
+                    | BAREWire.Descriptors.TypeRef.Integer(sign, bits) when bits > 0 -> Some(BoundaryScalar.Integer(bits, sign = BAREWire.Descriptors.Signedness.Signed))
+                    | BAREWire.Descriptors.TypeRef.Bool -> Some BoundaryScalar.Boolean
+                    | _ -> None
+                let parameters = contract.Signature.Parameters |> Array.map (fun parameter ->
+                    if parameter.PassBy = BAREWire.Descriptors.PassBy.Value then scalar parameter.Type else None) |> Array.toList
+                let result = scalar contract.Signature.ReturnType
+                if contract.Parameter <> invocation.Parameter ||
+                   contract.Signature.CallingConvention <> BAREWire.Descriptors.CallConv.CDecl ||
+                   invocation.Signature.CallingConvention <> "CDecl" ||
+                   parameters.Length <> 1 || (parameters |> List.exists Option.isNone) || result.IsNone ||
+                   List.choose id parameters <> invocation.Signature.Parameters || result <> invocation.Signature.Result then
+                    yield defect (part + ".Signature") key "The callback signature differs from its complete nonnested scalar CDecl receiving quotation."
+                if [contract.Binding; contract.Scope; contract.Hypothesis.Identity; contract.Hypothesis.Version; contract.Hypothesis.Source]
+                   |> List.exists System.String.IsNullOrWhiteSpace then
+                    yield defect (part + ".Provenance") key "The callback invocation has missing receiver, scope or trusted hypothesis provenance."
+            for KeyValue(key, entry) in boundary.ClosedEntries do
+                let part = "Emission.Boundary.ClosedEntries"
+                if key <> entry.Formation then
+                    yield defect (part + ".Formation") key "A closed native entry is filed under a different formation."
+                match boundary.CallbackInvocations.TryFind entry.Invocation,
+                      revision.Emission.Callable.Declarations.TryFind entry.Implementation,
+                      revision.Emission.Callable.Carriers.TryFind entry.Formation with
+                | Some invocation, Some declaration, Some carrier ->
+                    let lifetime = carrier.Contract |> Result.toOption |> Option.bind revision.Emission.Callable.Contracts.TryFind
+                    let lifetimeMatches =
+                        match lifetime with
+                        | Some { Kind = CallableKind.NativeEntry; Convention = CallableConvention.CompilerOwnedPortable convention } ->
+                            convention.CodeLifetime = entry.Lifetime && entry.Lifetime.Binding = entry.Declaration &&
+                            entry.Lifetime.Implementation = entry.Implementation
+                        | _ -> false
+                    if not lifetimeMatches then
+                        yield defect (part + ".Lifetime") key "The closed entry differs from its original ProgramImage code lifetime contract."
+                    match carrier.Contract with
+                    | Ok identity when entry.Participants.Contains identity &&
+                         (entry.Participants |> Set.forall (fun id ->
+                             not (revision.Emission.Callable.Contracts.ContainsKey id) || id = identity)) -> ()
+                    | _ -> yield defect (part + ".Participants") key "The closed entry omits its own original callable contract or names another contract as support."
+                    if carrier.Kind <> CallableKind.NativeEntry || carrier.Formation <> key || carrier.Implementation <> entry.Implementation ||
+                       Option.isSome carrier.Environment || carrier.EnvironmentValue.IsSome || not carrier.OmittedParameters.IsEmpty ||
+                       not declaration.Captures.IsEmpty || declaration.Result <> entry.Body ||
+                       (declaration.Parameters |> List.map (fun (_, _, id) -> id)) <> entry.Formals ||
+                       entry.Formals.Length <> invocation.Signature.Parameters.Length || entry.ParameterAdaptations.Length <> entry.Formals.Length then
+                        yield defect (part + ".Declaration") key "The closed entry differs from its original capture-free implementation, body or complete ordered native formals."
+                    let addressMatches =
+                        match revision.Codata.FunctionPointers.TryFind key, revision.Emission.Callable.NativeEntries.TryFind entry.Implementation with
+                        | Some(FunctionPointerPlan.Address(symbol, implementation)), Some native ->
+                            implementation = entry.Implementation && native = symbol
+                        | _ -> false
+                    if not addressMatches then
+                        yield defect (part + ".Plan") key "The closed entry lacks its exact original typed address and native symbol plan."
+                    let formationMatches =
+                        match revision.Nodes.TryFind key with
+                        | Some { Kind = SemanticKind.Application(callee, [operand]); Children = children } when
+                            operand = entry.Operand && children = [callee; operand] ->
+                            revision.Nodes.TryFind callee |> Option.exists (fun node ->
+                                match node.Kind with
+                                | SemanticKind.Intrinsic {Module = IntrinsicModule.FnPtr; Operation = "ofFunction"} -> true
+                                | _ -> false)
+                        | _ -> false
+                    if not formationMatches then
+                        yield defect (part + ".Formation") key "The closed entry differs from its original typed ofFunction formation and operand."
+                    if entry.ResultAdaptation <> revision.Codata.ReturnMeets.TryFind entry.Implementation then
+                        yield defect (part + ".ResultAdaptation") key "The closed entry result adaptation differs from its exact original return meet."
+                    if entry.Formals.Length = entry.ParameterAdaptations.Length then
+                        for formal, adaptation in List.zip entry.Formals entry.ParameterAdaptations do
+                            for meet in Option.toList adaptation do
+                                yield! adaptationRow (part + ".ParameterAdaptations") entry.Implementation formal meet
+                    if not (Set.isSubset (Set.ofList ([entry.Formation; entry.Operand; entry.Declaration; entry.Implementation; entry.Body; entry.Invocation;
+                                                       entry.Lifetime.Module; entry.Lifetime.Binding; entry.Lifetime.Implementation] @ entry.Formals)) entry.Participants) ||
+                       not (Set.isSubset entry.Transport entry.Participants) || not (entry.Transport.Contains key) || not (entry.Transport.Contains entry.Operand) then
+                        yield defect (part + ".Participants") key "The closed entry omits original code, lifetime, signature or immutable transport support."
+                | _ -> yield defect (part + ".Account") key "The closed entry lacks its exact invocation, original callable declaration or native carrier."
+            for KeyValue(_, call) in boundary.Calls do
+                for operand in call.Arguments do
+                    match operand.Abi with
+                    | BoundaryScalar.Entry invocation ->
+                        let entries = boundary.ClosedEntries.Values |> Seq.filter (fun entry -> entry.Invocation = invocation && entry.Transport.Contains operand.Actual) |> Seq.toList
+                        match boundary.CallbackInvocations.TryFind invocation, entries with
+                        | Some receiving, [_] when receiving.Import = call.Import && receiving.Formal = operand.Formal && operand.Adaptation.IsNone -> ()
+                        | _ -> yield defect "Emission.Boundary.Calls.CallbackEntry" call.Site "The callback argument lacks its exact receiving invocation and original closed-entry transport."
+                    | _ -> ()
             for KeyValue(key, imported) in boundary.Imports do
                 if key <> imported.Identity then
                     yield defect "Emission.Boundary.Imports.Identity" key "An import is filed under a different identity."
@@ -1763,6 +1859,32 @@ module Integrity =
             if explicitParts.Contains part || supportParts.Contains part || aggregatePart || inactivityPart || part.StartsWith("SourceReadings.", System.StringComparison.Ordinal) then true
             else
                 match part with
+                | "Emission.Boundary.CallbackInvocations" | "Emission.Boundary.CallbackInvocations.Identity"
+                | "Emission.Boundary.ClosedEntries.Invocation" -> boundary.CallbackInvocations.ContainsKey id
+                | "Emission.Boundary.CallbackInvocations.Import" -> boundary.Imports.ContainsKey id
+                | "Emission.Boundary.CallbackInvocations.Formal" -> boundaryType id
+                | "Emission.Boundary.CallbackInvocations.Scope" ->
+                    boundary.CallbackInvocations.Values |> Seq.exists (fun invocation ->
+                        invocation.Scope = id && (boundary.Imports.TryFind invocation.Import |> Option.exists (fun imported -> imported.DeclarationFacts.ContainsKey id)))
+                | "Emission.Boundary.ClosedEntries" | "Emission.Boundary.ClosedEntries.Formation"
+                | "Emission.Boundary.ClosedEntries.Operand" -> body id
+                | "Emission.Boundary.ClosedEntries.Declaration" -> binding id || implementation id
+                | "Emission.Boundary.ClosedEntries.Implementation" -> implementation id
+                | "Emission.Boundary.ClosedEntries.Formals" | "Emission.Boundary.ClosedEntries.Body" -> typeFact id
+                | "Emission.Boundary.ClosedEntries.Transport" -> body id || binding id || implementation id
+                | "Emission.Boundary.ClosedEntries.Lifetime" ->
+                    callable.Contracts.Values |> Seq.exists (fun contract ->
+                        match contract.Convention with
+                        | CallableConvention.CompilerOwnedPortable convention ->
+                            List.contains id [convention.CodeLifetime.Module; convention.CodeLifetime.Binding; convention.CodeLifetime.Implementation]
+                        | _ -> false)
+                | "Emission.Boundary.ClosedEntries.Participants" when
+                    boundary.ClosedEntries.Values |> Seq.exists (fun entry ->
+                        entry.Participants.Contains id &&
+                        (callable.Carriers.TryFind entry.Formation |> Option.exists (fun carrier -> carrier.Contract = Ok id)) &&
+                        callable.Contracts.ContainsKey id) -> true
+                | "Emission.Boundary.CallbackInvocations.Participants" | "Emission.Boundary.ClosedEntries.Participants" ->
+                    body id || typeFact id || implementation id || source.ContextHeaders.ContainsKey id || declarationFact id || boundary.Imports.ContainsKey id
                 | "Emission.Boundary.Loading.Identity" | "Emission.Boundary.Loading.Binding"
                 | "Emission.Boundary.Loading.Platform" | "Emission.Boundary.Loading.Core" -> loadingFact id
                 | "Emission.Boundary.Loading.DeclarationFacts" | "Emission.Boundary.Loading.Participants" -> loadingSupport id
@@ -1819,7 +1941,8 @@ module Integrity =
                 | "Obligations.Body"
                 | "CurrentClaims.Body" -> body id
                 | "Emission.Boundary.IntrinsicWriteImports.Scope" -> source.ContextHeaders.ContainsKey id
-                | "Emission.Boundary.Imports.Parameters" | "Emission.Boundary.Imports.SourceTypes" -> boundaryType id
+                | "Emission.Boundary.Imports.Parameters" -> boundaryType id || boundary.CallbackInvocations.ContainsKey id
+                | "Emission.Boundary.Imports.SourceTypes" -> boundaryType id
                 | "Emission.Boundary.ByScope (values)" | "Emission.Boundary.Calls.Import" -> boundary.Imports.ContainsKey id
                 | "Emission.Spatial.Kernels.Scope" | "Emission.Spatial.Hardware.Scope" -> body id || source.ContextHeaders.ContainsKey id
                 | "Emission.Boundary.Calls.Callee" -> body id

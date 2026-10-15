@@ -44,6 +44,34 @@ let private indexedReadState bounds bytes =
     BinaryIndexed.initialRead bounds (BAREWire.Memory.ByteSource.ofArray bytes) { Offset = 0UL; Length = uint64 bytes.Length }
 
 [<Fact>]
+let ``closed callback binary retains receiving hypothesis and complete original entry incidence`` () =
+    let signature : NativeEntrySignature =
+        {Parameters = [BoundaryScalar.Integer(64,true)]; Result = Some(BoundaryScalar.Integer(64,true)); CallingConvention = "CDecl"}
+    let invocation : BoundaryCallbackInvocation =
+        {Identity = NodeId 40; Import = NodeId 41; Parameter = 3; Formal = NodeId 42; Scope = NodeId 43; Signature = signature
+         Contract = {Binding = "Foreign.call"; Parameter = 3
+                     Signature = {Parameters = [|{Name = "unused"; Type = BAREWire.Descriptors.TypeRef.Integer(BAREWire.Descriptors.Signedness.Signed,64); PassBy = BAREWire.Descriptors.PassBy.Value}|]
+                                  ReturnType = BAREWire.Descriptors.TypeRef.Integer(BAREWire.Descriptors.Signedness.Signed,64); CallingConvention = BAREWire.Descriptors.CallConv.CDecl}
+                     Hypothesis = {Identity = "foreign-demand"; Version = "7"; Source = "explicit-fixture"}; Scope = "Foreign.scope"}
+         Participants = Set.ofList [NodeId 40; NodeId 41; NodeId 42; NodeId 43]}
+    let entry : BoundaryClosedEntry =
+        {Formation = NodeId 50; Operand = NodeId 51; Declaration = NodeId 52; Implementation = NodeId 53
+         Formals = [NodeId 54]; Body = NodeId 55; Lifetime = {Module = NodeId 56; Binding = NodeId 52; Implementation = NodeId 53}
+         Invocation = invocation.Identity; ParameterAdaptations = [None]; ResultAdaptation = Some {Consumer = NodeId 55; Operand = NodeId 55; From = 8; To = 64; Adapt = MeetKind.ExtendUnsigned}
+         Transport = Set.ofList [NodeId 50; NodeId 51]; Participants = Set.ofList [NodeId 50; NodeId 51; NodeId 52; NodeId 53; NodeId 54; NodeId 55; NodeId 56; NodeId 40]}
+    let bytes = indexedEncoded BinaryGenerated.write_Fidelity_PSG_BoundaryCallbackInvocation invocation
+    let actual, state = BinaryGenerated.read_Fidelity_PSG_BoundaryCallbackInvocation (indexedReadState limits bytes) |> take
+    Assert.Equal(invocation, actual)
+    Assert.Equal(0,state.Depth)
+    let bytes = indexedEncoded BinaryGenerated.write_Fidelity_PSG_BoundaryClosedEntry entry
+    let actual, state = BinaryGenerated.read_Fidelity_PSG_BoundaryClosedEntry (indexedReadState limits bytes) |> take
+    Assert.Equal(entry, actual)
+    Assert.Equal(0,state.Depth)
+    let carrier = BoundaryScalar.Entry invocation.Identity
+    let bytes = indexedEncoded BinaryGenerated.write_Fidelity_PSG_BoundaryScalar carrier
+    Assert.Equal(carrier, BinaryGenerated.read_Fidelity_PSG_BoundaryScalar (indexedReadState limits bytes) |> take |> fst)
+
+[<Fact>]
 let ``ordinary omission origins retain their kind ordinal and identities in the binary contract`` () =
   let omissions : OrdinaryOmission list =
     [ {Site = NodeId 5; Origin = OrdinaryOmissionOrigin.CallArgument 0; Actual = NodeId 3}
@@ -93,15 +121,15 @@ let ``snapshot header has independent version schema and fingerprint bytes`` () 
     // Spec closure-representation §2.4: "The account retains typed relation
     // identities, roles, ordinals and operand order and multiplicity." The old
     // schema/digest names a shape without those newly published aggregate rows.
-    // Schema 26 adds selected process-link loading and imported-entry accounts,
-    // optional indirect-call correspondence and the formation-only address plan.
-    let prefix = Convert.FromHexString("4650534749445832020000001A0000000E06192544456CE6F3D01A933E5383671D24FB6F5F9482043D796D517D9CD020")
+    // Schema 28 adds typed receiving callback signatures and original closed
+    // entries while retaining all native formals and the trusted hypothesis.
+    let prefix = Convert.FromHexString("4650534749445832020000001C00000062FAE930D5F91696A8C446C72AF48FD8CAACE4C05D0E3CBFBD2717312AC88401")
     Assert.Equal<byte>(prefix, bytes[..47])
     Assert.Equal<byte>([|64uy;0uy;0uy;0uy;0uy;0uy;0uy;0uy|], bytes[48..55])
     let header = child bytes 64 0
     let schema = child bytes header 0
     let producer = child bytes header 1
-    Assert.Equal<byte>([|26uy;0uy;0uy;0uy|], bytes[schema..schema + 3])
+    Assert.Equal<byte>([|28uy;0uy;0uy;0uy|], bytes[schema..schema + 3])
     Assert.Equal<byte>([|1uy;byte 'g'|], bytes[producer..producer + 1])
     Assert.Equal("g", (Binary.decode limits bytes |> take).Header.Producer)
 

@@ -28,7 +28,7 @@ let private primitive (ty: Type) =
     | "System.String" -> Some "String"
     | _ -> None
 let private named (ty: Type) =
-    (ty.Namespace = "Fidelity.PSG" || ty.Namespace = "BAREWire.Platform") &&
+    (ty.Namespace = "Fidelity.PSG" || ty.Namespace = "BAREWire.Platform" || ty.Namespace = "BAREWire.Descriptors") &&
     not ty.IsArray && not ty.IsGenericType &&
     (FSharpType.IsRecord(ty, flags) || FSharpType.IsUnion(ty, flags))
 let private children (ty: Type) =

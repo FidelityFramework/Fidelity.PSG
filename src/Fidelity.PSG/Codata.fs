@@ -139,13 +139,6 @@ type CallableEnvironment = { Owner: NodeId; Formal: NodeId }
 [<RequireQualifiedAccess>]
 type CallableKind = OrdinaryFlatClosure | NativeEntry
 
-/// Exact source declaration resident in the containing compiled program image.
-type ProgramImageCodeLifetime = {
-    Module: NodeId
-    Binding: NodeId
-    Implementation: NodeId
-}
-
 [<RequireQualifiedAccess>]
 type CallableConversion = Identity of ValueRepresentation
 
@@ -844,6 +837,8 @@ type BoundaryEmissionProjection = {
     /// Link requirements come from this admitted source boundary domain.
     Links: Set<string>
     ResultHypotheses: ForeignResultHypothesis list
+    CallbackInvocations: Map<NodeId, BoundaryCallbackInvocation>
+    ClosedEntries: Map<NodeId, BoundaryClosedEntry>
 }
 
 /// Complete emission-domain facts published by their source owners. Absence is

@@ -287,6 +287,8 @@ type BoundaryDomain = {
     Links: Set<string>
     Failures: (NodeId * Set<NodeId> * string) list
     ResultHypotheses: ForeignResultHypothesis list
+    CallbackInvocations: NodeId list
+    ClosedEntries: NodeId list
 }
 
 type BoundaryCoverage = {
@@ -657,6 +659,8 @@ type EdgeRole =
     /// finite program cell. The arithmetic certificate supplies no lifetime.
     | FiniteCellRange
     | BoundaryEntry of BoundaryEntry
+    | BoundaryCallbackInvocation of BoundaryCallbackInvocation
+    | BoundaryClosedEntry of BoundaryClosedEntry
 
 /// One directed relation. Sources retain ordered participant occurrences;
 /// structural projections may be single-source while joint facts are n-ary.

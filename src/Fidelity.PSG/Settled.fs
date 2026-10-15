@@ -1,5 +1,12 @@
 namespace Fidelity.PSG
 
+/// Exact source declaration resident in the containing compiled program image.
+type ProgramImageCodeLifetime = {
+    Module: NodeId
+    Binding: NodeId
+    Implementation: NodeId
+}
+
 /// Source boundary facts are carried by joint Baker rows, before publication.
 [<RequireQualifiedAccess>]
 type MeetKind = ExtendUnsigned | ExtendSigned | Truncate | ExtendFloat | TruncateFloat
@@ -7,7 +14,15 @@ type MeetKind = ExtendUnsigned | ExtendSigned | Truncate | ExtendFloat | Truncat
 type Meet = { Consumer: NodeId; Operand: NodeId; From: int; To: int; Adapt: MeetKind }
 
 [<RequireQualifiedAccess>]
-type BoundaryScalar = Integer of bits: int * signed: bool | Boolean
+type BoundaryScalar = Integer of bits: int * signed: bool | Boolean | Entry of invocation: NodeId
+
+/// The physical target carriers settled from a quoted native entry signature.
+/// This has no C symbol: the code is the original Clef declaration.
+type NativeEntrySignature = {
+    Parameters: BoundaryScalar list
+    Result: BoundaryScalar option
+    CallingConvention: string
+}
 
 /// A physical slot settled by the source numeric/layout owner.
 [<RequireQualifiedAccess>]
@@ -130,6 +145,35 @@ type BoundaryEntry = {
     Declaration: NodeId
     Loading: NodeId
     SourceType: TypeIdentity
+    Transport: Set<NodeId>
+    Participants: Set<NodeId>
+}
+
+/// Exact quoted receiving contract and its source-resolved native formal/scope.
+type BoundaryCallbackInvocation = {
+    Identity: NodeId
+    Import: NodeId
+    Parameter: int
+    Formal: NodeId
+    Scope: NodeId
+    Contract: BAREWire.Descriptors.CallbackInvocationContract
+    Signature: NativeEntrySignature
+    Participants: Set<NodeId>
+}
+
+/// Source-issued closed native entry. Lifetime and numeric conversions retain
+/// their existing owners; activation supplies no fabricated foreign arguments.
+type BoundaryClosedEntry = {
+    Formation: NodeId
+    Operand: NodeId
+    Declaration: NodeId
+    Implementation: NodeId
+    Formals: NodeId list
+    Body: NodeId
+    Lifetime: ProgramImageCodeLifetime
+    Invocation: NodeId
+    ParameterAdaptations: Meet option list
+    ResultAdaptation: Meet option
     Transport: Set<NodeId>
     Participants: Set<NodeId>
 }
