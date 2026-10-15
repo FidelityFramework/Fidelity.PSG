@@ -1077,6 +1077,56 @@ module Integrity =
                   yield fail edge.Target "Domain" "The published result uses differ from their stored numeric domain."
               | _ -> () ]
 
+    // Exact recorded declaration structure, shared by callback and resource
+    // replay. These readers never resolve or elaborate a source expression.
+    let private boundaryRecordFields (facts: Map<NodeId, BoundaryDeclarationFact>) id =
+        facts.TryFind id |> Option.bind (fun row ->
+            if row.Form="record" && row.Text.Length=row.References.Length && row.References=row.Children then
+                Some(Map.ofList(List.zip row.Text row.References)) else None)
+
+    let private boundaryQuotedRecordFields (facts: Map<NodeId, BoundaryDeclarationFact>) id =
+        facts.TryFind id |> Option.bind(fun quote ->
+            match quote.Form, quote.References with
+            | "quotation", [record] when quote.References=quote.Children -> boundaryRecordFields facts record
+            | _ -> None)
+
+    let private boundaryQuoteBinding (facts: Map<NodeId, BoundaryDeclarationFact>) quoteId =
+        let immutableBinding child ty id =
+            facts.TryFind id |> Option.filter(fun binding ->
+                binding.Form="binding" && binding.Numbers=[0I;0I] &&
+                binding.References=[child] && binding.Children=[child] && binding.SourceType=ty)
+            |> Option.map(fun binding -> id,binding)
+        facts.TryFind quoteId |> Option.bind(fun quote ->
+            match quote.Form, quote.References, quote.Parent with
+            | "quotation", [record], Some parent when quote.Children=[record] && facts.ContainsKey record ->
+                match facts.TryFind parent with
+                | Some annotation when annotation.Form="annotation" && annotation.References=[quoteId] && annotation.Children=[quoteId] &&
+                                       annotation.Text.IsEmpty && annotation.Numbers.IsEmpty && annotation.SourceType=quote.SourceType ->
+                    annotation.Parent |> Option.bind (immutableBinding parent quote.SourceType)
+                | _ -> immutableBinding quoteId quote.SourceType parent
+            | _ -> None)
+
+    let private boundaryBindingValue (facts: Map<NodeId, BoundaryDeclarationFact>) bindingId =
+        facts.TryFind bindingId |> Option.bind(fun binding ->
+            match binding.Form, binding.Numbers, binding.References with
+            | "binding", [zero; recursive], [child] when zero=0I && recursive=0I && binding.Children=[child] ->
+                facts.TryFind child |> Option.bind(fun value ->
+                    if value.Parent<>Some bindingId || value.SourceType<>binding.SourceType then None else
+                    match value.Form, value.References with
+                    | "annotation", [inner] when value.Children=[inner] && value.Text.IsEmpty && value.Numbers.IsEmpty ->
+                        facts.TryFind inner |> Option.filter(fun actual -> actual.Parent=Some child && actual.SourceType=value.SourceType)
+                        |> Option.map(fun actual -> inner,actual)
+                    | _ -> Some(child,value))
+            | _ -> None)
+
+    let private resourceContext (revision: Revision) (row: BoundaryResourceDeclaration) declaration =
+        row.DeclarationFacts.TryFind declaration |> Option.bind(fun binding ->
+            if binding.Form<>"binding" || binding.Numbers<>[0I;0I] then None else
+            binding.Parent |> Option.bind(fun scope ->
+                revision.SourceReadings.ContextHeaders.TryFind scope |> Option.filter(fun header ->
+                    header.Identity=scope && header.Ports.ContainsKey OccurrencePort.ModuleDeclaration)
+                |> Option.map(fun header -> scope,header)))
+
     /// Boundary references resolve inside their owning imported declaration.
     /// Import membership is not executable residency or general ID authority.
     let private boundaryRows (revision: Revision) =
@@ -1154,7 +1204,96 @@ module Integrity =
                        } -> inner = child && entry.Transport.Contains child
                 | _ -> false
 
+        // Passive replay of the declaration-only resource observation. These
+        // facts establish no physical conversion or cleanup authority.
+        let resourceDeclaration (key: NodeId) (row: BoundaryResourceDeclaration) =
+            let facts = row.DeclarationFacts
+            let field name id = boundaryRecordFields facts id |> Option.bind(Map.tryFind name)
+            let text id = facts.TryFind id |> Option.bind (fun fact ->
+                if fact.Form="string" && fact.References.IsEmpty && fact.Children.IsEmpty then List.tryExactlyOne fact.Text else None)
+            let number id = facts.TryFind id |> Option.bind (fun fact ->
+                if fact.Form="integer" && fact.References.IsEmpty && fact.Children.IsEmpty then List.tryExactlyOne fact.Numbers else None)
+            let case name id = facts.TryFind id |> Option.bind (fun fact ->
+                if (fact.Form="case" || fact.Form="settled-case") && fact.Text=[name] && fact.References=fact.Children then Some fact.References else None)
+            let pointer id = case "Pointer" id |> Option.bind List.tryExactlyOne |> Option.bind number
+            let binding id = facts.TryFind id |> Option.filter (fun fact -> fact.Form="binding" && fact.Numbers=[0I;0I])
+            let descriptorQuote record = facts.TryFind record |> Option.bind(fun fact ->
+                if fact.Form<>"record" then None else
+                fact.Parent |> Option.filter(fun quoteId ->
+                    facts.TryFind quoteId |> Option.exists(fun quote -> quote.Form="quotation" && quote.References=[record] && quote.Children=[record])))
+            let beside suffix quote declaration =
+                match boundaryQuoteBinding facts quote, binding declaration with
+                | Some(_,owner), Some declaration ->
+                    List.tryHead declaration.Text |> Option.exists(fun name ->
+                        owner.Text = [name + suffix] && owner.Parent=declaration.Parent)
+                | _ -> false
+            let fields = boundaryQuotedRecordFields facts row.Identity
+            let ownField name = fields |> Option.bind(Map.tryFind name)
+            let typed id expected = facts.TryFind id |> Option.exists (fun fact -> fact.SourceType=expected)
+            let lambdaIncidence binding body formal =
+                boundaryBindingValue facts binding |> Option.exists(fun (implementation,lambda) ->
+                    match List.rev lambda.References with
+                    | result :: reversedFormals ->
+                        let formals = List.rev reversedFormals
+                        lambda.Form="lambda" && lambda.References=lambda.Children && result=body &&
+                        lambda.Numbers=[bigint formals.Length;0I;0I] && lambda.Text.Length=formals.Length+1 &&
+                        (formal |> Option.forall(fun expected -> formals=[expected])) &&
+                        (lambda.References |> List.forall(fun child ->
+                            facts.TryFind child |> Option.exists(fun fact -> fact.Parent=Some implementation)))
+                    | _ -> false)
+            let contractMatches =
+                match row.Contract.Resource with
+                | BAREWire.Descriptors.ResourceProtocol.OwnedNullableReturn release ->
+                    let resource = ownField "Resource"
+                    let released = resource |> Option.bind (case "OwnedNullableReturn") |> Option.bind List.tryExactlyOne
+                    let hypothesis = ownField "Hypothesis"
+                    released |> Option.exists (fun released ->
+                        field "Binding" released |> Option.bind text = Some release.Binding &&
+                        field "Parameter" released |> Option.bind number = Some(bigint release.Parameter)) &&
+                    hypothesis |> Option.exists (fun hypothesis ->
+                        ["Identity",row.Contract.Hypothesis.Identity;"Version",row.Contract.Hypothesis.Version;"Source",row.Contract.Hypothesis.Source]
+                        |> List.forall (fun (name,expected) -> not(System.String.IsNullOrWhiteSpace expected) && field name hypothesis |> Option.bind text = Some expected)) &&
+                    release.Parameter=0 && row.ReleaseOrdinal=0
+            let contextMatches =
+                resourceContext revision row row.Acquisition |> Option.exists(fun _ ->
+                    match row.Contract.Resource, binding row.Release, resourceContext revision row row.Release with
+                    | BAREWire.Descriptors.ResourceProtocol.OwnedNullableReturn release, Some fact, Some(_,header) ->
+                        List.tryHead fact.Text |> Option.exists(fun name -> release.Binding=header.Name+"."+name)
+                    | _ -> false)
+            let contextIds = [row.Acquisition;row.Release] |> List.choose (resourceContext revision row >> Option.map fst) |> Set.ofList
+            let supportedFacts = facts |> Map.forall(fun _ fact ->
+                (fact.References @ fact.Children |> List.forall facts.ContainsKey) &&
+                (fact.Parent |> Option.forall(fun parent -> facts.ContainsKey parent || contextIds.Contains parent)))
+            let abiMatches =
+                field "ReturnType" row.AcquisitionDescriptor |> Option.bind pointer = Some(bigint row.PointerBits) &&
+                field "ReturnType" row.ReleaseDescriptor |> Option.bind (case "Void") = Some [] &&
+                ([row.AcquisitionDescriptor;row.ReleaseDescriptor] |> List.forall(fun id ->
+                    field "CallingConvention" id |> Option.bind (case "CDecl") = Some [])) &&
+                (field "Parameters" row.ReleaseDescriptor |> Option.bind facts.TryFind |> Option.exists (fun parameters ->
+                    match parameters.Form, parameters.References with
+                    | "array",[parameter] ->
+                        field "Type" parameter |> Option.bind pointer = Some(bigint row.PointerBits) &&
+                        field "PassBy" parameter |> Option.bind (case "Value") = Some []
+                    | _ -> false))
+            let required = [row.Identity;row.Acquisition;row.AcquisitionBody;row.AcquisitionDescriptor;row.Release;row.ReleaseBody;row.ReleaseDescriptor;row.ReleaseFormal]
+            [ if key<>row.Identity || row.PointerBits<=0 || not contractMatches then
+                  yield defect "Emission.Boundary.ResourceDeclarations.Contract" key "The resource declaration differs from its exact immutable quotation and versioned hypothesis."
+              if not (beside "ResourceDescriptor" row.Identity row.Acquisition &&
+                      (descriptorQuote row.AcquisitionDescriptor |> Option.exists(fun quote -> beside "Descriptor" quote row.Acquisition)) &&
+                      (descriptorQuote row.ReleaseDescriptor |> Option.exists(fun quote -> beside "Descriptor" quote row.Release))) then
+                  yield defect "Emission.Boundary.ResourceDeclarations.Declaration" key "The resource account differs from its exact sibling acquisition or release declaration."
+              if not contextMatches then
+                  yield defect "Emission.Boundary.ResourceDeclarations.Context" key "The resource declaration lacks its exact current module context or qualified release binding."
+              if not (lambdaIncidence row.Acquisition row.AcquisitionBody None && lambdaIncidence row.Release row.ReleaseBody (Some row.ReleaseFormal)) then
+                  yield defect "Emission.Boundary.ResourceDeclarations.Incidence" key "The resource declaration differs from its exact original acquisition/release body or ordinal-zero release formal."
+              if not abiMatches || not(typed row.Acquisition row.AcquisitionType && typed row.AcquisitionBody row.ResultType && typed row.ReleaseFormal row.HandleType) then
+                  yield defect "Emission.Boundary.ResourceDeclarations.Signature" key "The resource declaration lost its exact nullable-handle/raw-pointer acquisition or unary matching raw-Void release."
+              if not supportedFacts || required |> List.exists (facts.ContainsKey >> not) || row.Participants <> (facts.Keys |> Set.ofSeq) then
+                  yield defect "Emission.Boundary.ResourceDeclarations.Participants" key "The resource declaration has missing or unrelated source support." ]
+
         [
+            for KeyValue(key, resource) in boundary.ResourceDeclarations do
+                yield! resourceDeclaration key resource
             for KeyValue(key, invocation) in boundary.CallbackInvocations do
                 let part = "Emission.Boundary.CallbackInvocations"
                 if key <> invocation.Identity then
@@ -1209,14 +1348,7 @@ module Integrity =
                                          invocation.Signature.Parameters.IsEmpty && invocation.Signature.Result.IsNone &&
                                          contract.Signature.ReturnType=BAREWire.Descriptors.TypeRef.Void ->
                         let facts=imported.DeclarationFacts
-                        let scopeRecord =
-                            facts.TryFind invocation.Scope |> Option.bind(fun quote ->
-                                if quote.Form<>"quotation" || quote.References<>quote.Children then None else
-                                match quote.References with
-                                | [record] -> facts.TryFind record |> Option.bind(fun row ->
-                                    if row.Form="record" && row.Text.Length=row.References.Length && row.References=row.Children then
-                                        Some(Map.ofList(List.zip row.Text row.References)) else None)
-                                | _ -> None)
+                        let scopeRecord = boundaryQuotedRecordFields facts invocation.Scope
                         let statusMatches = scopeRecord |> Option.bind(fun fields -> fields.TryFind "SuccessStatus")
                                             |> Option.bind facts.TryFind |> Option.exists(fun value ->
                                                 value.Form="integer" && value.Numbers=[bigint status] && value.References.IsEmpty)
@@ -2035,6 +2167,13 @@ module Integrity =
             if explicitParts.Contains part || supportParts.Contains part || aggregatePart || inactivityPart || part.StartsWith("SourceReadings.", System.StringComparison.Ordinal) then true
             else
                 match part with
+                | "Emission.Boundary.ResourceDeclarations.DeclarationFacts" ->
+                    boundary.ResourceDeclarations.Values |> Seq.exists (fun row ->
+                        row.DeclarationFacts.ContainsKey id ||
+                        ([row.Acquisition;row.Release] |> List.exists(fun declaration ->
+                            resourceContext revision row declaration |> Option.exists(fun (scope,_) -> scope=id))))
+                | part when part.StartsWith("Emission.Boundary.ResourceDeclarations", System.StringComparison.Ordinal) ->
+                    boundary.ResourceDeclarations.Values |> Seq.exists (fun row -> row.DeclarationFacts.ContainsKey id)
                 | "Emission.Boundary.CallbackInvocations" | "Emission.Boundary.CallbackInvocations.Identity"
                 | "Emission.Boundary.ClosedEntries.Invocation" -> boundary.CallbackInvocations.ContainsKey id
                 | "Emission.Boundary.CallbackInvocations.Import" -> boundary.Imports.ContainsKey id

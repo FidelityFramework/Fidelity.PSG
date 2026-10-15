@@ -109,6 +109,27 @@ type BoundaryDeclarationFact = {
     SourceType: TypeIdentity
 }
 
+/// A source-declared resource protocol only. This row grants no nullable-word
+/// conversion, acquisition, cleanup, alias retirement or execution authority.
+type BoundaryResourceDeclaration = {
+    Identity: NodeId
+    Acquisition: NodeId
+    AcquisitionBody: NodeId
+    AcquisitionDescriptor: NodeId
+    Release: NodeId
+    ReleaseBody: NodeId
+    ReleaseDescriptor: NodeId
+    ReleaseFormal: NodeId
+    ReleaseOrdinal: int
+    PointerBits: int
+    AcquisitionType: TypeIdentity
+    ResultType: TypeIdentity
+    HandleType: TypeIdentity
+    Contract: BAREWire.Descriptors.ResourceDescriptor
+    DeclarationFacts: Map<NodeId, BoundaryDeclarationFact>
+    Participants: Set<NodeId>
+}
+
 type BoundaryImport = {
     Identity: NodeId
     Binding: NodeId

@@ -818,6 +818,7 @@ type StorageWitnessProjection = {
 }
 
 type BoundaryEmissionProjection = {
+    ResourceDeclarations: Map<NodeId, BoundaryResourceDeclaration>
     Imports: Map<NodeId, BoundaryImport>
     Loading: BoundaryLoading option
     Entries: Map<NodeId, BoundaryEntry>

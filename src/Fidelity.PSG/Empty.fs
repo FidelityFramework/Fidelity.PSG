@@ -35,7 +35,7 @@ module Empty =
         { Imports = Map.empty; Loading = None; Entries = Map.empty; ByScope = Map.empty; Calls = Map.empty; ByteViews = Map.empty
           StringExtents = Map.empty; IntrinsicWriteImports = Map.empty; IntrinsicWrites = Map.empty
           IntrinsicWriteProofs = Map.empty; DeclarationLeaves = Set.empty; DeclarationOnly = Set.empty
-          Links = Set.empty; ResultHypotheses = []; CallbackInvocations = Map.empty; ClosedEntries = Map.empty }
+          Links = Set.empty; ResourceDeclarations = Map.empty; ResultHypotheses = []; CallbackInvocations = Map.empty; ClosedEntries = Map.empty }
 
     let numeric : NumericWitnessProjection =
         { Values = Map.empty; Operations = Map.empty; OperationRequired = Set.empty

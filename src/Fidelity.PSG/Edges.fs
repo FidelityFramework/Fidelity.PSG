@@ -260,6 +260,7 @@ type BoundaryDomain = {
     Platform: BoundaryPlatformPremise option
     Meets: Map<NodeId, Meet list>
     Declarations: BoundaryDeclaration list
+    ResourceDeclarations: NodeId list
     Imports: NodeId list
     Loading: BoundaryLoading option
     Entries: NodeId list
@@ -328,6 +329,7 @@ type EdgeRole =
     | SpatialProof of SpatialProof
     | BoundaryDeclaration of BoundaryDeclaration
     | BoundaryDomain of BoundaryDomain
+    | BoundaryResourceDeclaration of BoundaryResourceDeclaration
     | BoundaryImport of BoundaryImport
     | BoundaryCall of BoundaryCall
     | BoundaryOperand of BoundaryOperand
