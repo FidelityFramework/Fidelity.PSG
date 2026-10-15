@@ -139,6 +139,23 @@ type BoundaryResourceDeclaration = {
     Participants: Set<NodeId>
 }
 
+/// Exact writable-byte declaration provenance only; this grants no borrow,
+/// foreign memory effect, call adapter, proof discharge or execution authority.
+type BoundaryWritableBufferDeclaration = {
+    Identity: NodeId
+    Declaration: NodeId
+    Body: NodeId
+    Formals: NodeId list
+    Descriptor: NodeId
+    Parameter: int
+    CountParameter: int
+    BufferFormal: NodeId
+    CountFormal: NodeId
+    Contract: BAREWire.Descriptors.WritableBufferDescriptor
+    DeclarationFacts: Map<NodeId, BoundaryDeclarationFact>
+    Participants: Set<NodeId>
+}
+
 type BoundaryImport = {
     Identity: NodeId
     Binding: NodeId

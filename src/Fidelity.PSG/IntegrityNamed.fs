@@ -164,6 +164,7 @@ module IntegrityNamed =
         @ (value.Premises |> Map.toList |> List.collect (fun (k0, h0) -> [ k0 ] @ (idsOfBoundarySourcePremise h0)))
         @ (value.Meets |> Map.toList |> List.collect (fun (k0, h0) -> [ k0 ] @ (h0 |> List.collect (fun v1 -> (idsOfMeet v1)))))
         @ (value.Declarations |> List.collect (fun v0 -> (idsOfBoundaryDeclaration v0)))
+        @ (value.WritableBufferDeclarations |> List.collect (fun v0 -> [ v0 ]))
         @ (value.ResourceDeclarations |> List.collect (fun v0 -> [ v0 ]))
         @ (value.ResourceAccesses |> List.collect (fun v0 -> [ v0 ]))
         @ (value.ResourceEvaluationRoots |> List.collect (fun v0 -> (let (t1_0, t1_1, t1_2) = v0 in [ t1_0 ] @ [ t1_1 ] @ [ t1_2 ])))
@@ -195,7 +196,8 @@ module IntegrityNamed =
         @ (value.ClosedEntries |> List.collect (fun v0 -> [ v0 ]))
 
     and private idsOfBoundaryEmissionProjection (value: Fidelity.PSG.BoundaryEmissionProjection) : NodeId list =
-        (value.ResourceEvidence |> Option.toList |> List.collect (fun v0 -> (idsOfBoundaryResourceEvidence v0)))
+        (value.WritableBufferDeclarations |> Map.toList |> List.collect (fun (k0, h0) -> [ k0 ] @ (idsOfBoundaryWritableBufferDeclaration h0)))
+        @ (value.ResourceEvidence |> Option.toList |> List.collect (fun v0 -> (idsOfBoundaryResourceEvidence v0)))
         @ (value.ResourceDeclarations |> Map.toList |> List.collect (fun (k0, h0) -> [ k0 ] @ (idsOfBoundaryResourceDeclaration h0)))
         @ (value.ResourceAccesses |> Map.toList |> List.collect (fun (k0, h0) -> [ k0 ] @ (idsOfBoundaryResourceAccess h0)))
         @ (value.Imports |> Map.toList |> List.collect (fun (k0, h0) -> [ k0 ] @ (idsOfBoundaryImport h0)))
@@ -314,6 +316,17 @@ module IntegrityNamed =
         @ [ value.ExtentSource ]
         @ (value.StaticOrigins |> Map.toList |> List.collect (fun (k0, h0) -> [ k0 ] @ []))
         @ (idsOfParticipantEvidence value.Participants)
+
+    and private idsOfBoundaryWritableBufferDeclaration (value: Fidelity.PSG.BoundaryWritableBufferDeclaration) : NodeId list =
+        [ value.Identity ]
+        @ [ value.Declaration ]
+        @ [ value.Body ]
+        @ (value.Formals |> List.collect (fun v0 -> [ v0 ]))
+        @ [ value.Descriptor ]
+        @ [ value.BufferFormal ]
+        @ [ value.CountFormal ]
+        @ (value.DeclarationFacts |> Map.toList |> List.collect (fun (k0, h0) -> [ k0 ] @ (idsOfBoundaryDeclarationFact h0)))
+        @ (value.Participants |> Set.toList |> List.collect (fun v0 -> [ v0 ]))
 
     and private idsOfCallableAggregateAlternative (value: Fidelity.PSG.CallableAggregateAlternative) : NodeId list =
         [ value.Carrier ]
@@ -661,6 +674,7 @@ module IntegrityNamed =
         | Fidelity.PSG.EdgeRole.BoundaryDeclaration(a0) -> (idsOfBoundaryDeclaration a0)
         | Fidelity.PSG.EdgeRole.BoundaryDomain(a0) -> (idsOfBoundaryDomain a0)
         | Fidelity.PSG.EdgeRole.BoundaryResourceDeclaration(a0) -> (idsOfBoundaryResourceDeclaration a0)
+        | Fidelity.PSG.EdgeRole.BoundaryWritableBufferDeclaration(a0) -> (idsOfBoundaryWritableBufferDeclaration a0)
         | Fidelity.PSG.EdgeRole.BoundaryResourceAccess(a0) -> (idsOfBoundaryResourceAccess a0)
         | Fidelity.PSG.EdgeRole.BoundaryImport(a0) -> (idsOfBoundaryImport a0)
         | Fidelity.PSG.EdgeRole.BoundaryCall(a0) -> (idsOfBoundaryCall a0)
@@ -2235,12 +2249,22 @@ module IntegrityNamed =
           "Emission.Storage.ProgramInitializationOrders.Binding", (revision.Emission.Storage.ProgramInitializationOrders |> Map.toList |> List.collect (fun (_, row) -> [ row.Binding ]))
           "Emission.Storage.ProgramInitializationOrders.Claim", (revision.Emission.Storage.ProgramInitializationOrders |> Map.toList |> List.collect (fun (_, row) -> [ row.Claim ]))
           "Emission.Storage.ProgramInitializationOrders.Participants", (revision.Emission.Storage.ProgramInitializationOrders |> Map.toList |> List.collect (fun (_, row) -> (row.Participants |> List.collect (fun v1 -> (idsOfParticipant v1)))))
-          "Emission.Boundary.ResourceEvidence.Platform", (revision.Emission.Boundary.ResourceEvidence |> Option.toList |> List.collect (fun row -> [ row.Platform ]))
-          "Emission.Boundary.ResourceEvidence.Core", (revision.Emission.Boundary.ResourceEvidence |> Option.toList |> List.collect (fun row -> [ row.Core ]))
-          "Emission.Boundary.ResourceEvidence.Premises", (revision.Emission.Boundary.ResourceEvidence |> Option.toList |> List.collect (fun row -> (row.Premises |> Map.toList |> List.collect (fun (k1, h1) -> [ k1 ] @ (idsOfBoundarySourcePremise h1))))) ]
+          "Emission.Boundary.WritableBufferDeclarations", (revision.Emission.Boundary.WritableBufferDeclarations |> Map.toList |> List.collect (fun (key, _) -> [ key ]))
+          "Emission.Boundary.WritableBufferDeclarations.Identity", (revision.Emission.Boundary.WritableBufferDeclarations |> Map.toList |> List.collect (fun (_, row) -> [ row.Identity ]))
+          "Emission.Boundary.WritableBufferDeclarations.Declaration", (revision.Emission.Boundary.WritableBufferDeclarations |> Map.toList |> List.collect (fun (_, row) -> [ row.Declaration ])) ]
 
     let private group18 (revision: Revision) : (string * NodeId list) list =
-        [ "Emission.Boundary.ResourceEvidence.Roots", (revision.Emission.Boundary.ResourceEvidence |> Option.toList |> List.collect (fun row -> (row.Roots |> List.collect (fun v1 -> (let (t2_0, t2_1, t2_2) = v1 in [ t2_0 ] @ [ t2_1 ] @ [ t2_2 ])))))
+        [ "Emission.Boundary.WritableBufferDeclarations.Body", (revision.Emission.Boundary.WritableBufferDeclarations |> Map.toList |> List.collect (fun (_, row) -> [ row.Body ]))
+          "Emission.Boundary.WritableBufferDeclarations.Formals", (revision.Emission.Boundary.WritableBufferDeclarations |> Map.toList |> List.collect (fun (_, row) -> (row.Formals |> List.collect (fun v1 -> [ v1 ]))))
+          "Emission.Boundary.WritableBufferDeclarations.Descriptor", (revision.Emission.Boundary.WritableBufferDeclarations |> Map.toList |> List.collect (fun (_, row) -> [ row.Descriptor ]))
+          "Emission.Boundary.WritableBufferDeclarations.BufferFormal", (revision.Emission.Boundary.WritableBufferDeclarations |> Map.toList |> List.collect (fun (_, row) -> [ row.BufferFormal ]))
+          "Emission.Boundary.WritableBufferDeclarations.CountFormal", (revision.Emission.Boundary.WritableBufferDeclarations |> Map.toList |> List.collect (fun (_, row) -> [ row.CountFormal ]))
+          "Emission.Boundary.WritableBufferDeclarations.DeclarationFacts", (revision.Emission.Boundary.WritableBufferDeclarations |> Map.toList |> List.collect (fun (_, row) -> (row.DeclarationFacts |> Map.toList |> List.collect (fun (k1, h1) -> [ k1 ] @ (idsOfBoundaryDeclarationFact h1)))))
+          "Emission.Boundary.WritableBufferDeclarations.Participants", (revision.Emission.Boundary.WritableBufferDeclarations |> Map.toList |> List.collect (fun (_, row) -> (row.Participants |> Set.toList |> List.collect (fun v1 -> [ v1 ]))))
+          "Emission.Boundary.ResourceEvidence.Platform", (revision.Emission.Boundary.ResourceEvidence |> Option.toList |> List.collect (fun row -> [ row.Platform ]))
+          "Emission.Boundary.ResourceEvidence.Core", (revision.Emission.Boundary.ResourceEvidence |> Option.toList |> List.collect (fun row -> [ row.Core ]))
+          "Emission.Boundary.ResourceEvidence.Premises", (revision.Emission.Boundary.ResourceEvidence |> Option.toList |> List.collect (fun row -> (row.Premises |> Map.toList |> List.collect (fun (k1, h1) -> [ k1 ] @ (idsOfBoundarySourcePremise h1)))))
+          "Emission.Boundary.ResourceEvidence.Roots", (revision.Emission.Boundary.ResourceEvidence |> Option.toList |> List.collect (fun row -> (row.Roots |> List.collect (fun v1 -> (let (t2_0, t2_1, t2_2) = v1 in [ t2_0 ] @ [ t2_1 ] @ [ t2_2 ])))))
           "Emission.Boundary.ResourceEvidence.Relations", (revision.Emission.Boundary.ResourceEvidence |> Option.toList |> List.collect (fun row -> (row.Relations |> List.collect (fun v1 -> (idsOfResourceEvaluationRelation v1)))))
           "Emission.Boundary.ResourceEvidence.Accesses", (revision.Emission.Boundary.ResourceEvidence |> Option.toList |> List.collect (fun row -> (row.Accesses |> List.collect (fun v1 -> [ v1 ]))))
           "Emission.Boundary.ResourceDeclarations", (revision.Emission.Boundary.ResourceDeclarations |> Map.toList |> List.collect (fun (key, _) -> [ key ]))
@@ -2253,8 +2277,10 @@ module IntegrityNamed =
           "Emission.Boundary.ResourceDeclarations.ReleaseDescriptor", (revision.Emission.Boundary.ResourceDeclarations |> Map.toList |> List.collect (fun (_, row) -> [ row.ReleaseDescriptor ]))
           "Emission.Boundary.ResourceDeclarations.ReleaseFormal", (revision.Emission.Boundary.ResourceDeclarations |> Map.toList |> List.collect (fun (_, row) -> [ row.ReleaseFormal ]))
           "Emission.Boundary.ResourceDeclarations.DeclarationFacts", (revision.Emission.Boundary.ResourceDeclarations |> Map.toList |> List.collect (fun (_, row) -> (row.DeclarationFacts |> Map.toList |> List.collect (fun (k1, h1) -> [ k1 ] @ (idsOfBoundaryDeclarationFact h1)))))
-          "Emission.Boundary.ResourceDeclarations.Participants", (revision.Emission.Boundary.ResourceDeclarations |> Map.toList |> List.collect (fun (_, row) -> (row.Participants |> Set.toList |> List.collect (fun v1 -> [ v1 ]))))
-          "Emission.Boundary.ResourceAccesses", (revision.Emission.Boundary.ResourceAccesses |> Map.toList |> List.collect (fun (key, _) -> [ key ]))
+          "Emission.Boundary.ResourceDeclarations.Participants", (revision.Emission.Boundary.ResourceDeclarations |> Map.toList |> List.collect (fun (_, row) -> (row.Participants |> Set.toList |> List.collect (fun v1 -> [ v1 ])))) ]
+
+    let private group19 (revision: Revision) : (string * NodeId list) list =
+        [ "Emission.Boundary.ResourceAccesses", (revision.Emission.Boundary.ResourceAccesses |> Map.toList |> List.collect (fun (key, _) -> [ key ]))
           "Emission.Boundary.ResourceAccesses.Site", (revision.Emission.Boundary.ResourceAccesses |> Map.toList |> List.collect (fun (_, row) -> [ row.Site ]))
           "Emission.Boundary.ResourceAccesses.Source", (revision.Emission.Boundary.ResourceAccesses |> Map.toList |> List.collect (fun (_, row) -> [ row.Source ]))
           "Emission.Boundary.ResourceAccesses.Acquisition", (revision.Emission.Boundary.ResourceAccesses |> Map.toList |> List.collect (fun (_, row) -> [ row.Acquisition ]))
@@ -2263,10 +2289,8 @@ module IntegrityNamed =
           "Emission.Boundary.ResourceAccesses.Cleanup", (revision.Emission.Boundary.ResourceAccesses |> Map.toList |> List.collect (fun (_, row) -> [ row.Cleanup ]))
           "Emission.Boundary.ResourceAccesses.Participants", (revision.Emission.Boundary.ResourceAccesses |> Map.toList |> List.collect (fun (_, row) -> (row.Participants |> Set.toList |> List.collect (fun v1 -> [ v1 ]))))
           "Emission.Boundary.Imports", (revision.Emission.Boundary.Imports |> Map.toList |> List.collect (fun (key, _) -> [ key ]))
-          "Emission.Boundary.Imports.Identity", (revision.Emission.Boundary.Imports |> Map.toList |> List.collect (fun (_, row) -> [ row.Identity ])) ]
-
-    let private group19 (revision: Revision) : (string * NodeId list) list =
-        [ "Emission.Boundary.Imports.Binding", (revision.Emission.Boundary.Imports |> Map.toList |> List.collect (fun (_, row) -> [ row.Binding ]))
+          "Emission.Boundary.Imports.Identity", (revision.Emission.Boundary.Imports |> Map.toList |> List.collect (fun (_, row) -> [ row.Identity ]))
+          "Emission.Boundary.Imports.Binding", (revision.Emission.Boundary.Imports |> Map.toList |> List.collect (fun (_, row) -> [ row.Binding ]))
           "Emission.Boundary.Imports.Scope", (revision.Emission.Boundary.Imports |> Map.toList |> List.collect (fun (_, row) -> [ row.Scope ]))
           "Emission.Boundary.Imports.DeclarationPath", (revision.Emission.Boundary.Imports |> Map.toList |> List.collect (fun (_, row) -> (row.DeclarationPath |> List.collect (fun v1 -> [ v1 ]))))
           "Emission.Boundary.Imports.Parameters", (revision.Emission.Boundary.Imports |> Map.toList |> List.collect (fun (_, row) -> (row.Parameters |> List.collect (fun v1 -> (let (t2_0, t2_1) = v1 in [ t2_0 ] @ (idsOfBoundaryScalar t2_1))))))
@@ -2279,8 +2303,10 @@ module IntegrityNamed =
           "Emission.Boundary.Loading.Platform", (revision.Emission.Boundary.Loading |> Option.toList |> List.collect (fun row -> [ row.Platform ]))
           "Emission.Boundary.Loading.Core", (revision.Emission.Boundary.Loading |> Option.toList |> List.collect (fun row -> [ row.Core ]))
           "Emission.Boundary.Loading.DeclarationFacts", (revision.Emission.Boundary.Loading |> Option.toList |> List.collect (fun row -> (row.DeclarationFacts |> Map.toList |> List.collect (fun (k1, h1) -> [ k1 ] @ (idsOfBoundaryDeclarationFact h1)))))
-          "Emission.Boundary.Loading.Participants", (revision.Emission.Boundary.Loading |> Option.toList |> List.collect (fun row -> (row.Participants |> Set.toList |> List.collect (fun v1 -> [ v1 ]))))
-          "Emission.Boundary.Entries", (revision.Emission.Boundary.Entries |> Map.toList |> List.collect (fun (key, _) -> [ key ]))
+          "Emission.Boundary.Loading.Participants", (revision.Emission.Boundary.Loading |> Option.toList |> List.collect (fun row -> (row.Participants |> Set.toList |> List.collect (fun v1 -> [ v1 ])))) ]
+
+    let private group20 (revision: Revision) : (string * NodeId list) list =
+        [ "Emission.Boundary.Entries", (revision.Emission.Boundary.Entries |> Map.toList |> List.collect (fun (key, _) -> [ key ]))
           "Emission.Boundary.Entries.Formation", (revision.Emission.Boundary.Entries |> Map.toList |> List.collect (fun (_, row) -> [ row.Formation ]))
           "Emission.Boundary.Entries.Operand", (revision.Emission.Boundary.Entries |> Map.toList |> List.collect (fun (_, row) -> [ row.Operand ]))
           "Emission.Boundary.Entries.Import", (revision.Emission.Boundary.Entries |> Map.toList |> List.collect (fun (_, row) -> [ row.Import ]))
@@ -2289,10 +2315,8 @@ module IntegrityNamed =
           "Emission.Boundary.Entries.Transport", (revision.Emission.Boundary.Entries |> Map.toList |> List.collect (fun (_, row) -> (row.Transport |> Set.toList |> List.collect (fun v1 -> [ v1 ]))))
           "Emission.Boundary.Entries.Participants", (revision.Emission.Boundary.Entries |> Map.toList |> List.collect (fun (_, row) -> (row.Participants |> Set.toList |> List.collect (fun v1 -> [ v1 ]))))
           "Emission.Boundary.ByScope", (revision.Emission.Boundary.ByScope |> Map.toList |> List.collect (fun (key, _) -> [ key ]))
-          "Emission.Boundary.ByScope (values)", (revision.Emission.Boundary.ByScope |> Map.toList |> List.collect (fun (_, row) -> (row |> List.collect (fun v1 -> [ v1 ])))) ]
-
-    let private group20 (revision: Revision) : (string * NodeId list) list =
-        [ "Emission.Boundary.Calls", (revision.Emission.Boundary.Calls |> Map.toList |> List.collect (fun (key, _) -> [ key ]))
+          "Emission.Boundary.ByScope (values)", (revision.Emission.Boundary.ByScope |> Map.toList |> List.collect (fun (_, row) -> (row |> List.collect (fun v1 -> [ v1 ]))))
+          "Emission.Boundary.Calls", (revision.Emission.Boundary.Calls |> Map.toList |> List.collect (fun (key, _) -> [ key ]))
           "Emission.Boundary.Calls.Site", (revision.Emission.Boundary.Calls |> Map.toList |> List.collect (fun (_, row) -> [ row.Site ]))
           "Emission.Boundary.Calls.Import", (revision.Emission.Boundary.Calls |> Map.toList |> List.collect (fun (_, row) -> [ row.Import ]))
           "Emission.Boundary.Calls.Callee", (revision.Emission.Boundary.Calls |> Map.toList |> List.collect (fun (_, row) -> [ row.Callee ]))
@@ -2305,8 +2329,10 @@ module IntegrityNamed =
           "Emission.Boundary.Calls.Participants", (revision.Emission.Boundary.Calls |> Map.toList |> List.collect (fun (_, row) -> (row.Participants |> Set.toList |> List.collect (fun v1 -> [ v1 ]))))
           "Emission.Boundary.Calls.SourceTypes", (revision.Emission.Boundary.Calls |> Map.toList |> List.collect (fun (_, row) -> (row.SourceTypes |> Map.toList |> List.collect (fun (k1, h1) -> [ k1 ] @ []))))
           "Emission.Boundary.ByteViews", (revision.Emission.Boundary.ByteViews |> Map.toList |> List.collect (fun (key, _) -> [ key ]))
-          "Emission.Boundary.ByteViews.Site", (revision.Emission.Boundary.ByteViews |> Map.toList |> List.collect (fun (_, row) -> [ row.Site ]))
-          "Emission.Boundary.ByteViews.Source", (revision.Emission.Boundary.ByteViews |> Map.toList |> List.collect (fun (_, row) -> [ row.Source ]))
+          "Emission.Boundary.ByteViews.Site", (revision.Emission.Boundary.ByteViews |> Map.toList |> List.collect (fun (_, row) -> [ row.Site ])) ]
+
+    let private group21 (revision: Revision) : (string * NodeId list) list =
+        [ "Emission.Boundary.ByteViews.Source", (revision.Emission.Boundary.ByteViews |> Map.toList |> List.collect (fun (_, row) -> [ row.Source ]))
           "Emission.Boundary.ByteViews.ExtentSource", (revision.Emission.Boundary.ByteViews |> Map.toList |> List.collect (fun (_, row) -> [ row.ExtentSource ]))
           "Emission.Boundary.ByteViews.RepresentationDeclaration", (revision.Emission.Boundary.ByteViews |> Map.toList |> List.collect (fun (_, row) -> [ row.RepresentationDeclaration ]))
           "Emission.Boundary.ByteViews.StaticOrigins", (revision.Emission.Boundary.ByteViews |> Map.toList |> List.collect (fun (_, row) -> (row.StaticOrigins |> Map.toList |> List.collect (fun (k1, h1) -> [ k1 ] @ []))))
@@ -2315,10 +2341,8 @@ module IntegrityNamed =
           "Emission.Boundary.StringExtents.Site", (revision.Emission.Boundary.StringExtents |> Map.toList |> List.collect (fun (_, row) -> [ row.Site ]))
           "Emission.Boundary.StringExtents.Source", (revision.Emission.Boundary.StringExtents |> Map.toList |> List.collect (fun (_, row) -> [ row.Source ]))
           "Emission.Boundary.StringExtents.ExtentSource", (revision.Emission.Boundary.StringExtents |> Map.toList |> List.collect (fun (_, row) -> [ row.ExtentSource ]))
-          "Emission.Boundary.StringExtents.StaticOrigins", (revision.Emission.Boundary.StringExtents |> Map.toList |> List.collect (fun (_, row) -> (row.StaticOrigins |> Map.toList |> List.collect (fun (k1, h1) -> [ k1 ] @ [])))) ]
-
-    let private group21 (revision: Revision) : (string * NodeId list) list =
-        [ "Emission.Boundary.StringExtents.Participants", (revision.Emission.Boundary.StringExtents |> Map.toList |> List.collect (fun (_, row) -> (idsOfParticipantEvidence row.Participants)))
+          "Emission.Boundary.StringExtents.StaticOrigins", (revision.Emission.Boundary.StringExtents |> Map.toList |> List.collect (fun (_, row) -> (row.StaticOrigins |> Map.toList |> List.collect (fun (k1, h1) -> [ k1 ] @ []))))
+          "Emission.Boundary.StringExtents.Participants", (revision.Emission.Boundary.StringExtents |> Map.toList |> List.collect (fun (_, row) -> (idsOfParticipantEvidence row.Participants)))
           "Emission.Boundary.IntrinsicWriteImports", (revision.Emission.Boundary.IntrinsicWriteImports |> Map.toList |> List.collect (fun (key, _) -> [ key ]))
           "Emission.Boundary.IntrinsicWriteImports.Identity", (revision.Emission.Boundary.IntrinsicWriteImports |> Map.toList |> List.collect (fun (_, row) -> [ row.Identity ]))
           "Emission.Boundary.IntrinsicWriteImports.Scope", (revision.Emission.Boundary.IntrinsicWriteImports |> Map.toList |> List.collect (fun (_, row) -> [ row.Scope ]))
@@ -2331,8 +2355,10 @@ module IntegrityNamed =
           "Emission.Boundary.IntrinsicWriteImports.Surface", (revision.Emission.Boundary.IntrinsicWriteImports |> Map.toList |> List.collect (fun (_, row) -> [ row.Surface ]))
           "Emission.Boundary.IntrinsicWriteImports.Participants", (revision.Emission.Boundary.IntrinsicWriteImports |> Map.toList |> List.collect (fun (_, row) -> (row.Participants |> Set.toList |> List.collect (fun v1 -> [ v1 ]))))
           "Emission.Boundary.IntrinsicWrites", (revision.Emission.Boundary.IntrinsicWrites |> Map.toList |> List.collect (fun (key, _) -> [ key ]))
-          "Emission.Boundary.IntrinsicWrites.Site", (revision.Emission.Boundary.IntrinsicWrites |> Map.toList |> List.collect (fun (_, row) -> [ row.Site ]))
-          "Emission.Boundary.IntrinsicWrites.Import", (revision.Emission.Boundary.IntrinsicWrites |> Map.toList |> List.collect (fun (_, row) -> [ row.Import ]))
+          "Emission.Boundary.IntrinsicWrites.Site", (revision.Emission.Boundary.IntrinsicWrites |> Map.toList |> List.collect (fun (_, row) -> [ row.Site ])) ]
+
+    let private group22 (revision: Revision) : (string * NodeId list) list =
+        [ "Emission.Boundary.IntrinsicWrites.Import", (revision.Emission.Boundary.IntrinsicWrites |> Map.toList |> List.collect (fun (_, row) -> [ row.Import ]))
           "Emission.Boundary.IntrinsicWrites.Callee", (revision.Emission.Boundary.IntrinsicWrites |> Map.toList |> List.collect (fun (_, row) -> [ row.Callee ]))
           "Emission.Boundary.IntrinsicWrites.Fd", (revision.Emission.Boundary.IntrinsicWrites |> Map.toList |> List.collect (fun (_, row) -> [ row.Fd ]))
           "Emission.Boundary.IntrinsicWrites.Buffer", (revision.Emission.Boundary.IntrinsicWrites |> Map.toList |> List.collect (fun (_, row) -> [ row.Buffer ]))
@@ -2341,10 +2367,8 @@ module IntegrityNamed =
           "Emission.Boundary.IntrinsicWrites.CountAdaptation", (revision.Emission.Boundary.IntrinsicWrites |> Map.toList |> List.collect (fun (_, row) -> (row.CountAdaptation |> Option.toList |> List.collect (fun v1 -> (idsOfMeet v1)))))
           "Emission.Boundary.IntrinsicWrites.ResultAdaptation", (revision.Emission.Boundary.IntrinsicWrites |> Map.toList |> List.collect (fun (_, row) -> (row.ResultAdaptation |> Option.toList |> List.collect (fun v1 -> (idsOfMeet v1)))))
           "Emission.Boundary.IntrinsicWrites.Participants", (revision.Emission.Boundary.IntrinsicWrites |> Map.toList |> List.collect (fun (_, row) -> (row.Participants |> Set.toList |> List.collect (fun v1 -> [ v1 ]))))
-          "Emission.Boundary.IntrinsicWriteProofs", (revision.Emission.Boundary.IntrinsicWriteProofs |> Map.toList |> List.collect (fun (key, _) -> [ key ])) ]
-
-    let private group22 (revision: Revision) : (string * NodeId list) list =
-        [ "Emission.Boundary.IntrinsicWriteProofs (values)", (revision.Emission.Boundary.IntrinsicWriteProofs |> Map.toList |> List.collect (fun (_, row) -> (row |> List.collect (fun v1 -> (idsOfIntrinsicWriteProof v1)))))
+          "Emission.Boundary.IntrinsicWriteProofs", (revision.Emission.Boundary.IntrinsicWriteProofs |> Map.toList |> List.collect (fun (key, _) -> [ key ]))
+          "Emission.Boundary.IntrinsicWriteProofs (values)", (revision.Emission.Boundary.IntrinsicWriteProofs |> Map.toList |> List.collect (fun (_, row) -> (row |> List.collect (fun v1 -> (idsOfIntrinsicWriteProof v1)))))
           "Emission.Boundary.DeclarationLeaves", (revision.Emission.Boundary.DeclarationLeaves |> Set.toList |> List.collect (fun v0 -> [ v0 ]))
           "Emission.Boundary.DeclarationOnly", (revision.Emission.Boundary.DeclarationOnly |> Set.toList |> List.collect (fun v0 -> [ v0 ]))
           "Emission.Boundary.ResultHypotheses.Quote", (revision.Emission.Boundary.ResultHypotheses |> List.collect (fun row -> [ row.Quote ]))
@@ -2357,8 +2381,10 @@ module IntegrityNamed =
           "Emission.Boundary.CallbackInvocations.Signature", (revision.Emission.Boundary.CallbackInvocations |> Map.toList |> List.collect (fun (_, row) -> (idsOfNativeEntrySignature row.Signature)))
           "Emission.Boundary.CallbackInvocations.Extent", (revision.Emission.Boundary.CallbackInvocations |> Map.toList |> List.collect (fun (_, row) -> (idsOfBoundaryCallbackExtent row.Extent)))
           "Emission.Boundary.CallbackInvocations.Participants", (revision.Emission.Boundary.CallbackInvocations |> Map.toList |> List.collect (fun (_, row) -> (row.Participants |> Set.toList |> List.collect (fun v1 -> [ v1 ]))))
-          "Emission.Boundary.ClosedEntries", (revision.Emission.Boundary.ClosedEntries |> Map.toList |> List.collect (fun (key, _) -> [ key ]))
-          "Emission.Boundary.ClosedEntries.Formation", (revision.Emission.Boundary.ClosedEntries |> Map.toList |> List.collect (fun (_, row) -> [ row.Formation ]))
+          "Emission.Boundary.ClosedEntries", (revision.Emission.Boundary.ClosedEntries |> Map.toList |> List.collect (fun (key, _) -> [ key ])) ]
+
+    let private group23 (revision: Revision) : (string * NodeId list) list =
+        [ "Emission.Boundary.ClosedEntries.Formation", (revision.Emission.Boundary.ClosedEntries |> Map.toList |> List.collect (fun (_, row) -> [ row.Formation ]))
           "Emission.Boundary.ClosedEntries.Operand", (revision.Emission.Boundary.ClosedEntries |> Map.toList |> List.collect (fun (_, row) -> [ row.Operand ]))
           "Emission.Boundary.ClosedEntries.Declaration", (revision.Emission.Boundary.ClosedEntries |> Map.toList |> List.collect (fun (_, row) -> [ row.Declaration ]))
           "Emission.Boundary.ClosedEntries.Implementation", (revision.Emission.Boundary.ClosedEntries |> Map.toList |> List.collect (fun (_, row) -> [ row.Implementation ]))
@@ -2367,10 +2393,8 @@ module IntegrityNamed =
           "Emission.Boundary.ClosedEntries.Lifetime", (revision.Emission.Boundary.ClosedEntries |> Map.toList |> List.collect (fun (_, row) -> (idsOfProgramImageCodeLifetime row.Lifetime)))
           "Emission.Boundary.ClosedEntries.Invocation", (revision.Emission.Boundary.ClosedEntries |> Map.toList |> List.collect (fun (_, row) -> [ row.Invocation ]))
           "Emission.Boundary.ClosedEntries.ParameterAdaptations", (revision.Emission.Boundary.ClosedEntries |> Map.toList |> List.collect (fun (_, row) -> (row.ParameterAdaptations |> List.collect (fun v1 -> (v1 |> Option.toList |> List.collect (fun v2 -> (idsOfMeet v2)))))))
-          "Emission.Boundary.ClosedEntries.ResultAdaptation", (revision.Emission.Boundary.ClosedEntries |> Map.toList |> List.collect (fun (_, row) -> (row.ResultAdaptation |> Option.toList |> List.collect (fun v1 -> (idsOfMeet v1))))) ]
-
-    let private group23 (revision: Revision) : (string * NodeId list) list =
-        [ "Emission.Boundary.ClosedEntries.Registrations", (revision.Emission.Boundary.ClosedEntries |> Map.toList |> List.collect (fun (_, row) -> (row.Registrations |> Map.toList |> List.collect (fun (k1, h1) -> (let (t2_0, t2_1, t2_2) = k1 in [ t2_0 ] @ (t2_2 |> List.collect (fun v3 -> [ v3 ]))) @ (idsOfBoundaryCallbackRegistration h1)))))
+          "Emission.Boundary.ClosedEntries.ResultAdaptation", (revision.Emission.Boundary.ClosedEntries |> Map.toList |> List.collect (fun (_, row) -> (row.ResultAdaptation |> Option.toList |> List.collect (fun v1 -> (idsOfMeet v1)))))
+          "Emission.Boundary.ClosedEntries.Registrations", (revision.Emission.Boundary.ClosedEntries |> Map.toList |> List.collect (fun (_, row) -> (row.Registrations |> Map.toList |> List.collect (fun (k1, h1) -> (let (t2_0, t2_1, t2_2) = k1 in [ t2_0 ] @ (t2_2 |> List.collect (fun v3 -> [ v3 ]))) @ (idsOfBoundaryCallbackRegistration h1)))))
           "Emission.Boundary.ClosedEntries.Transport", (revision.Emission.Boundary.ClosedEntries |> Map.toList |> List.collect (fun (_, row) -> (row.Transport |> Set.toList |> List.collect (fun v1 -> [ v1 ]))))
           "Emission.Boundary.ClosedEntries.Participants", (revision.Emission.Boundary.ClosedEntries |> Map.toList |> List.collect (fun (_, row) -> (row.Participants |> Set.toList |> List.collect (fun v1 -> [ v1 ]))))
           "Emission.Numeric.Values", (revision.Emission.Numeric.Values |> Map.toList |> List.collect (fun (key, _) -> [ key ]))
@@ -2383,8 +2407,10 @@ module IntegrityNamed =
           "Emission.Numeric.Operations.Callee", (revision.Emission.Numeric.Operations |> Map.toList |> List.collect (fun (_, row) -> [ row.Callee ]))
           "Emission.Numeric.Operations.Operands", (revision.Emission.Numeric.Operations |> Map.toList |> List.collect (fun (_, row) -> (row.Operands |> List.collect (fun v1 -> (idsOfNumericOperationOperand v1)))))
           "Emission.Numeric.Operations.Declaration", (revision.Emission.Numeric.Operations |> Map.toList |> List.collect (fun (_, row) -> (row.Declaration |> Option.toList |> List.collect (fun v1 -> [ v1 ]))))
-          "Emission.Numeric.Operations.Result", (revision.Emission.Numeric.Operations |> Map.toList |> List.collect (fun (_, row) -> (idsOfScalarCarrier row.Result)))
-          "Emission.Numeric.Operations.ResultAdaptation", (revision.Emission.Numeric.Operations |> Map.toList |> List.collect (fun (_, row) -> (row.ResultAdaptation |> Option.toList |> List.collect (fun v1 -> (idsOfMeet v1)))))
+          "Emission.Numeric.Operations.Result", (revision.Emission.Numeric.Operations |> Map.toList |> List.collect (fun (_, row) -> (idsOfScalarCarrier row.Result))) ]
+
+    let private group24 (revision: Revision) : (string * NodeId list) list =
+        [ "Emission.Numeric.Operations.ResultAdaptation", (revision.Emission.Numeric.Operations |> Map.toList |> List.collect (fun (_, row) -> (row.ResultAdaptation |> Option.toList |> List.collect (fun v1 -> (idsOfMeet v1)))))
           "Emission.Numeric.Operations.Obligations", (revision.Emission.Numeric.Operations |> Map.toList |> List.collect (fun (_, row) -> (row.Obligations |> List.collect (fun v1 -> [ v1 ]))))
           "Emission.Numeric.Operations.Participants", (revision.Emission.Numeric.Operations |> Map.toList |> List.collect (fun (_, row) -> (row.Participants |> Set.toList |> List.collect (fun v1 -> [ v1 ]))))
           "Emission.Numeric.OperationRequired", (revision.Emission.Numeric.OperationRequired |> Set.toList |> List.collect (fun v0 -> [ v0 ]))
@@ -2393,10 +2419,8 @@ module IntegrityNamed =
           "Emission.Numeric.IndexTransports.Operand", (revision.Emission.Numeric.IndexTransports |> Map.toList |> List.collect (fun (_, row) -> [ row.Operand ]))
           "Emission.Numeric.IndexTransports.Carrier", (revision.Emission.Numeric.IndexTransports |> Map.toList |> List.collect (fun (_, row) -> (idsOfScalarCarrier row.Carrier)))
           "Emission.Numeric.IndexTransports.PointerDeclaration", (revision.Emission.Numeric.IndexTransports |> Map.toList |> List.collect (fun (_, row) -> [ row.PointerDeclaration ]))
-          "Emission.Numeric.IndexTransports.Obligation", (revision.Emission.Numeric.IndexTransports |> Map.toList |> List.collect (fun (_, row) -> [ row.Obligation ])) ]
-
-    let private group24 (revision: Revision) : (string * NodeId list) list =
-        [ "Emission.Numeric.IndexTransports.Participants", (revision.Emission.Numeric.IndexTransports |> Map.toList |> List.collect (fun (_, row) -> (row.Participants |> Set.toList |> List.collect (fun v1 -> [ v1 ]))))
+          "Emission.Numeric.IndexTransports.Obligation", (revision.Emission.Numeric.IndexTransports |> Map.toList |> List.collect (fun (_, row) -> [ row.Obligation ]))
+          "Emission.Numeric.IndexTransports.Participants", (revision.Emission.Numeric.IndexTransports |> Map.toList |> List.collect (fun (_, row) -> (row.Participants |> Set.toList |> List.collect (fun v1 -> [ v1 ]))))
           "Emission.Numeric.Required", (revision.Emission.Numeric.Required |> Set.toList |> List.collect (fun v0 -> [ v0 ]))
           "Emission.Numeric.ResultSites", (revision.Emission.Numeric.ResultSites |> Set.toList |> List.collect (fun v0 -> [ v0 ]))
           "Emission.Numeric.Unresolved", (revision.Emission.Numeric.Unresolved |> Map.toList |> List.collect (fun (key, _) -> [ key ]))
@@ -2409,8 +2433,10 @@ module IntegrityNamed =
           "Emission.Numeric.ForeignResultUses.Participants", (revision.Emission.Numeric.ForeignResultUses |> List.collect (fun row -> (idsOfParticipantEvidence row.Participants)))
           "Emission.Numeric.ForeignResultUses.Claims", (revision.Emission.Numeric.ForeignResultUses |> List.collect (fun row -> (row.Claims |> List.collect (fun v1 -> (let (t2_0, t2_1) = v1 in [ t2_1 ])))))
           "Emission.Memory.Operations", (revision.Emission.Memory.Operations |> Map.toList |> List.collect (fun (key, _) -> [ key ]))
-          "Emission.Memory.Operations (values)", (revision.Emission.Memory.Operations |> Map.toList |> List.collect (fun (_, row) -> (idsOfMemoryWitnessOperation row)))
-          "Emission.Memory.ArrayCopies", (revision.Emission.Memory.ArrayCopies |> Map.toList |> List.collect (fun (key, _) -> [ key ]))
+          "Emission.Memory.Operations (values)", (revision.Emission.Memory.Operations |> Map.toList |> List.collect (fun (_, row) -> (idsOfMemoryWitnessOperation row))) ]
+
+    let private group25 (revision: Revision) : (string * NodeId list) list =
+        [ "Emission.Memory.ArrayCopies", (revision.Emission.Memory.ArrayCopies |> Map.toList |> List.collect (fun (key, _) -> [ key ]))
           "Emission.Memory.ArrayCopies.Site", (revision.Emission.Memory.ArrayCopies |> Map.toList |> List.collect (fun (_, row) -> [ row.Site ]))
           "Emission.Memory.ArrayCopies.Source", (revision.Emission.Memory.ArrayCopies |> Map.toList |> List.collect (fun (_, row) -> [ row.Source ]))
           "Emission.Memory.ArrayCopies.SourceOffset", (revision.Emission.Memory.ArrayCopies |> Map.toList |> List.collect (fun (_, row) -> [ row.SourceOffset ]))
@@ -2419,10 +2445,8 @@ module IntegrityNamed =
           "Emission.Memory.ArrayCopies.Count", (revision.Emission.Memory.ArrayCopies |> Map.toList |> List.collect (fun (_, row) -> [ row.Count ]))
           "Emission.Memory.ArrayCopies.CountCarrier", (revision.Emission.Memory.ArrayCopies |> Map.toList |> List.collect (fun (_, row) -> (idsOfScalarCarrier row.CountCarrier)))
           "Emission.Memory.ArrayCopies.CountOperand", (revision.Emission.Memory.ArrayCopies |> Map.toList |> List.collect (fun (_, row) -> (idsOfArrayBoundOperand row.CountOperand)))
-          "Emission.Memory.ArrayCopies.Allocation", (revision.Emission.Memory.ArrayCopies |> Map.toList |> List.collect (fun (_, row) -> (row.Allocation |> Option.toList |> List.collect (fun v1 -> [ v1 ])))) ]
-
-    let private group25 (revision: Revision) : (string * NodeId list) list =
-        [ "Emission.Memory.ArrayCopies.Loop", (revision.Emission.Memory.ArrayCopies |> Map.toList |> List.collect (fun (_, row) -> (row.Loop |> Option.toList |> List.collect (fun v1 -> [ v1 ]))))
+          "Emission.Memory.ArrayCopies.Allocation", (revision.Emission.Memory.ArrayCopies |> Map.toList |> List.collect (fun (_, row) -> (row.Allocation |> Option.toList |> List.collect (fun v1 -> [ v1 ]))))
+          "Emission.Memory.ArrayCopies.Loop", (revision.Emission.Memory.ArrayCopies |> Map.toList |> List.collect (fun (_, row) -> (row.Loop |> Option.toList |> List.collect (fun v1 -> [ v1 ]))))
           "Emission.Memory.ArrayCopies.Read", (revision.Emission.Memory.ArrayCopies |> Map.toList |> List.collect (fun (_, row) -> (row.Read |> Option.toList |> List.collect (fun v1 -> (idsOfMemoryArrayAccessWitness v1)))))
           "Emission.Memory.ArrayCopies.Write", (revision.Emission.Memory.ArrayCopies |> Map.toList |> List.collect (fun (_, row) -> (row.Write |> Option.toList |> List.collect (fun v1 -> (idsOfMemoryArrayAccessWitness v1)))))
           "Emission.Memory.ArrayCopies.Requirements", (revision.Emission.Memory.ArrayCopies |> Map.toList |> List.collect (fun (_, row) -> (row.Requirements |> List.collect (fun v1 -> (idsOfRequirementWitness v1)))))
@@ -2435,8 +2459,10 @@ module IntegrityNamed =
           "Emission.Spatial.Hardware.StepBinding", (revision.Emission.Spatial.Hardware |> Map.toList |> List.collect (fun (_, row) -> [ row.StepBinding ]))
           "Emission.Spatial.Hardware.Implementation", (revision.Emission.Spatial.Hardware |> Map.toList |> List.collect (fun (_, row) -> [ row.Implementation ]))
           "Emission.Spatial.Hardware.Parameters", (revision.Emission.Spatial.Hardware |> Map.toList |> List.collect (fun (_, row) -> (row.Parameters |> List.collect (fun v1 -> (let (t2_0, t2_1) = v1 in [ t2_1 ])))))
-          "Emission.Spatial.Hardware.Result", (revision.Emission.Spatial.Hardware |> Map.toList |> List.collect (fun (_, row) -> [ row.Result ]))
-          "Emission.Spatial.Hardware.StateRepresentation", (revision.Emission.Spatial.Hardware |> Map.toList |> List.collect (fun (_, row) -> (idsOfValueRepresentation row.StateRepresentation)))
+          "Emission.Spatial.Hardware.Result", (revision.Emission.Spatial.Hardware |> Map.toList |> List.collect (fun (_, row) -> [ row.Result ])) ]
+
+    let private group26 (revision: Revision) : (string * NodeId list) list =
+        [ "Emission.Spatial.Hardware.StateRepresentation", (revision.Emission.Spatial.Hardware |> Map.toList |> List.collect (fun (_, row) -> (idsOfValueRepresentation row.StateRepresentation)))
           "Emission.Spatial.Hardware.InputRepresentation", (revision.Emission.Spatial.Hardware |> Map.toList |> List.collect (fun (_, row) -> (row.InputRepresentation |> Option.toList |> List.collect (fun v1 -> (idsOfValueRepresentation v1)))))
           "Emission.Spatial.Hardware.ResultRepresentation", (revision.Emission.Spatial.Hardware |> Map.toList |> List.collect (fun (_, row) -> (idsOfValueRepresentation row.ResultRepresentation)))
           "Emission.Spatial.Hardware.InputPorts", (revision.Emission.Spatial.Hardware |> Map.toList |> List.collect (fun (_, row) -> (row.InputPorts |> List.collect (fun v1 -> (idsOfHardwarePortWitness v1)))))
@@ -2445,10 +2471,8 @@ module IntegrityNamed =
           "Emission.Spatial.Hardware.ClockReference", (revision.Emission.Spatial.Hardware |> Map.toList |> List.collect (fun (_, row) -> [ row.ClockReference ]))
           "Emission.Spatial.Hardware.ClockDeclaration", (revision.Emission.Spatial.Hardware |> Map.toList |> List.collect (fun (_, row) -> [ row.ClockDeclaration ]))
           "Emission.Spatial.Hardware.ResetDeclaration", (revision.Emission.Spatial.Hardware |> Map.toList |> List.collect (fun (_, row) -> [ row.ResetDeclaration ]))
-          "Emission.Spatial.Hardware.ClockPath", (revision.Emission.Spatial.Hardware |> Map.toList |> List.collect (fun (_, row) -> (row.ClockPath |> Set.toList |> List.collect (fun v1 -> [ v1 ])))) ]
-
-    let private group26 (revision: Revision) : (string * NodeId list) list =
-        [ "Emission.Spatial.Hardware.MetadataOnly", (revision.Emission.Spatial.Hardware |> Map.toList |> List.collect (fun (_, row) -> (row.MetadataOnly |> Set.toList |> List.collect (fun v1 -> [ v1 ]))))
+          "Emission.Spatial.Hardware.ClockPath", (revision.Emission.Spatial.Hardware |> Map.toList |> List.collect (fun (_, row) -> (row.ClockPath |> Set.toList |> List.collect (fun v1 -> [ v1 ]))))
+          "Emission.Spatial.Hardware.MetadataOnly", (revision.Emission.Spatial.Hardware |> Map.toList |> List.collect (fun (_, row) -> (row.MetadataOnly |> Set.toList |> List.collect (fun v1 -> [ v1 ]))))
           "Emission.Spatial.Hardware.Participants", (revision.Emission.Spatial.Hardware |> Map.toList |> List.collect (fun (_, row) -> (row.Participants |> Set.toList |> List.collect (fun v1 -> [ v1 ]))))
           "Emission.Spatial.Hardware.Obligations", (revision.Emission.Spatial.Hardware |> Map.toList |> List.collect (fun (_, row) -> (row.Obligations |> List.collect (fun v1 -> [ v1 ]))))
           "Emission.Spatial.Kernels", (revision.Emission.Spatial.Kernels |> Map.toList |> List.collect (fun (key, _) -> [ key ]))
@@ -2461,8 +2485,10 @@ module IntegrityNamed =
           "Emission.Spatial.Kernels.Steps", (revision.Emission.Spatial.Kernels |> Map.toList |> List.collect (fun (_, row) -> (row.Steps |> List.collect (fun v1 -> (idsOfKernelScalarStep v1)))))
           "Emission.Spatial.Kernels.Ingress", (revision.Emission.Spatial.Kernels |> Map.toList |> List.collect (fun (_, row) -> (idsOfKernelIngress row.Ingress)))
           "Emission.Spatial.Kernels.ElementsSite", (revision.Emission.Spatial.Kernels |> Map.toList |> List.collect (fun (_, row) -> [ row.ElementsSite ]))
-          "Emission.Spatial.Kernels.GrainSite", (revision.Emission.Spatial.Kernels |> Map.toList |> List.collect (fun (_, row) -> [ row.GrainSite ]))
-          "Emission.Spatial.Kernels.Target", (revision.Emission.Spatial.Kernels |> Map.toList |> List.collect (fun (_, row) -> (idsOfKernelTargetPlan row.Target)))
+          "Emission.Spatial.Kernels.GrainSite", (revision.Emission.Spatial.Kernels |> Map.toList |> List.collect (fun (_, row) -> [ row.GrainSite ])) ]
+
+    let private group27 (revision: Revision) : (string * NodeId list) list =
+        [ "Emission.Spatial.Kernels.Target", (revision.Emission.Spatial.Kernels |> Map.toList |> List.collect (fun (_, row) -> (idsOfKernelTargetPlan row.Target)))
           "Emission.Spatial.Kernels.MetadataOnly", (revision.Emission.Spatial.Kernels |> Map.toList |> List.collect (fun (_, row) -> (row.MetadataOnly |> Set.toList |> List.collect (fun v1 -> [ v1 ]))))
           "Emission.Spatial.Kernels.Participants", (revision.Emission.Spatial.Kernels |> Map.toList |> List.collect (fun (_, row) -> (row.Participants |> Set.toList |> List.collect (fun v1 -> [ v1 ]))))
           "Emission.Spatial.Kernels.Obligations", (revision.Emission.Spatial.Kernels |> Map.toList |> List.collect (fun (_, row) -> (row.Obligations |> List.collect (fun v1 -> [ v1 ]))))
@@ -2471,10 +2497,8 @@ module IntegrityNamed =
           "Emission.Spatial.ByScope", (revision.Emission.Spatial.ByScope |> Map.toList |> List.collect (fun (key, _) -> [ key ]))
           "Emission.Spatial.ByScope (values)", (revision.Emission.Spatial.ByScope |> Map.toList |> List.collect (fun (_, row) -> (row |> List.collect (fun v1 -> [ v1 ]))))
           "Emission.Spatial.CodeRoots", (revision.Emission.Spatial.CodeRoots |> Set.toList |> List.collect (fun v0 -> [ v0 ]))
-          "Foreign.BorrowedViews", (revision.Foreign.BorrowedViews |> Map.toList |> List.collect (fun (key, _) -> [ key ])) ]
-
-    let private group27 (revision: Revision) : (string * NodeId list) list =
-        [ "Foreign.BorrowedViews.Site", (revision.Foreign.BorrowedViews |> Map.toList |> List.collect (fun (_, row) -> [ row.Site ]))
+          "Foreign.BorrowedViews", (revision.Foreign.BorrowedViews |> Map.toList |> List.collect (fun (key, _) -> [ key ]))
+          "Foreign.BorrowedViews.Site", (revision.Foreign.BorrowedViews |> Map.toList |> List.collect (fun (_, row) -> [ row.Site ]))
           "Foreign.BorrowedViews.View", (revision.Foreign.BorrowedViews |> Map.toList |> List.collect (fun (_, row) -> [ row.View ]))
           "Foreign.BorrowedViews.Arguments", (revision.Foreign.BorrowedViews |> Map.toList |> List.collect (fun (_, row) -> (row.Arguments |> List.collect (fun v1 -> [ v1 ]))))
           "Foreign.Mmio", (revision.Foreign.Mmio |> Map.toList |> List.collect (fun (key, _) -> [ key ]))
@@ -2487,8 +2511,10 @@ module IntegrityNamed =
           "Demand.Relations (values)", (revision.Demand.Relations |> Map.toList |> List.collect (fun (_, row) -> (row |> List.collect (fun v1 -> (idsOfEagerDemandRelation v1)))))
           "Obligations.Body.SnapshotBorrowBound", (revision.Obligations |> List.collect (fun row -> (match row.Body with Fidelity.PSG.ObligationBody.SnapshotBorrowBound(a0, a1, a2, a3, a4, a5) -> [ a0 ] @ [ a1 ] @ [ a2 ] @ [ a3 ] | _ -> [])))
           "Obligations.Body.ForeignResultCoverage", (revision.Obligations |> List.collect (fun row -> (match row.Body with Fidelity.PSG.ObligationBody.ForeignResultCoverage(a0) -> (idsOfForeignResultCoverageModel a0) | _ -> [])))
-          "Obligations.Body.ResourceConversion", (revision.Obligations |> List.collect (fun row -> (match row.Body with Fidelity.PSG.ObligationBody.ResourceConversion(a0) -> (idsOfResourceConversionModel a0) | _ -> [])))
-          "Obligations.Body.ResourceCleanup", (revision.Obligations |> List.collect (fun row -> (match row.Body with Fidelity.PSG.ObligationBody.ResourceCleanup(a0) -> (idsOfResourceCleanupModel a0) | _ -> [])))
+          "Obligations.Body.ResourceConversion", (revision.Obligations |> List.collect (fun row -> (match row.Body with Fidelity.PSG.ObligationBody.ResourceConversion(a0) -> (idsOfResourceConversionModel a0) | _ -> []))) ]
+
+    let private group28 (revision: Revision) : (string * NodeId list) list =
+        [ "Obligations.Body.ResourceCleanup", (revision.Obligations |> List.collect (fun row -> (match row.Body with Fidelity.PSG.ObligationBody.ResourceCleanup(a0) -> (idsOfResourceCleanupModel a0) | _ -> [])))
           "CurrentClaims", (revision.CurrentClaims |> Map.toList |> List.collect (fun (key, _) -> [ key ]))
           "CurrentClaims.Body.SnapshotBorrowBound", (revision.CurrentClaims |> Map.toList |> List.collect (fun (_, row) -> (match row.Body with Fidelity.PSG.ObligationBody.SnapshotBorrowBound(a0, a1, a2, a3, a4, a5) -> [ a0 ] @ [ a1 ] @ [ a2 ] @ [ a3 ] | _ -> [])))
           "CurrentClaims.Body.ForeignResultCoverage", (revision.CurrentClaims |> Map.toList |> List.collect (fun (_, row) -> (match row.Body with Fidelity.PSG.ObligationBody.ForeignResultCoverage(a0) -> (idsOfForeignResultCoverageModel a0) | _ -> [])))
@@ -2527,8 +2553,9 @@ module IntegrityNamed =
               group24 revision
               group25 revision
               group26 revision
-              group27 revision ]
+              group27 revision
+              group28 revision ]
 
     /// The number of parts listed. The build compares it with the contract.
     [<Literal>]
-    let Parts = 670
+    let Parts = 680

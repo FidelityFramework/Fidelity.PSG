@@ -218,6 +218,7 @@ type BoundaryDomain = {
     Platform: BoundaryPlatformPremise option
     Meets: Map<NodeId, Meet list>
     Declarations: BoundaryDeclaration list
+    WritableBufferDeclarations: NodeId list
     ResourceDeclarations: NodeId list
     ResourceAccesses: NodeId list
     ResourceEvaluationRoots: (NodeId * NodeId * NodeId) list
@@ -291,6 +292,7 @@ type EdgeRole =
     | BoundaryDeclaration of BoundaryDeclaration
     | BoundaryDomain of BoundaryDomain
     | BoundaryResourceDeclaration of BoundaryResourceDeclaration
+    | BoundaryWritableBufferDeclaration of BoundaryWritableBufferDeclaration
     | BoundaryResourceAccess of BoundaryResourceAccess
     | BoundaryImport of BoundaryImport
     | BoundaryCall of BoundaryCall

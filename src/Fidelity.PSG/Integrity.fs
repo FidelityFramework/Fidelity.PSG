@@ -1157,13 +1157,16 @@ module Integrity =
                     | _ -> Some(child,value))
             | _ -> None)
 
-    let private resourceContext (revision: Revision) (row: BoundaryResourceDeclaration) declaration =
-        row.DeclarationFacts.TryFind declaration |> Option.bind(fun binding ->
+    let private boundaryContext (revision: Revision) (facts: Map<NodeId,BoundaryDeclarationFact>) declaration =
+        facts.TryFind declaration |> Option.bind(fun binding ->
             if binding.Form<>"binding" || binding.Numbers<>[0I;0I] then None else
             binding.Parent |> Option.bind(fun scope ->
                 revision.SourceReadings.ContextHeaders.TryFind scope |> Option.filter(fun header ->
                     header.Identity=scope && header.Ports.ContainsKey OccurrencePort.ModuleDeclaration)
                 |> Option.map(fun header -> scope,header)))
+
+    let private resourceContext revision (row: BoundaryResourceDeclaration) declaration =
+        boundaryContext revision row.DeclarationFacts declaration
 
     /// Boundary references resolve inside their owning imported declaration.
     /// Import membership is not executable residency or general ID authority.
@@ -1328,6 +1331,77 @@ module Integrity =
                   yield defect "Emission.Boundary.ResourceDeclarations.Signature" key "The resource declaration lost its exact nullable-handle/raw-pointer acquisition or unary matching raw-Void release."
               if not supportedFacts || required |> List.exists (facts.ContainsKey >> not) || row.Participants <> (facts.Keys |> Set.ofSeq) then
                   yield defect "Emission.Boundary.ResourceDeclarations.Participants" key "The resource declaration has missing or unrelated source support." ]
+
+        let writableDeclaration (key: NodeId) (row: BoundaryWritableBufferDeclaration) =
+            let facts=row.DeclarationFacts
+            let field name id=boundaryRecordFields facts id |> Option.bind(Map.tryFind name)
+            let text id=facts.TryFind id |> Option.bind(fun fact ->
+                if fact.Form="string" && fact.References.IsEmpty && fact.Children.IsEmpty then List.tryExactlyOne fact.Text else None)
+            let number id=facts.TryFind id |> Option.bind(fun fact ->
+                if fact.Form="integer" && fact.References.IsEmpty && fact.Children.IsEmpty then List.tryExactlyOne fact.Numbers else None)
+            let case name id=facts.TryFind id |> Option.bind(fun fact ->
+                if (fact.Form="case" || fact.Form="settled-case") && fact.Text=[name] && fact.References=fact.Children then Some fact.References else None)
+            let integer id=case "Integer" id |> Option.bind List.tryExactlyOne |> Option.bind facts.TryFind |> Option.bind(fun pair ->
+                match pair.Form,pair.References with
+                | "tuple",[sign;bits] when pair.Children=pair.References ->
+                    number bits |> Option.bind(fun bits ->
+                        if bits<=0I then None
+                        elif case "Unsigned" sign=Some [] then Some(false,bits)
+                        elif case "Signed" sign=Some [] then Some(true,bits) else None)
+                | _ -> None)
+            let integerType = function
+                | TypeIdentity.Numeric(CarrierIdentity.Constructor {NativeKind=Some(NTUKind.NTUint _ | NTUKind.NTUuint _)},_)
+                | TypeIdentity.Application({NativeKind=Some(NTUKind.NTUint _ | NTUKind.NTUuint _)},_) -> true
+                | _ -> false
+            let own name=boundaryQuotedRecordFields facts row.Identity |> Option.bind(Map.tryFind name)
+            let hypothesis=own "Hypothesis"
+            let contract=key=row.Identity && (boundaryQuoteBinding facts row.Identity |> Option.isSome) &&
+                         row.Contract.Parameter=row.Parameter && row.Contract.CountParameter=row.CountParameter &&
+                         own "Binding" |> Option.bind text = Some row.Contract.Binding &&
+                         own "Parameter" |> Option.bind number = Some(bigint row.Parameter) &&
+                         own "CountParameter" |> Option.bind number = Some(bigint row.CountParameter) &&
+                         hypothesis |> Option.exists(fun hypothesis ->
+                            ["Identity",row.Contract.Hypothesis.Identity;"Version",row.Contract.Hypothesis.Version;"Source",row.Contract.Hypothesis.Source]
+                            |> List.forall(fun(name,value)->not(System.String.IsNullOrWhiteSpace value) && field name hypothesis |> Option.bind text=Some value))
+            let context=boundaryContext revision facts row.Declaration
+            let contextMatches=context |> Option.exists(fun(_,header)->facts.TryFind row.Declaration |> Option.exists(fun declaration ->
+                declaration.Text |> List.tryHead |> Option.exists(fun name -> row.Contract.Binding=header.Name+"."+name)))
+            let prototype= facts.TryFind row.Descriptor |> Option.bind(fun descriptor -> descriptor.Parent) |> Option.bind(fun quote ->
+                boundaryQuoteBinding facts quote |> Option.filter(fun(_,owner)->
+                    boundaryQuotedRecordFields facts quote |> Option.isSome &&
+                    facts.TryFind row.Declaration |> Option.exists(fun declaration ->
+                        declaration.Text |> List.tryHead |> Option.exists(fun name -> owner.Text=[name+"Descriptor"] && owner.Parent=declaration.Parent))))
+            let incidence=boundaryBindingValue facts row.Declaration |> Option.exists(fun(implementation,lambda)->
+                lambda.Form="lambda" && lambda.References=row.Formals@[row.Body] && lambda.Children=lambda.References &&
+                lambda.Numbers=[bigint row.Formals.Length;0I;0I] && lambda.Text.Length=row.Formals.Length+1 &&
+                lambda.References |> List.forall(fun child -> facts.TryFind child |> Option.exists(fun fact -> fact.Parent=Some implementation)))
+            let ordinals=row.Parameter>=0 && row.CountParameter>=0 && row.Parameter<>row.CountParameter &&
+                         (List.distinct row.Formals).Length=row.Formals.Length &&
+                         List.tryItem row.Parameter row.Formals=Some row.BufferFormal && List.tryItem row.CountParameter row.Formals=Some row.CountFormal
+            let parameters=field "Parameters" row.Descriptor |> Option.bind facts.TryFind |> Option.bind(fun fact ->
+                if fact.Form="array" && fact.References=fact.Children && fact.References.Length=row.Formals.Length then Some fact.References else None)
+            let parameter ordinal=parameters |> Option.bind(List.tryItem ordinal)
+            let byteReference=parameter row.Parameter |> Option.exists(fun parameter ->
+                field "Type" parameter |> Option.bind integer=Some(false,8I) && field "PassBy" parameter |> Option.bind(case "Reference")=Some [])
+            let countValue=parameter row.CountParameter |> Option.exists(fun parameter ->
+                field "Type" parameter |> Option.bind integer |> Option.isSome && field "PassBy" parameter |> Option.bind(case "Value")=Some [])
+            let array=facts.TryFind row.BufferFormal |> Option.exists(fun fact ->
+                match fact.SourceType with
+                | TypeIdentity.Application(constructor,[element]) when constructor.Declaration.Name="array" || constructor.Declaration.Name="Array" -> integerType element
+                | _ -> false)
+            let scalar=facts.TryFind row.CountFormal |> Option.exists(fun fact -> integerType fact.SourceType)
+            let contextIds=context |> Option.map fst |> Option.toList |> Set.ofList
+            let support=facts |> Map.forall(fun _ fact ->
+                (fact.References@fact.Children |> List.forall facts.ContainsKey) &&
+                (fact.Parent |> Option.forall(fun parent -> facts.ContainsKey parent || contextIds.Contains parent)))
+            [ if not contract then yield defect "Emission.Boundary.WritableBufferDeclarations.Contract" key "The writable buffer declaration differs from its immutable quotation or versioned hypothesis."
+              if not contextMatches || prototype.IsNone then yield defect "Emission.Boundary.WritableBufferDeclarations.Declaration" key "The writable buffer descriptor differs from its exact qualified extern and sibling FunctionDescriptor."
+              if not incidence || not ordinals then yield defect "Emission.Boundary.WritableBufferDeclarations.Ordinals" key "The writable buffer/count native ordinals differ from the complete original formal vector."
+              if not(byteReference && array) then yield defect "Emission.Boundary.WritableBufferDeclarations.Element" key "The writable buffer requires its explicit unsigned-8 Reference element contract and exact integer-array formal."
+              if not(countValue && scalar) then yield defect "Emission.Boundary.WritableBufferDeclarations.Count" key "The writable byte count requires its exact by-value integer formal."
+              if not support || row.Participants<>(facts.Keys |> Set.ofSeq) ||
+                 row.Identity::row.Declaration::row.Body::row.Descriptor::row.Formals |> List.exists(facts.ContainsKey >> not) then
+                  yield defect "Emission.Boundary.WritableBufferDeclarations.Participants" key "The writable buffer declaration lost its exact immutable source support." ]
 
         // Passive replay of resource evidence. A well-formed claim may still
         // be refuted; this reader checks its source correspondence, not safety.
@@ -1522,6 +1596,10 @@ module Integrity =
                     yield defect "Emission.Boundary.ResourceAccesses.Incidence" key "The resource access differs from its exact source case, payload or immutable alias incidence."
             for KeyValue(key, resource) in boundary.ResourceDeclarations do
                 yield! resourceDeclaration key resource
+            for KeyValue(key, writable) in boundary.WritableBufferDeclarations do
+                yield! writableDeclaration key writable
+                if boundary.WritableBufferDeclarations.Values |> Seq.filter(fun row -> row.Declaration=writable.Declaration && row.Parameter=writable.Parameter) |> Seq.length <> 1 then
+                    yield defect "Emission.Boundary.WritableBufferDeclarations.Contract" key "A writable buffer ordinal has duplicate declaration contracts."
             for KeyValue(key, invocation) in boundary.CallbackInvocations do
                 let part = "Emission.Boundary.CallbackInvocations"
                 if key <> invocation.Identity then
@@ -2517,6 +2595,11 @@ module Integrity =
             if explicitParts.Contains part || supportParts.Contains part || aggregatePart || inactivityPart || part.StartsWith("SourceReadings.", System.StringComparison.Ordinal) then true
             else
                 match part with
+                | "Emission.Boundary.WritableBufferDeclarations.DeclarationFacts" ->
+                    boundary.WritableBufferDeclarations.Values |> Seq.exists(fun row ->
+                        row.DeclarationFacts.ContainsKey id || boundaryContext revision row.DeclarationFacts row.Declaration |> Option.exists(fun(scope,_)->scope=id))
+                | part when part.StartsWith("Emission.Boundary.WritableBufferDeclarations",System.StringComparison.Ordinal) ->
+                    boundary.WritableBufferDeclarations.Values |> Seq.exists(fun row -> row.DeclarationFacts.ContainsKey id)
                 | "Emission.Boundary.ResourceDeclarations.DeclarationFacts" ->
                     boundary.ResourceDeclarations.Values |> Seq.exists (fun row ->
                         row.DeclarationFacts.ContainsKey id ||
