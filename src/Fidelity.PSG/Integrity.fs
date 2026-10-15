@@ -1214,7 +1214,28 @@ module Integrity =
                     | BoundaryScalar.Entry invocation ->
                         let entries = boundary.ClosedEntries.Values |> Seq.filter (fun entry -> entry.Invocation = invocation && entry.Transport.Contains operand.Actual) |> Seq.toList
                         match boundary.CallbackInvocations.TryFind invocation, entries with
-                        | Some receiving, [_] when receiving.Import = call.Import && receiving.Formal = operand.Formal && operand.Adaptation.IsNone -> ()
+                        | Some receiving, [entry] when receiving.Import = call.Import && receiving.Formal = operand.Formal && operand.Adaptation.IsNone ->
+                            let projection =
+                                match revision.Nodes.TryFind operand.Actual with
+                                | Some { Kind = (SemanticKind.FieldGet _ | SemanticKind.TupleGet _ | SemanticKind.DUEliminate _) } ->
+                                    let rows =
+                                        revision.Emission.Callable.AggregateValues.TryFind operand.Actual
+                                        |> Option.defaultValue []
+                                        |> List.filter (fun row -> row.Operation = CallableAggregateOperation.Project)
+                                    match rows, revision.Emission.Callable.Carriers.TryFind entry.Formation with
+                                    | [row], Some carrier ->
+                                        match row.FormationInputs, row.Alternatives with
+                                        | [_; formation], [alternative] ->
+                                            row.Occurrence = operand.Actual && formation = entry.Formation &&
+                                            alternative.Carrier = entry.Formation && alternative.Formation = entry.Formation &&
+                                            carrier.Contract = Ok alternative.Contract &&
+                                            revision.Emission.Callable.AggregateDependencies.ContainsKey operand.Actual
+                                        | _ -> false
+                                    | _ -> false
+                                | Some _ -> true
+                                | None -> false
+                            if not projection then
+                                yield defect "Emission.Boundary.Calls.CallbackProjection" call.Site "The projected callback argument lacks its exact original closed-entry aggregate account."
                         | _ -> yield defect "Emission.Boundary.Calls.CallbackEntry" call.Site "The callback argument lacks its exact receiving invocation and original closed-entry transport."
                     | _ -> ()
             for KeyValue(key, imported) in boundary.Imports do
