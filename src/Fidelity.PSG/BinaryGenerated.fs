@@ -5,9 +5,9 @@ module internal BinaryGenerated =
     [<Literal>]
     let Format = 2u
     [<Literal>]
-    let Schema = 31
+    let Schema = 32
     [<Literal>]
-    let Fingerprint = "FD3891B867430BAE2AF0132753D56EE2EFD47B6EA39E6900F1CD30A8F089F58B"
+    let Fingerprint = "BCADFEE32FACFD06AD5AABAE636F7999F9844F2F52F16C45FC3311B6D8B34DFD"
     [<Literal>]
     let NamedTypes = 317
     [<Literal>]
@@ -3604,6 +3604,7 @@ module internal BinaryGenerated =
         let! state = write_Fidelity_PSG_NodeId state value.``DestinationOffset``
         let! state = write_Fidelity_PSG_NodeId state value.``Count``
         let! state = write_Fidelity_PSG_ScalarCarrier state value.``CountCarrier``
+        let! state = write_Fidelity_PSG_ArrayBoundOperand state value.``CountOperand``
         let! state = (writeOption write_Fidelity_PSG_NodeId) state value.``Allocation``
         let! state = (writeOption write_Fidelity_PSG_NodeId) state value.``Loop``
         let! state = (writeOption write_Fidelity_PSG_MemoryArrayAccessWitness) state value.``Read``
@@ -4632,19 +4633,29 @@ module internal BinaryGenerated =
                 let! state = (writeList (fun state (v1_0, v1_1, v1_2) -> enterWrite state |> Result.bind (fun state -> writeBigInteger state v1_0 |> Result.bind (fun state -> writeBigInteger state v1_1 |> Result.bind (fun state -> writeBigInteger state v1_2 |> Result.bind (fun state -> Ok(leaveWrite state))))))) state a0
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ObligationBody.``InputCopyBound``(a0, a1) -> result {
+            | global.Fidelity.PSG.ObligationBody.``SnapshotBorrowBound``(a0, a1, a2, a3, a4, a5) -> result {
                 let! state = writeTag state 26
+                let! state = write_Fidelity_PSG_NodeId state a0
+                let! state = write_Fidelity_PSG_NodeId state a1
+                let! state = write_Fidelity_PSG_NodeId state a2
+                let! state = write_Fidelity_PSG_NodeId state a3
+                let! state = writeBigInteger state a4
+                let! state = writeBigInteger state a5
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.ObligationBody.``InputCopyBound``(a0, a1) -> result {
+                let! state = writeTag state 27
                 let! state = writeI64 state a0
                 let! state = writeI64 state a1
                 return leaveWrite state
               }
             | global.Fidelity.PSG.ObligationBody.``FiniteLinearRecurrence``(a0) -> result {
-                let! state = writeTag state 27
+                let! state = writeTag state 28
                 let! state = write_Fidelity_PSG_FiniteLinearRecurrenceModel state a0
                 return leaveWrite state
               }
             | global.Fidelity.PSG.ObligationBody.``FiniteAdditiveEffects``(a0, a1, a2, a3) -> result {
-                let! state = writeTag state 28
+                let! state = writeTag state 29
                 let! state = writeBigInteger state a0
                 let! state = (writeList (fun state (v1_0, v1_1) -> enterWrite state |> Result.bind (fun state -> writeBigInteger state v1_0 |> Result.bind (fun state -> writeBigInteger state v1_1 |> Result.bind (fun state -> Ok(leaveWrite state)))))) state a1
                 let! state = writeBigInteger state a2
@@ -4652,17 +4663,17 @@ module internal BinaryGenerated =
                 return leaveWrite state
               }
             | global.Fidelity.PSG.ObligationBody.``ForeignResultCoverage``(a0) -> result {
-                let! state = writeTag state 29
+                let! state = writeTag state 30
                 let! state = write_Fidelity_PSG_ForeignResultCoverageModel state a0
                 return leaveWrite state
               }
             | global.Fidelity.PSG.ObligationBody.``ResourceConversion``(a0) -> result {
-                let! state = writeTag state 30
+                let! state = writeTag state 31
                 let! state = write_Fidelity_PSG_ResourceConversionModel state a0
                 return leaveWrite state
               }
             | global.Fidelity.PSG.ObligationBody.``ResourceCleanup``(a0) -> result {
-                let! state = writeTag state 31
+                let! state = writeTag state 32
                 let! state = write_Fidelity_PSG_ResourceCleanupModel state a0
                 return leaveWrite state
               }
@@ -10395,7 +10406,7 @@ module internal BinaryGenerated =
     }
 
     and read_Fidelity_PSG_MemoryArrayCopyWitness (state: ReadState) : Result<global.Fidelity.PSG.MemoryArrayCopyWitness * ReadState, BinaryError> = result {
-        let! state = enterReadFields 13 state
+        let! state = enterReadFields 14 state
         let! a0, state = read_Fidelity_PSG_NodeId state
         let! a1, state = read_Fidelity_PSG_NodeId state
         let! a2, state = read_Fidelity_PSG_NodeId state
@@ -10403,13 +10414,14 @@ module internal BinaryGenerated =
         let! a4, state = read_Fidelity_PSG_NodeId state
         let! a5, state = read_Fidelity_PSG_NodeId state
         let! a6, state = read_Fidelity_PSG_ScalarCarrier state
-        let! a7, state = (readOption read_Fidelity_PSG_NodeId) state
+        let! a7, state = read_Fidelity_PSG_ArrayBoundOperand state
         let! a8, state = (readOption read_Fidelity_PSG_NodeId) state
-        let! a9, state = (readOption read_Fidelity_PSG_MemoryArrayAccessWitness) state
+        let! a9, state = (readOption read_Fidelity_PSG_NodeId) state
         let! a10, state = (readOption read_Fidelity_PSG_MemoryArrayAccessWitness) state
-        let! a11, state = (readList read_Fidelity_PSG_RequirementWitness) state
-        let! a12, state = (readSet read_Fidelity_PSG_NodeId) state
-        return! finishRead ({ ``Site`` = a0; ``Source`` = a1; ``SourceOffset`` = a2; ``Destination`` = a3; ``DestinationOffset`` = a4; ``Count`` = a5; ``CountCarrier`` = a6; ``Allocation`` = a7; ``Loop`` = a8; ``Read`` = a9; ``Write`` = a10; ``Requirements`` = a11; ``Participants`` = a12 } : global.Fidelity.PSG.MemoryArrayCopyWitness) state
+        let! a11, state = (readOption read_Fidelity_PSG_MemoryArrayAccessWitness) state
+        let! a12, state = (readList read_Fidelity_PSG_RequirementWitness) state
+        let! a13, state = (readSet read_Fidelity_PSG_NodeId) state
+        return! finishRead ({ ``Site`` = a0; ``Source`` = a1; ``SourceOffset`` = a2; ``Destination`` = a3; ``DestinationOffset`` = a4; ``Count`` = a5; ``CountCarrier`` = a6; ``CountOperand`` = a7; ``Allocation`` = a8; ``Loop`` = a9; ``Read`` = a10; ``Write`` = a11; ``Requirements`` = a12; ``Participants`` = a13 } : global.Fidelity.PSG.MemoryArrayCopyWitness) state
     }
 
     and read_Fidelity_PSG_MemoryArrayExtentWitness (state: ReadState) : Result<global.Fidelity.PSG.MemoryArrayExtentWitness * ReadState, BinaryError> = result {
@@ -11333,30 +11345,39 @@ module internal BinaryGenerated =
                 return! finishRead (global.Fidelity.PSG.ObligationBody.``StringBorrowBound``(a0)) state
               }
             | 26 -> result {
+                let! a0, state = read_Fidelity_PSG_NodeId state
+                let! a1, state = read_Fidelity_PSG_NodeId state
+                let! a2, state = read_Fidelity_PSG_NodeId state
+                let! a3, state = read_Fidelity_PSG_NodeId state
+                let! a4, state = readBigInteger state
+                let! a5, state = readBigInteger state
+                return! finishRead (global.Fidelity.PSG.ObligationBody.``SnapshotBorrowBound``(a0, a1, a2, a3, a4, a5)) state
+              }
+            | 27 -> result {
                 let! a0, state = readI64 state
                 let! a1, state = readI64 state
                 return! finishRead (global.Fidelity.PSG.ObligationBody.``InputCopyBound``(a0, a1)) state
               }
-            | 27 -> result {
+            | 28 -> result {
                 let! a0, state = read_Fidelity_PSG_FiniteLinearRecurrenceModel state
                 return! finishRead (global.Fidelity.PSG.ObligationBody.``FiniteLinearRecurrence``(a0)) state
               }
-            | 28 -> result {
+            | 29 -> result {
                 let! a0, state = readBigInteger state
                 let! a1, state = (readList (fun state -> enterReadFields 2 state |> Result.bind (fun state -> readBigInteger state |> Result.bind (fun (v1_0, state) -> readBigInteger state |> Result.bind (fun (v1_1, state) -> finishRead (v1_0, v1_1) state))))) state
                 let! a2, state = readBigInteger state
                 let! a3, state = readBigInteger state
                 return! finishRead (global.Fidelity.PSG.ObligationBody.``FiniteAdditiveEffects``(a0, a1, a2, a3)) state
               }
-            | 29 -> result {
+            | 30 -> result {
                 let! a0, state = read_Fidelity_PSG_ForeignResultCoverageModel state
                 return! finishRead (global.Fidelity.PSG.ObligationBody.``ForeignResultCoverage``(a0)) state
               }
-            | 30 -> result {
+            | 31 -> result {
                 let! a0, state = read_Fidelity_PSG_ResourceConversionModel state
                 return! finishRead (global.Fidelity.PSG.ObligationBody.``ResourceConversion``(a0)) state
               }
-            | 31 -> result {
+            | 32 -> result {
                 let! a0, state = read_Fidelity_PSG_ResourceCleanupModel state
                 return! finishRead (global.Fidelity.PSG.ObligationBody.``ResourceCleanup``(a0)) state
               }

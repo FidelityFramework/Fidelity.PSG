@@ -428,7 +428,8 @@ type MemoryArrayAllocationWitness = {
 
 type MemoryArrayCopyWitness = {
     Site: NodeId; Source: NodeId; SourceOffset: NodeId; Destination: NodeId; DestinationOffset: NodeId
-    Count: NodeId; CountCarrier: ScalarCarrier; Allocation: NodeId option; Loop: NodeId option
+    Count: NodeId; CountCarrier: ScalarCarrier; CountOperand: ArrayBoundOperand
+    Allocation: NodeId option; Loop: NodeId option
     Read: MemoryArrayAccessWitness option; Write: MemoryArrayAccessWitness option
     Requirements: RequirementWitness list; Participants: Set<NodeId>
 }

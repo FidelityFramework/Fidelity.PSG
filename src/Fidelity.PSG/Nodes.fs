@@ -1,5 +1,9 @@
 namespace Fidelity.PSG
 
+/// An original array operand and its single immutable binding/reference.
+/// Copy witnesses retain this same source-authored account.
+type ArrayBoundOperand = { Actual: NodeId; Binding: NodeId; Reference: NodeId }
+
 /// A part of an interpolated string
 [<RequireQualifiedAccess>]
 type InterpolatedPart =
@@ -640,6 +644,25 @@ module ResourceProof =
          sprintf "(assert (= %s %s))" identity (smtLib projection.Conclusion)
          sprintf "(assert (not %s))" identity]
 
+/// Arithmetic for a complete local snapshot whose copy and allocation use the
+/// same source count. The producer supplies that incidence; this projection
+/// neither discovers equality nor substitutes a range endpoint for the count.
+module SnapshotBorrowProof =
+    let ofBounds minimum maximum : Result<ResourceProof.Projection, string> =
+        if minimum < 0I || maximum < minimum then
+            Error "A snapshot borrow requires a finite nonnegative count domain."
+        else
+            let count = ResourceProof.Expr.Variable "snapshot_count"
+            let lower = ResourceProof.Expr.Integer minimum
+            let upper = ResourceProof.Expr.Integer maximum
+            let zero = ResourceProof.Expr.Integer 0I
+            Ok {
+                Declarations = ["snapshot_count", ResourceProof.Sort.Integer]
+                Premises = ResourceProof.Expr.And [ResourceProof.Expr.LessOrEqual(lower, count); ResourceProof.Expr.LessOrEqual(count, upper)]
+                Conclusion = ResourceProof.Expr.And [ResourceProof.Expr.LessOrEqual(zero, count); ResourceProof.Expr.LessOrEqual(count, count)]
+                Alternatives = [ResourceProof.Expr.Boolean true]
+            }
+
 /// What an obligation asserts. Every constant is a literal fixed at saturation;
 /// the two dispatches transcribe, never compute.
 type MappedSpanModel = {
@@ -1004,6 +1027,10 @@ type ObligationBody =
     /// Every possible immutable origin supplies this same invocation's count
     /// and logical extent. Storage includes the sentinel, the read excludes it.
     | StringBorrowBound of origins: (bigint * bigint * bigint) list
+    /// Conditional containment of the actual runtime count in its equal-count
+    /// independent snapshot allocation. Anchors retain the source incidence;
+    /// minimum and maximum bound one variable, never stand for actual extents.
+    | SnapshotBorrowBound of count: NodeId * snapshot: NodeId * copy: NodeId * allocation: NodeId * minimum: bigint * maximum: bigint
     /// For any successful read of r bytes, 1 <= r <= capacity, the trimmed copy
     /// of r - 1 bytes is within bound.
     | InputCopyBound of capacity: int64 * bound: int64

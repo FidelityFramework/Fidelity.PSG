@@ -188,6 +188,7 @@ let private importedEntryAccount () =
             Import = imported.Identity
             Callee = NodeId 15
             Entry = Some entry.Formation
+            Resource = None
             Arguments = []
             ErasedUnitArguments = [ NodeId 19 ]
             Result = None

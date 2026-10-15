@@ -117,7 +117,6 @@ type EdgeClass =
     /// Source-settled hardware/kernel declaration and complete spatial plan.
     | Spatial
 
-type ArrayBoundOperand = { Actual: NodeId; Binding: NodeId; Reference: NodeId }
 
 type ArrayRangeGuard = {
     Requirement: NodeId; Predicate: NodeId; Frontier: NodeId; Continuation: NodeId

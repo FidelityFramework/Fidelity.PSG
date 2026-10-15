@@ -2025,6 +2025,46 @@ module Integrity =
                             call.Buffer
             for KeyValue(_, proofs) in boundary.IntrinsicWriteProofs do
                 for proof in proofs do
+                    match proof.Body with
+                    | ObligationBody.SnapshotBorrowBound(count, snapshotId, copyId, allocationId, minimum, maximum) ->
+                        let part = "Emission.Boundary.IntrinsicWriteProofs.SnapshotBorrowBound"
+                        let linked =
+                            match boundary.IntrinsicWrites.TryFind proof.Site,
+                                  memory.Operations.TryFind snapshotId,
+                                  memory.ArrayCopies.TryFind copyId,
+                                  memory.Operations.TryFind allocationId,
+                                  revision.Emission.Numeric.Values.TryFind count with
+                            | Some call, Some(MemoryWitnessOperation.StringView snapshot), Some copy,
+                              Some(MemoryWitnessOperation.ArrayAllocation allocation), Some carrier ->
+                                let operand = copy.CountOperand
+                                let binding =
+                                    match revision.Nodes.TryFind operand.Binding,
+                                          revision.SourceReadings.BindingUses.TryFind operand.Reference with
+                                    | Some { Kind = SemanticKind.Binding(_, false, _, _); Children = [actual] }, Some useRow ->
+                                        actual = operand.Actual && useRow.Binding = operand.Binding &&
+                                        useRow.Class = SourceBindingClass.ImmutableValue
+                                    | _ -> false
+                                let extent =
+                                    match boundary.ByteViews.TryFind call.Buffer, boundary.StringExtents.TryFind count with
+                                    | Some view, Some extent ->
+                                        view.StaticOrigins.IsEmpty && extent.StaticOrigins.IsEmpty &&
+                                        view.ExtentSource = snapshotId && extent.ExtentSource = snapshotId && extent.Site = count
+                                    | _ -> false
+                                proof.Ordinal = 1 && call.Count = count && extent && binding &&
+                                snapshot.Site = snapshotId && snapshot.Direction = MemoryStringViewDirection.FromBytes &&
+                                snapshot.Snapshot = copyId && snapshot.Extent = copy.CountCarrier &&
+                                copy.Site = copyId && copy.Count = operand.Actual && copy.CountCarrier.Site = operand.Actual &&
+                                copy.Allocation = Some allocationId && allocation.Site = allocationId &&
+                                allocation.Count = operand.Reference && allocation.CountCarrier.Site = operand.Reference &&
+                                carrier.Site = count && carrier.Range = ValueRange.Bounded(minimum, maximum) &&
+                                snapshot.Extent.Range = carrier.Range && allocation.CountCarrier.Range = carrier.Range &&
+                                allocation.MinimumCount = minimum && allocation.MaximumCount = maximum &&
+                                not copy.Requirements.IsEmpty &&
+                                (SnapshotBorrowProof.ofBounds minimum maximum |> Result.isOk)
+                            | _ -> false
+                        if not linked then
+                            yield defect part proof.Site "The runtime borrow claim differs from its exact count, snapshot, copy or bound-operand allocation account."
+                    | _ -> ()
                     match revision.CurrentClaims.TryFind proof.Obligation with
                     | Some claim when claim.Body = proof.Body -> ()
                     | _ ->

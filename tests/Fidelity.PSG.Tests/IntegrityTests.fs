@@ -1176,6 +1176,7 @@ let private snapshotFacts =
     let copy : MemoryArrayCopyWitness =
         {Site = NodeId 6; Source = NodeId 1; SourceOffset = NodeId 3; Destination = NodeId 11; DestinationOffset = NodeId 4
          Count = NodeId 5; CountCarrier = numeric.Values[NodeId 5]; Allocation = Some(NodeId 11); Loop = None
+         CountOperand = {Actual = NodeId 5; Binding = NodeId 5; Reference = NodeId 5}
          Read = None; Write = None; Requirements = [requirement]; Participants = Set.ofList [NodeId 64; NodeId 404; NodeId 8000]}
     let view : MemoryStringViewWitness =
         {Site = NodeId 1; Source = NodeId 3; Owner = NodeId 8000; Snapshot = NodeId 6; Direction = MemoryStringViewDirection.ToBytes
@@ -1664,7 +1665,7 @@ let private boundaryCalleeFacts =
          SourceTypes = [1;3;4] |> List.map(fun id -> NodeId id, numericOperationFacts.Nodes[NodeId id].Type) |> Map.ofList
          DeclarationFacts = Map.ofList [NodeId 72, declared]}
     let call : BoundaryCall =
-        {Site = NodeId 1; Import = NodeId 72; Callee = NodeId 2; Entry = None
+        {Site = NodeId 1; Import = NodeId 72; Callee = NodeId 2; Entry = None; Resource = None
          Arguments = [3;4] |> List.map(fun id -> {Actual = NodeId id; Formal = NodeId id; Abi = BoundaryScalar.Integer(32, true); Adaptation = None})
          ErasedUnitArguments = []; Result = Some(BoundaryScalar.Integer(32, true)); ResultAdaptation = None; Participants = Set.singleton(NodeId 8000); SourceTypes = imported.SourceTypes}
     let callable =
