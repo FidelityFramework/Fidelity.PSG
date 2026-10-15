@@ -1069,6 +1069,7 @@ module IntegrityNamed =
         @ (idsOfScalarCarrier value.CountCarrier)
         @ (idsOfMemoryResidence value.Residence)
         @ (idsOfRequirementWitness value.Requirement)
+        @ (idsOfArrayAllocationConstruction value.Construction)
         @ (value.Participants |> Set.toList |> List.collect (fun v0 -> [ v0 ]))
 
     and private idsOfMemoryArrayCopyWitness (value: Fidelity.PSG.MemoryArrayCopyWitness) : NodeId list =

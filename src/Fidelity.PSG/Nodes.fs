@@ -4,6 +4,24 @@ namespace Fidelity.PSG
 /// Copy witnesses retain this same source-authored account.
 type ArrayBoundOperand = { Actual: NodeId; Binding: NodeId; Reference: NodeId }
 
+type ArrayRangeGuard = {
+    Requirement: NodeId; Predicate: NodeId; Frontier: NodeId; Continuation: NodeId
+    Count: NodeId; Offset: NodeId option; Buffer: NodeId option; Length: NodeId option
+    Zero: NodeId; NonnegativeCount: NodeId; NonnegativeOffset: NodeId option
+    End: NodeId option; Within: NodeId option
+}
+
+type ArrayInitializationConstruction = {
+    Buffer: NodeId; Index: NodeId; Initial: NodeId; Loop: NodeId; Guard: NodeId
+    Current: NodeId; Write: NodeId; Step: NodeId; Advance: NodeId
+}
+
+type ArrayAllocationConstruction = {
+    Site: NodeId; Owner: NodeId; Count: ArrayBoundOperand; Default: NodeId option
+    Initialization: ArrayInitializationConstruction option
+    Guard: ArrayRangeGuard; Participants: Set<NodeId>
+}
+
 /// A part of an interpolated string
 [<RequireQualifiedAccess>]
 type InterpolatedPart =
@@ -1027,9 +1045,9 @@ type ObligationBody =
     /// Every possible immutable origin supplies this same invocation's count
     /// and logical extent. Storage includes the sentinel, the read excludes it.
     | StringBorrowBound of origins: (bigint * bigint * bigint) list
-    /// Conditional containment of the actual runtime count in its equal-count
-    /// independent snapshot allocation. Anchors retain the source incidence;
-    /// minimum and maximum bound one variable, never stand for actual extents.
+    /// Source-checked count/allocation incidence plus nonnegativity of that
+    /// actual count over its finite domain. Arithmetic alone does not establish
+    /// the incidence; bounds never stand for actual executed extents.
     | SnapshotBorrowBound of count: NodeId * snapshot: NodeId * copy: NodeId * allocation: NodeId * minimum: bigint * maximum: bigint
     /// For any successful read of r bytes, 1 <= r <= capacity, the trimmed copy
     /// of r - 1 bytes is within bound.

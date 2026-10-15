@@ -118,24 +118,6 @@ type EdgeClass =
     | Spatial
 
 
-type ArrayRangeGuard = {
-    Requirement: NodeId; Predicate: NodeId; Frontier: NodeId; Continuation: NodeId
-    Count: NodeId; Offset: NodeId option; Buffer: NodeId option; Length: NodeId option
-    Zero: NodeId; NonnegativeCount: NodeId; NonnegativeOffset: NodeId option
-    End: NodeId option; Within: NodeId option
-}
-
-type ArrayInitializationConstruction = {
-    Buffer: NodeId; Index: NodeId; Initial: NodeId; Loop: NodeId; Guard: NodeId
-    Current: NodeId; Write: NodeId; Step: NodeId; Advance: NodeId
-}
-
-type ArrayAllocationConstruction = {
-    Site: NodeId; Owner: NodeId; Count: ArrayBoundOperand; Default: NodeId option
-    Initialization: ArrayInitializationConstruction option
-    Guard: ArrayRangeGuard; Participants: Set<NodeId>
-}
-
 type ArrayCopyConstruction = {
     Site: NodeId; Source: ArrayBoundOperand; SourceOffset: ArrayBoundOperand
     Destination: NodeId; DestinationOffset: ArrayBoundOperand; Count: ArrayBoundOperand

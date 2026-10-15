@@ -1172,7 +1172,15 @@ let private snapshotFacts =
     let allocation : MemoryArrayAllocationWitness =
         {Site = NodeId 11; Count = NodeId 5; CountCarrier = numeric.Values[NodeId 5]; IndexUnsigned = true
          Element = SettledSlot.Integer(32, None); ElementBytes = 4; Alignment = 4; Residence = MemoryResidence.Stack(NodeId 1, NodeId 5521)
-         MinimumCount = 1I; MaximumCount = 4I; Requirement = requirement; Participants = Set.ofList [NodeId 5; NodeId 64; NodeId 5521; NodeId 8000]}
+         MinimumCount = 1I; MaximumCount = 4I; Requirement = requirement
+         Construction =
+             {Site = NodeId 11; Owner = NodeId 6; Count = {Actual = NodeId 5; Binding = NodeId 5; Reference = NodeId 5}
+              Default = None; Initialization = None
+              Guard = {Requirement = requirement.Site; Predicate = requirement.Condition; Frontier = requirement.Frontier
+                       Continuation = requirement.Continuation; Count = NodeId 5; Offset = None; Buffer = None; Length = None
+                       Zero = NodeId 3; NonnegativeCount = requirement.Condition; NonnegativeOffset = None; End = None; Within = None}
+              Participants = Set.ofList [NodeId 5; NodeId 64; NodeId 5521; NodeId 8000]}
+         Participants = Set.ofList [NodeId 5; NodeId 64; NodeId 5521; NodeId 8000]}
     let copy : MemoryArrayCopyWitness =
         {Site = NodeId 6; Source = NodeId 1; SourceOffset = NodeId 3; Destination = NodeId 11; DestinationOffset = NodeId 4
          Count = NodeId 5; CountCarrier = numeric.Values[NodeId 5]; Allocation = Some(NodeId 11); Loop = None

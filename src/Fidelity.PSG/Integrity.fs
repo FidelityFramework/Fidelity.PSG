@@ -647,6 +647,44 @@ module Integrity =
                   yield! scalarRow revision "Emission.Memory.Operations.ArrayAllocation.CountCarrier" row.Count row.CountCarrier
                   yield! requirement "Emission.Memory.Operations.ArrayAllocation.Requirement" row.Requirement
                   yield! residence "Emission.Memory.Operations.ArrayAllocation.Residence" row.Residence
+                  let construction = row.Construction
+                  let part = "Emission.Memory.Operations.ArrayAllocation.Construction"
+                  if construction.Site <> row.Site || construction.Count.Reference <> row.Count ||
+                     construction.Guard.Count <> row.Count ||
+                     construction.Guard.Requirement <> row.Requirement.Site ||
+                     construction.Guard.Predicate <> row.Requirement.Condition ||
+                     construction.Guard.Frontier <> row.Requirement.Frontier ||
+                     construction.Guard.Continuation <> row.Requirement.Continuation then
+                      yield defect part row.Site "The allocation differs from its source count and requirement construction."
+                  match construction.Default, construction.Initialization with
+                  | Some value, initialization ->
+                      let zero =
+                          match revision.Nodes.TryFind value, row.Element with
+                          | Some { Kind = SemanticKind.Literal(NativeLiteral.Bool false) }, SettledSlot.Bool
+                          | Some { Kind = SemanticKind.Literal(NativeLiteral.Char '\000') }, SettledSlot.Char
+                          | Some { Kind = SemanticKind.Literal(NativeLiteral.Int(0L, _)) }, SettledSlot.Integer _
+                          | Some { Kind = SemanticKind.Literal(NativeLiteral.UInt(0UL, _)) }, SettledSlot.Integer _ -> true
+                          | _ -> false
+                      if not zero then
+                          yield defect part row.Site "The source allocation default is not the exact zero value of its selected element."
+                      match initialization with
+                      | Some init ->
+                          let writes =
+                              memory.Operations.Values |> Seq.choose (function
+                                  | MemoryWitnessOperation.ArrayAccess access when access.Bounds.Requirement.Frontier = init.Write -> Some access
+                                  | _ -> None) |> Seq.toList
+                          match writes with
+                          | [write] when write.Bounds.Requirement.Continuation = write.Site &&
+                                         write.Buffer = init.Buffer && write.Index = init.Current &&
+                                         write.Value = Some value && write.Element = row.Element -> ()
+                          | _ -> yield defect part row.Site "The initialization construction differs from its exact guarded zero write."
+                      | None when row.MinimumCount = 0I && row.MaximumCount = 0I -> ()
+                      | None -> yield defect part row.Site "A nonempty zero allocation has no retained initialization construction."
+                  | None, None ->
+                      if not (memory.ArrayCopies.Values |> Seq.exists (fun copy ->
+                          copy.Allocation = Some row.Site && copy.Site = construction.Owner && copy.CountOperand = construction.Count)) then
+                          yield defect part row.Site "An uninitialized allocation has no exact source copy construction."
+                  | None, Some _ -> yield defect part row.Site "An initialization construction has no source default value."
               | MemoryWitnessOperation.Address row ->
                   match row.Place with
                   | MemoryPlace.MutableCell binding -> yield! body "Emission.Memory.Operations.Address.Binding" binding
@@ -2050,7 +2088,7 @@ module Integrity =
                                         view.StaticOrigins.IsEmpty && extent.StaticOrigins.IsEmpty &&
                                         view.ExtentSource = snapshotId && extent.ExtentSource = snapshotId && extent.Site = count
                                     | _ -> false
-                                proof.Ordinal = 1 && call.Count = count && extent && binding &&
+                                minimum < maximum && proof.Ordinal = 1 && call.Count = count && extent && binding &&
                                 snapshot.Site = snapshotId && snapshot.Direction = MemoryStringViewDirection.FromBytes &&
                                 snapshot.Snapshot = copyId && snapshot.Extent = copy.CountCarrier &&
                                 copy.Site = copyId && copy.Count = operand.Actual && copy.CountCarrier.Site = operand.Actual &&

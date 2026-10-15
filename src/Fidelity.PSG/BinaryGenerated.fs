@@ -5,9 +5,9 @@ module internal BinaryGenerated =
     [<Literal>]
     let Format = 2u
     [<Literal>]
-    let Schema = 32
+    let Schema = 33
     [<Literal>]
-    let Fingerprint = "BCADFEE32FACFD06AD5AABAE636F7999F9844F2F52F16C45FC3311B6D8B34DFD"
+    let Fingerprint = "C73227468FCBA9BAA3F7DA9419F20D3FF0C78691A2195073E4057EF393EFDB1B"
     [<Literal>]
     let NamedTypes = 317
     [<Literal>]
@@ -3591,6 +3591,7 @@ module internal BinaryGenerated =
         let! state = writeBigInteger state value.``MinimumCount``
         let! state = writeBigInteger state value.``MaximumCount``
         let! state = write_Fidelity_PSG_RequirementWitness state value.``Requirement``
+        let! state = write_Fidelity_PSG_ArrayAllocationConstruction state value.``Construction``
         let! state = (writeSet write_Fidelity_PSG_NodeId) state value.``Participants``
         return leaveWrite state
     }
@@ -10389,7 +10390,7 @@ module internal BinaryGenerated =
     }
 
     and read_Fidelity_PSG_MemoryArrayAllocationWitness (state: ReadState) : Result<global.Fidelity.PSG.MemoryArrayAllocationWitness * ReadState, BinaryError> = result {
-        let! state = enterReadFields 12 state
+        let! state = enterReadFields 13 state
         let! a0, state = read_Fidelity_PSG_NodeId state
         let! a1, state = read_Fidelity_PSG_NodeId state
         let! a2, state = read_Fidelity_PSG_ScalarCarrier state
@@ -10401,8 +10402,9 @@ module internal BinaryGenerated =
         let! a8, state = readBigInteger state
         let! a9, state = readBigInteger state
         let! a10, state = read_Fidelity_PSG_RequirementWitness state
-        let! a11, state = (readSet read_Fidelity_PSG_NodeId) state
-        return! finishRead ({ ``Site`` = a0; ``Count`` = a1; ``CountCarrier`` = a2; ``IndexUnsigned`` = a3; ``Element`` = a4; ``ElementBytes`` = a5; ``Alignment`` = a6; ``Residence`` = a7; ``MinimumCount`` = a8; ``MaximumCount`` = a9; ``Requirement`` = a10; ``Participants`` = a11 } : global.Fidelity.PSG.MemoryArrayAllocationWitness) state
+        let! a11, state = read_Fidelity_PSG_ArrayAllocationConstruction state
+        let! a12, state = (readSet read_Fidelity_PSG_NodeId) state
+        return! finishRead ({ ``Site`` = a0; ``Count`` = a1; ``CountCarrier`` = a2; ``IndexUnsigned`` = a3; ``Element`` = a4; ``ElementBytes`` = a5; ``Alignment`` = a6; ``Residence`` = a7; ``MinimumCount`` = a8; ``MaximumCount`` = a9; ``Requirement`` = a10; ``Construction`` = a11; ``Participants`` = a12 } : global.Fidelity.PSG.MemoryArrayAllocationWitness) state
     }
 
     and read_Fidelity_PSG_MemoryArrayCopyWitness (state: ReadState) : Result<global.Fidelity.PSG.MemoryArrayCopyWitness * ReadState, BinaryError> = result {
