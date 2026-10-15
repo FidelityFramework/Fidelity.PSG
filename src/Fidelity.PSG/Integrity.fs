@@ -1137,7 +1137,6 @@ module Integrity =
                 let contract = invocation.Contract
                 let scalar = function
                     | BAREWire.Descriptors.TypeRef.Integer(sign, bits) when bits > 0 -> Some(BoundaryScalar.Integer(bits, sign = BAREWire.Descriptors.Signedness.Signed))
-                    | BAREWire.Descriptors.TypeRef.Bool -> Some BoundaryScalar.Boolean
                     | _ -> None
                 let parameters = contract.Signature.Parameters |> Array.map (fun parameter ->
                     if parameter.PassBy = BAREWire.Descriptors.PassBy.Value then scalar parameter.Type else None) |> Array.toList
@@ -1145,9 +1144,9 @@ module Integrity =
                 if contract.Parameter <> invocation.Parameter ||
                    contract.Signature.CallingConvention <> BAREWire.Descriptors.CallConv.CDecl ||
                    invocation.Signature.CallingConvention <> "CDecl" ||
-                   parameters.Length <> 1 || (parameters |> List.exists Option.isNone) || result.IsNone ||
+                   parameters.IsEmpty || (parameters |> List.exists Option.isNone) || result.IsNone ||
                    List.choose id parameters <> invocation.Signature.Parameters || result <> invocation.Signature.Result then
-                    yield defect (part + ".Signature") key "The callback signature differs from its complete nonnested scalar CDecl receiving quotation."
+                    yield defect (part + ".Signature") key "The callback signature differs from its complete nonempty integer CDecl receiving quotation."
                 if [contract.Binding; contract.Scope; contract.Hypothesis.Identity; contract.Hypothesis.Version; contract.Hypothesis.Source]
                    |> List.exists System.String.IsNullOrWhiteSpace then
                     yield defect (part + ".Provenance") key "The callback invocation has missing receiver, scope or trusted hypothesis provenance."
