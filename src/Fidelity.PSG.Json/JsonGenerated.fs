@@ -4,7 +4,7 @@ open Fidelity.Data.JSON
 module internal JsonGenerated =
     open JsonRuntime
     [<Literal>]
-    let NamedTypes = 280
+    let NamedTypes = 282
     let rec write_BAREWire_Descriptors_CallConv (value: global.BAREWire.Descriptors.CallConv) : JsonValue =
         match value with
         | global.BAREWire.Descriptors.CallConv.``CDecl`` -> union "CDecl" []
@@ -104,11 +104,19 @@ module internal JsonGenerated =
     and write_Fidelity_PSG_BoundaryCall (value: global.Fidelity.PSG.BoundaryCall) : JsonValue =
         JsonValue.Object [("Site", write_Fidelity_PSG_NodeId value.``Site``); ("Import", write_Fidelity_PSG_NodeId value.``Import``); ("Callee", write_Fidelity_PSG_NodeId value.``Callee``); ("Entry", (writeOption write_Fidelity_PSG_NodeId) value.``Entry``); ("Arguments", (writeList write_Fidelity_PSG_BoundaryOperand) value.``Arguments``); ("ErasedUnitArguments", (writeList write_Fidelity_PSG_NodeId) value.``ErasedUnitArguments``); ("Result", (writeOption write_Fidelity_PSG_BoundaryScalar) value.``Result``); ("ResultAdaptation", (writeOption write_Fidelity_PSG_Meet) value.``ResultAdaptation``); ("Participants", (writeSet write_Fidelity_PSG_NodeId) value.``Participants``); ("SourceTypes", (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_TypeIdentity) value.``SourceTypes``)]
 
+    and write_Fidelity_PSG_BoundaryCallbackExtent (value: global.Fidelity.PSG.BoundaryCallbackExtent) : JsonValue =
+        match value with
+        | global.Fidelity.PSG.BoundaryCallbackExtent.``DuringCall`` -> union "DuringCall" []
+        | global.Fidelity.PSG.BoundaryCallbackExtent.``ProcessExit``(a0, a1) -> union "ProcessExit" [("ExitBinding", (writeOption write_Fidelity_PSG_NodeId) a0); ("SuccessStatus", writeInt32 a1)]
+
     and write_Fidelity_PSG_BoundaryCallbackInvocation (value: global.Fidelity.PSG.BoundaryCallbackInvocation) : JsonValue =
-        JsonValue.Object [("Identity", write_Fidelity_PSG_NodeId value.``Identity``); ("Import", write_Fidelity_PSG_NodeId value.``Import``); ("Parameter", writeInt32 value.``Parameter``); ("Formal", write_Fidelity_PSG_NodeId value.``Formal``); ("Scope", write_Fidelity_PSG_NodeId value.``Scope``); ("Contract", write_BAREWire_Descriptors_CallbackInvocationContract value.``Contract``); ("Signature", write_Fidelity_PSG_NativeEntrySignature value.``Signature``); ("Participants", (writeSet write_Fidelity_PSG_NodeId) value.``Participants``)]
+        JsonValue.Object [("Identity", write_Fidelity_PSG_NodeId value.``Identity``); ("Import", write_Fidelity_PSG_NodeId value.``Import``); ("Parameter", writeInt32 value.``Parameter``); ("Formal", write_Fidelity_PSG_NodeId value.``Formal``); ("Scope", write_Fidelity_PSG_NodeId value.``Scope``); ("Contract", write_BAREWire_Descriptors_CallbackInvocationContract value.``Contract``); ("Signature", write_Fidelity_PSG_NativeEntrySignature value.``Signature``); ("Extent", write_Fidelity_PSG_BoundaryCallbackExtent value.``Extent``); ("Participants", (writeSet write_Fidelity_PSG_NodeId) value.``Participants``)]
+
+    and write_Fidelity_PSG_BoundaryCallbackRegistration (value: global.Fidelity.PSG.BoundaryCallbackRegistration) : JsonValue =
+        JsonValue.Object [("Call", write_Fidelity_PSG_NodeId value.``Call``); ("Parameter", writeInt32 value.``Parameter``); ("Formation", write_Fidelity_PSG_NodeId value.``Formation``); ("Invocation", write_Fidelity_PSG_NodeId value.``Invocation``); ("Result", write_Fidelity_PSG_NodeId value.``Result``); ("Context", (writeList write_Fidelity_PSG_NodeId) value.``Context``); ("Participants", (writeSet write_Fidelity_PSG_NodeId) value.``Participants``)]
 
     and write_Fidelity_PSG_BoundaryClosedEntry (value: global.Fidelity.PSG.BoundaryClosedEntry) : JsonValue =
-        JsonValue.Object [("Formation", write_Fidelity_PSG_NodeId value.``Formation``); ("Operand", write_Fidelity_PSG_NodeId value.``Operand``); ("Declaration", write_Fidelity_PSG_NodeId value.``Declaration``); ("Implementation", write_Fidelity_PSG_NodeId value.``Implementation``); ("Formals", (writeList write_Fidelity_PSG_NodeId) value.``Formals``); ("Body", write_Fidelity_PSG_NodeId value.``Body``); ("Lifetime", write_Fidelity_PSG_ProgramImageCodeLifetime value.``Lifetime``); ("Invocation", write_Fidelity_PSG_NodeId value.``Invocation``); ("ParameterAdaptations", (writeList (writeOption write_Fidelity_PSG_Meet)) value.``ParameterAdaptations``); ("ResultAdaptation", (writeOption write_Fidelity_PSG_Meet) value.``ResultAdaptation``); ("Transport", (writeSet write_Fidelity_PSG_NodeId) value.``Transport``); ("Participants", (writeSet write_Fidelity_PSG_NodeId) value.``Participants``)]
+        JsonValue.Object [("Formation", write_Fidelity_PSG_NodeId value.``Formation``); ("Operand", write_Fidelity_PSG_NodeId value.``Operand``); ("Declaration", write_Fidelity_PSG_NodeId value.``Declaration``); ("Implementation", write_Fidelity_PSG_NodeId value.``Implementation``); ("Formals", (writeList write_Fidelity_PSG_NodeId) value.``Formals``); ("Body", write_Fidelity_PSG_NodeId value.``Body``); ("Lifetime", write_Fidelity_PSG_ProgramImageCodeLifetime value.``Lifetime``); ("Invocation", write_Fidelity_PSG_NodeId value.``Invocation``); ("ParameterAdaptations", (writeList (writeOption write_Fidelity_PSG_Meet)) value.``ParameterAdaptations``); ("ResultAdaptation", (writeOption write_Fidelity_PSG_Meet) value.``ResultAdaptation``); ("Registrations", (writeMap (fun (v1_0, v1_1, v1_2) -> JsonValue.Array [write_Fidelity_PSG_NodeId v1_0; writeInt32 v1_1; (writeList write_Fidelity_PSG_NodeId) v1_2]) write_Fidelity_PSG_BoundaryCallbackRegistration) value.``Registrations``); ("Transport", (writeSet write_Fidelity_PSG_NodeId) value.``Transport``); ("Participants", (writeSet write_Fidelity_PSG_NodeId) value.``Participants``)]
 
     and write_Fidelity_PSG_BoundaryContractStamp (value: global.Fidelity.PSG.BoundaryContractStamp) : JsonValue =
         JsonValue.Object [("Identity", writeString value.``Identity``); ("Version", writeUInt64 value.``Version``)]

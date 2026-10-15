@@ -5,11 +5,11 @@ module internal BinaryGenerated =
     [<Literal>]
     let Format = 2u
     [<Literal>]
-    let Schema = 28
+    let Schema = 29
     [<Literal>]
-    let Fingerprint = "62FAE930D5F91696A8C446C72AF48FD8CAACE4C05D0E3CBFBD2717312AC88401"
+    let Fingerprint = "ADC6F351831584963D5DA0C68879302D723BD1ABE8441CB3CE0D7CAFA3DFD22D"
     [<Literal>]
-    let NamedTypes = 293
+    let NamedTypes = 295
     [<Literal>]
     let RevisionFields = 17
     [<Literal>]
@@ -415,6 +415,22 @@ module internal BinaryGenerated =
         return leaveWrite state
     }
 
+    and write_Fidelity_PSG_BoundaryCallbackExtent (state: WriteState) (value: global.Fidelity.PSG.BoundaryCallbackExtent) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        return!
+            match value with
+            | global.Fidelity.PSG.BoundaryCallbackExtent.``DuringCall`` -> result {
+                let! state = writeTag state 0
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.BoundaryCallbackExtent.``ProcessExit``(a0, a1) -> result {
+                let! state = writeTag state 1
+                let! state = (writeOption write_Fidelity_PSG_NodeId) state a0
+                let! state = writeI32 state a1
+                return leaveWrite state
+              }
+    }
+
     and write_Fidelity_PSG_BoundaryCallbackInvocation (state: WriteState) (value: global.Fidelity.PSG.BoundaryCallbackInvocation) : Result<WriteState, BinaryError> = result {
         let! state = enterWrite state
         let! state = write_Fidelity_PSG_NodeId state value.``Identity``
@@ -424,6 +440,19 @@ module internal BinaryGenerated =
         let! state = write_Fidelity_PSG_NodeId state value.``Scope``
         let! state = write_BAREWire_Descriptors_CallbackInvocationContract state value.``Contract``
         let! state = write_Fidelity_PSG_NativeEntrySignature state value.``Signature``
+        let! state = write_Fidelity_PSG_BoundaryCallbackExtent state value.``Extent``
+        let! state = (writeSet write_Fidelity_PSG_NodeId) state value.``Participants``
+        return leaveWrite state
+    }
+
+    and write_Fidelity_PSG_BoundaryCallbackRegistration (state: WriteState) (value: global.Fidelity.PSG.BoundaryCallbackRegistration) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = write_Fidelity_PSG_NodeId state value.``Call``
+        let! state = writeI32 state value.``Parameter``
+        let! state = write_Fidelity_PSG_NodeId state value.``Formation``
+        let! state = write_Fidelity_PSG_NodeId state value.``Invocation``
+        let! state = write_Fidelity_PSG_NodeId state value.``Result``
+        let! state = (writeList write_Fidelity_PSG_NodeId) state value.``Context``
         let! state = (writeSet write_Fidelity_PSG_NodeId) state value.``Participants``
         return leaveWrite state
     }
@@ -440,6 +469,7 @@ module internal BinaryGenerated =
         let! state = write_Fidelity_PSG_NodeId state value.``Invocation``
         let! state = (writeList (writeOption write_Fidelity_PSG_Meet)) state value.``ParameterAdaptations``
         let! state = (writeOption write_Fidelity_PSG_Meet) state value.``ResultAdaptation``
+        let! state = (writeMap (fun state (v1_0, v1_1, v1_2) -> enterWrite state |> Result.bind (fun state -> write_Fidelity_PSG_NodeId state v1_0 |> Result.bind (fun state -> writeI32 state v1_1 |> Result.bind (fun state -> (writeList write_Fidelity_PSG_NodeId) state v1_2 |> Result.bind (fun state -> Ok(leaveWrite state)))))) write_Fidelity_PSG_BoundaryCallbackRegistration) state value.``Registrations``
         let! state = (writeSet write_Fidelity_PSG_NodeId) state value.``Transport``
         let! state = (writeSet write_Fidelity_PSG_NodeId) state value.``Participants``
         return leaveWrite state
@@ -7096,8 +7126,24 @@ module internal BinaryGenerated =
         return! finishRead ({ ``Site`` = a0; ``Import`` = a1; ``Callee`` = a2; ``Entry`` = a3; ``Arguments`` = a4; ``ErasedUnitArguments`` = a5; ``Result`` = a6; ``ResultAdaptation`` = a7; ``Participants`` = a8; ``SourceTypes`` = a9 } : global.Fidelity.PSG.BoundaryCall) state
     }
 
+    and read_Fidelity_PSG_BoundaryCallbackExtent (state: ReadState) : Result<global.Fidelity.PSG.BoundaryCallbackExtent * ReadState, BinaryError> = result {
+        let! state = enterReadCases 3 state
+        let! tag, state = readTag state
+        return!
+            match tag with
+            | 0 -> result {
+                return! finishRead (global.Fidelity.PSG.BoundaryCallbackExtent.``DuringCall``) state
+              }
+            | 1 -> result {
+                let! a0, state = (readOption read_Fidelity_PSG_NodeId) state
+                let! a1, state = readI32 state
+                return! finishRead (global.Fidelity.PSG.BoundaryCallbackExtent.``ProcessExit``(a0, a1)) state
+              }
+            | _ -> malformed state "Unknown Fidelity.PSG.BoundaryCallbackExtent case"
+    }
+
     and read_Fidelity_PSG_BoundaryCallbackInvocation (state: ReadState) : Result<global.Fidelity.PSG.BoundaryCallbackInvocation * ReadState, BinaryError> = result {
-        let! state = enterReadFields 8 state
+        let! state = enterReadFields 9 state
         let! a0, state = read_Fidelity_PSG_NodeId state
         let! a1, state = read_Fidelity_PSG_NodeId state
         let! a2, state = readI32 state
@@ -7105,12 +7151,25 @@ module internal BinaryGenerated =
         let! a4, state = read_Fidelity_PSG_NodeId state
         let! a5, state = read_BAREWire_Descriptors_CallbackInvocationContract state
         let! a6, state = read_Fidelity_PSG_NativeEntrySignature state
-        let! a7, state = (readSet read_Fidelity_PSG_NodeId) state
-        return! finishRead ({ ``Identity`` = a0; ``Import`` = a1; ``Parameter`` = a2; ``Formal`` = a3; ``Scope`` = a4; ``Contract`` = a5; ``Signature`` = a6; ``Participants`` = a7 } : global.Fidelity.PSG.BoundaryCallbackInvocation) state
+        let! a7, state = read_Fidelity_PSG_BoundaryCallbackExtent state
+        let! a8, state = (readSet read_Fidelity_PSG_NodeId) state
+        return! finishRead ({ ``Identity`` = a0; ``Import`` = a1; ``Parameter`` = a2; ``Formal`` = a3; ``Scope`` = a4; ``Contract`` = a5; ``Signature`` = a6; ``Extent`` = a7; ``Participants`` = a8 } : global.Fidelity.PSG.BoundaryCallbackInvocation) state
+    }
+
+    and read_Fidelity_PSG_BoundaryCallbackRegistration (state: ReadState) : Result<global.Fidelity.PSG.BoundaryCallbackRegistration * ReadState, BinaryError> = result {
+        let! state = enterReadFields 7 state
+        let! a0, state = read_Fidelity_PSG_NodeId state
+        let! a1, state = readI32 state
+        let! a2, state = read_Fidelity_PSG_NodeId state
+        let! a3, state = read_Fidelity_PSG_NodeId state
+        let! a4, state = read_Fidelity_PSG_NodeId state
+        let! a5, state = (readList read_Fidelity_PSG_NodeId) state
+        let! a6, state = (readSet read_Fidelity_PSG_NodeId) state
+        return! finishRead ({ ``Call`` = a0; ``Parameter`` = a1; ``Formation`` = a2; ``Invocation`` = a3; ``Result`` = a4; ``Context`` = a5; ``Participants`` = a6 } : global.Fidelity.PSG.BoundaryCallbackRegistration) state
     }
 
     and read_Fidelity_PSG_BoundaryClosedEntry (state: ReadState) : Result<global.Fidelity.PSG.BoundaryClosedEntry * ReadState, BinaryError> = result {
-        let! state = enterReadFields 12 state
+        let! state = enterReadFields 13 state
         let! a0, state = read_Fidelity_PSG_NodeId state
         let! a1, state = read_Fidelity_PSG_NodeId state
         let! a2, state = read_Fidelity_PSG_NodeId state
@@ -7121,9 +7180,10 @@ module internal BinaryGenerated =
         let! a7, state = read_Fidelity_PSG_NodeId state
         let! a8, state = (readList (readOption read_Fidelity_PSG_Meet)) state
         let! a9, state = (readOption read_Fidelity_PSG_Meet) state
-        let! a10, state = (readSet read_Fidelity_PSG_NodeId) state
+        let! a10, state = (readMap (fun state -> enterReadFields 3 state |> Result.bind (fun state -> read_Fidelity_PSG_NodeId state |> Result.bind (fun (v1_0, state) -> readI32 state |> Result.bind (fun (v1_1, state) -> (readList read_Fidelity_PSG_NodeId) state |> Result.bind (fun (v1_2, state) -> finishRead (v1_0, v1_1, v1_2) state))))) read_Fidelity_PSG_BoundaryCallbackRegistration) state
         let! a11, state = (readSet read_Fidelity_PSG_NodeId) state
-        return! finishRead ({ ``Formation`` = a0; ``Operand`` = a1; ``Declaration`` = a2; ``Implementation`` = a3; ``Formals`` = a4; ``Body`` = a5; ``Lifetime`` = a6; ``Invocation`` = a7; ``ParameterAdaptations`` = a8; ``ResultAdaptation`` = a9; ``Transport`` = a10; ``Participants`` = a11 } : global.Fidelity.PSG.BoundaryClosedEntry) state
+        let! a12, state = (readSet read_Fidelity_PSG_NodeId) state
+        return! finishRead ({ ``Formation`` = a0; ``Operand`` = a1; ``Declaration`` = a2; ``Implementation`` = a3; ``Formals`` = a4; ``Body`` = a5; ``Lifetime`` = a6; ``Invocation`` = a7; ``ParameterAdaptations`` = a8; ``ResultAdaptation`` = a9; ``Registrations`` = a10; ``Transport`` = a11; ``Participants`` = a12 } : global.Fidelity.PSG.BoundaryClosedEntry) state
     }
 
     and read_Fidelity_PSG_BoundaryContractStamp (state: ReadState) : Result<global.Fidelity.PSG.BoundaryContractStamp * ReadState, BinaryError> = result {

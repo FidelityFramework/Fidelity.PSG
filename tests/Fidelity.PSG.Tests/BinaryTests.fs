@@ -49,6 +49,7 @@ let ``closed callback binary retains receiving hypothesis and complete original 
         {Parameters = [BoundaryScalar.Integer(64,true)]; Result = Some(BoundaryScalar.Integer(64,true)); CallingConvention = "CDecl"}
     let invocation : BoundaryCallbackInvocation =
         {Identity = NodeId 40; Import = NodeId 41; Parameter = 3; Formal = NodeId 42; Scope = NodeId 43; Signature = signature
+         Extent = BoundaryCallbackExtent.DuringCall
          Contract = {Binding = "Foreign.call"; Parameter = 3
                      Signature = {Parameters = [|{Name = "unused"; Type = BAREWire.Descriptors.TypeRef.Integer(BAREWire.Descriptors.Signedness.Signed,64); PassBy = BAREWire.Descriptors.PassBy.Value}|]
                                   ReturnType = BAREWire.Descriptors.TypeRef.Integer(BAREWire.Descriptors.Signedness.Signed,64); CallingConvention = BAREWire.Descriptors.CallConv.CDecl}
@@ -58,6 +59,7 @@ let ``closed callback binary retains receiving hypothesis and complete original 
         {Formation = NodeId 50; Operand = NodeId 51; Declaration = NodeId 52; Implementation = NodeId 53
          Formals = [NodeId 54]; Body = NodeId 55; Lifetime = {Module = NodeId 56; Binding = NodeId 52; Implementation = NodeId 53}
          Invocation = invocation.Identity; ParameterAdaptations = [None]; ResultAdaptation = Some {Consumer = NodeId 55; Operand = NodeId 55; From = 8; To = 64; Adapt = MeetKind.ExtendUnsigned}
+         Registrations = Map.empty
          Transport = Set.ofList [NodeId 50; NodeId 51]; Participants = Set.ofList [NodeId 50; NodeId 51; NodeId 52; NodeId 53; NodeId 54; NodeId 55; NodeId 56; NodeId 40]}
     let bytes = indexedEncoded BinaryGenerated.write_Fidelity_PSG_BoundaryCallbackInvocation invocation
     let actual, state = BinaryGenerated.read_Fidelity_PSG_BoundaryCallbackInvocation (indexedReadState limits bytes) |> take

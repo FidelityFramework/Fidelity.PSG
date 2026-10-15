@@ -149,6 +149,22 @@ type BoundaryEntry = {
     Participants: Set<NodeId>
 }
 
+[<RequireQualifiedAccess>]
+type BoundaryCallbackExtent =
+    | DuringCall
+    | ProcessExit of ExitBinding: NodeId option * SuccessStatus: int
+
+/// One conditional registration occurrence, never a synchronous invocation.
+type BoundaryCallbackRegistration = {
+    Call: NodeId
+    Parameter: int
+    Formation: NodeId
+    Invocation: NodeId
+    Result: NodeId
+    Context: NodeId list
+    Participants: Set<NodeId>
+}
+
 /// Exact quoted receiving contract and its source-resolved native formal/scope.
 type BoundaryCallbackInvocation = {
     Identity: NodeId
@@ -158,6 +174,7 @@ type BoundaryCallbackInvocation = {
     Scope: NodeId
     Contract: BAREWire.Descriptors.CallbackInvocationContract
     Signature: NativeEntrySignature
+    Extent: BoundaryCallbackExtent
     Participants: Set<NodeId>
 }
 
@@ -174,6 +191,7 @@ type BoundaryClosedEntry = {
     Invocation: NodeId
     ParameterAdaptations: Meet option list
     ResultAdaptation: Meet option
+    Registrations: Map<NodeId * int * NodeId list, BoundaryCallbackRegistration>
     Transport: Set<NodeId>
     Participants: Set<NodeId>
 }

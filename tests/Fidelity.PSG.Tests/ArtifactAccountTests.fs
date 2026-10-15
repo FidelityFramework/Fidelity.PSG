@@ -419,26 +419,38 @@ let ``foreign result accounts retain conditional and pending model shape`` state
                     {info with Body = ObligationBody.ForeignResultCoverage {model with AbiIdentity = None; DestinationIdentity = None}}
                 | _ -> info)
             {original with CurrentClaims = claims; Obligations = claims |> Map.toList |> List.map snd}
-    Assert.Empty(Integrity.check original)
-    let bytes = Binary.encode BinaryTests.limits original |> BinaryTests.take
-    let copy = Binary.decode BinaryTests.limits bytes |> BinaryTests.take
-    Assert.Equal<ForeignResultHypothesis list>(original.Emission.Boundary.ResultHypotheses, copy.Emission.Boundary.ResultHypotheses)
-    Assert.Equal<ForeignResultUse list>(original.Emission.Numeric.ForeignResultUses, copy.Emission.Numeric.ForeignResultUses)
-    Assert.Equal<Map<NodeId, ObligationInfo>>(original.CurrentClaims, copy.CurrentClaims)
-    for KeyValue(_, claim) in copy.CurrentClaims do
-        match claim.Body with
-        | ObligationBody.ForeignResultCoverage model ->
-            Assert.Equal((if state = "ready" then Some "fixture:abi:incarnation-1" else None), model.AbiIdentity)
-            Assert.Equal((if state = "ready" then Some "fixture:destination:incarnation-1" else None), model.DestinationIdentity)
-        | _ -> failwith "Conditional model was lost in the typed codec."
-    Assert.Equal<byte>(bytes, Binary.encode BinaryTests.limits copy |> BinaryTests.take)
-    Assert.Equal(2, copy.CurrentClaims.Count)
-    let view = Binary.openSource BinaryTests.limits (BAREWire.Memory.ByteSource.ofArray bytes) |> BinaryTests.take
-    let inspection = Fidelity.PSG.Json.Inspection.render false view |> BinaryTests.take
-    Assert.Contains("ForeignResultUses", inspection)
-    Assert.Contains("ForeignResultCoverage", inspection)
-    if state <> "absent" then Assert.Contains("profile-1", inspection)
-    else Assert.DoesNotContain("profile-1", inspection)
+    let issues = Integrity.check original
+    if state = "ready" || state = "unanchored" then
+        // These contract-only Unit-node fixtures never issued the claimed ABI
+        // import or selected destination. Real source-issued codec controls
+        // live in ForeignReferenceTests, with those current premises retained.
+        Assert.Contains(issues, fun issue -> issue.Part = "Emission.Numeric.ForeignResultUses.Abi"
+                                           && issue.Reason = "A conditional ABI premise lacks its own call's imported declaration fact.")
+        Assert.Contains(issues, fun issue -> issue.Part = "Emission.Numeric.ForeignResultUses.Destination"
+                                           && issue.Reason = "A conditional destination premise differs from its own call's selected numeric carrier.")
+        hasViolation "Emission.Numeric.ForeignResultUses.Abi" original
+    else
+        Assert.Empty issues
+    if state = "absent" || state = "unknown" then
+      let bytes = Binary.encode BinaryTests.limits original |> BinaryTests.take
+      let copy = Binary.decode BinaryTests.limits bytes |> BinaryTests.take
+      Assert.Equal<ForeignResultHypothesis list>(original.Emission.Boundary.ResultHypotheses, copy.Emission.Boundary.ResultHypotheses)
+      Assert.Equal<ForeignResultUse list>(original.Emission.Numeric.ForeignResultUses, copy.Emission.Numeric.ForeignResultUses)
+      Assert.Equal<Map<NodeId, ObligationInfo>>(original.CurrentClaims, copy.CurrentClaims)
+      for KeyValue(_, claim) in copy.CurrentClaims do
+          match claim.Body with
+          | ObligationBody.ForeignResultCoverage model ->
+              Assert.Equal(None, model.AbiIdentity)
+              Assert.Equal(None, model.DestinationIdentity)
+          | _ -> failwith "Conditional model was lost in the typed codec."
+      Assert.Equal<byte>(bytes, Binary.encode BinaryTests.limits copy |> BinaryTests.take)
+      Assert.Equal(2, copy.CurrentClaims.Count)
+      let view = Binary.openSource BinaryTests.limits (BAREWire.Memory.ByteSource.ofArray bytes) |> BinaryTests.take
+      let inspection = Fidelity.PSG.Json.Inspection.render false view |> BinaryTests.take
+      Assert.Contains("ForeignResultUses", inspection)
+      Assert.Contains("ForeignResultCoverage", inspection)
+      if state <> "absent" then Assert.Contains("profile-1", inspection)
+      else Assert.DoesNotContain("profile-1", inspection)
 
 [<Fact>]
 let ``foreign result absence retains the declaration and same role claim anchors`` () =

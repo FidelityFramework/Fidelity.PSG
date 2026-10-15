@@ -967,7 +967,36 @@ module Integrity =
                       | ForeignResultBound.Argument index when index < 0 || index >= application.Arguments.Length ->
                           yield fail call "Arguments" "A result endpoint names an absent actual argument."
                       | _ -> ()
-              if List.map fst account.Claims <> roles || (account.Claims |> List.map snd |> List.distinct).Length <> 2 then
+              // Replay the numeric owner's complete ABI ingress embedding,
+              // separately from conditional behavior/refinement models.
+              let ingress =
+                  match application.Hypothesis, account.Claims, revision.Emission.Boundary.Calls.TryFind call,
+                        revision.Emission.Numeric.Values.TryFind call with
+                  | None, [ForeignResultProofRole.AbiNarrowing,citizen], Some actual, Some carrier ->
+                      match revision.Emission.Boundary.Imports.TryFind actual.Import, revision.CurrentClaims.TryFind citizen with
+                      | Some imported, Some claim when imported.Binding=application.Declaration ->
+                          let abiRange =
+                              match imported.Result with
+                              | Some(BoundaryScalar.Integer(bits,signed)) when bits>0 ->
+                                  Some(if signed then ValueRange.Bounded(-(1I <<< (bits-1)), (1I <<< (bits-1))-1I)
+                                       else ValueRange.Bounded(0I,(1I <<< bits)-1I))
+                              | _ -> None
+                          match abiRange, claim.Body with
+                          | Some(ValueRange.Bounded(lo,hi) as abi), ObligationBody.IntegerRepresentationCoverage(a,b,minimum,maximum)
+                              when carrier.Range=abi && a=lo && b=hi && minimum<=lo && hi<=maximum ->
+                              let capacity =
+                                  carrier.Obligations |> List.choose(fun proof ->
+                                      revision.CurrentClaims.TryFind proof |> Option.bind(fun held ->
+                                          match held.Body with
+                                          | ObligationBody.IntegerRepresentationCoverage(a,b,minimum,maximum) when a=lo && b=hi -> Some(minimum,maximum)
+                                          | _ -> None))
+                                  |> function [capacity] -> Some capacity | _ -> None
+                              if capacity=Some(minimum,maximum) then Some(imported.Identity,carrier.Declaration) else None
+                          | _ -> None
+                      | _ -> None
+                  | _ -> None
+              let expectedRoles = if ingress.IsSome then [ForeignResultProofRole.AbiNarrowing] else roles
+              if List.map fst account.Claims <> expectedRoles || (account.Claims |> List.map snd |> List.distinct).Length <> expectedRoles.Length then
                   yield fail call "Claims" "Logical coverage and ABI narrowing must retain two distinct ordered claim citizens."
               let expected =
                   [participant call ParticipantRole.ForeignResultDeclaration 0 application.Declaration
@@ -983,7 +1012,7 @@ module Integrity =
                           | ObligationBody.ForeignResultCoverage model when model.Application = application && model.Role = role -> Some(role, citizen, model)
                           | _ -> None
                       | None -> None)
-              if models.Length <> account.Claims.Length then
+              if models.Length + (if ingress.IsSome then 1 else 0) <> account.Claims.Length then
                   yield fail call "Claims" "A claim citizen lacks its exact current conditional model, role or invocation."
               for _, _, model in models do
                   for abi in Option.toList model.Abi do
@@ -1016,9 +1045,14 @@ module Integrity =
                                   "A stated foreign-result premise anchor is blank or lacks its current premise node."
                       | _ -> ()
 
-              let complete = expected @ (models |> List.collect (fun (role, _, model) ->
+              let conditional = models |> List.collect (fun (role, _, model) ->
                   (model.Abi |> Option.map (participant call ParticipantRole.ForeignResultAbi (ordinal role)) |> Option.toList) @
-                  (model.DestinationDeclaration |> Option.map (participant call ParticipantRole.ForeignResultDestination (ordinal role)) |> Option.toList)))
+                  (model.DestinationDeclaration |> Option.map (participant call ParticipantRole.ForeignResultDestination (ordinal role)) |> Option.toList))
+              let ingressParticipants =
+                  ingress |> Option.map(fun (abi,destination) ->
+                      participant call ParticipantRole.ForeignResultAbi 1 abi ::
+                      (destination |> Option.map(participant call ParticipantRole.ForeignResultDestination 1) |> Option.toList)) |> Option.defaultValue []
+              let complete = expected @ conditional @ ingressParticipants
               let actual = match account.Participants with ParticipantEvidence.Pending early -> early.Derived | ParticipantEvidence.Established rows -> rows
               if actual <> complete then
                   yield fail call "Participants" "The ordered declaration, call, context, hypothesis, actual, ABI or destination roles differ from their current model."
@@ -1154,6 +1188,71 @@ module Integrity =
                 if [contract.Binding; contract.Scope; contract.Hypothesis.Identity; contract.Hypothesis.Version; contract.Hypothesis.Source]
                    |> List.exists System.String.IsNullOrWhiteSpace then
                     yield defect (part + ".Provenance") key "The callback invocation has missing receiver, scope or trusted hypothesis provenance."
+                let scopeKind =
+                    boundary.Imports.TryFind invocation.Import |> Option.bind(fun imported ->
+                        imported.DeclarationFacts.TryFind invocation.Scope |> Option.bind(fun quote ->
+                            match quote.Form,quote.References with
+                            | "quotation",[record] when quote.Children=quote.References ->
+                                imported.DeclarationFacts.TryFind record |> Option.bind(fun row ->
+                                    match row.SourceType with
+                                    | TypeIdentity.Application(constructor,_) when row.Form="record" -> Some(constructor.Declaration.Name.Split('.') |> Array.last)
+                                    | _ -> None)
+                            | _ -> None))
+                let expectedKind = match invocation.Extent with BoundaryCallbackExtent.DuringCall -> "ScopedCallbackDescriptor" | BoundaryCallbackExtent.ProcessExit _ -> "ProcessExitCallbackDescriptor"
+                if scopeKind<>Some expectedKind then
+                    yield defect (part+".Extent") key "The callback extent differs from its exact source quotation type."
+                match invocation.Extent with
+                | BoundaryCallbackExtent.DuringCall -> ()
+                | BoundaryCallbackExtent.ProcessExit(anchor, status) ->
+                    match boundary.Imports.TryFind invocation.Import with
+                    | Some imported when imported.Result=Some(BoundaryScalar.Integer(32,true)) &&
+                                         invocation.Signature.Parameters.IsEmpty && invocation.Signature.Result.IsNone &&
+                                         contract.Signature.ReturnType=BAREWire.Descriptors.TypeRef.Void ->
+                        let facts=imported.DeclarationFacts
+                        let scopeRecord =
+                            facts.TryFind invocation.Scope |> Option.bind(fun quote ->
+                                if quote.Form<>"quotation" || quote.References<>quote.Children then None else
+                                match quote.References with
+                                | [record] -> facts.TryFind record |> Option.bind(fun row ->
+                                    if row.Form="record" && row.Text.Length=row.References.Length && row.References=row.Children then
+                                        Some(Map.ofList(List.zip row.Text row.References)) else None)
+                                | _ -> None)
+                        let statusMatches = scopeRecord |> Option.bind(fun fields -> fields.TryFind "SuccessStatus")
+                                            |> Option.bind facts.TryFind |> Option.exists(fun value ->
+                                                value.Form="integer" && value.Numbers=[bigint status] && value.References.IsEmpty)
+                        let textMatches field expected =
+                            scopeRecord |> Option.bind(fun fields -> fields.TryFind field) |> Option.bind facts.TryFind
+                            |> Option.exists(fun value -> value.Form="string" && value.Text=[expected] && value.References.IsEmpty)
+                        let parameterName = imported.DeclarationPath |> List.tryPick(fun id ->
+                            facts.TryFind id |> Option.bind(fun declaration ->
+                                if declaration.Form<>"declaration-lambda" || declaration.References<>declaration.Children then None else
+                                declaration.References |> List.tryFindIndex((=)invocation.Formal) |> Option.bind(fun ordinal -> List.tryItem ordinal declaration.Text)))
+                        if not(textMatches "Binding" contract.Binding) || not(parameterName |> Option.exists(textMatches "Parameter")) then
+                            yield defect (part+".ProcessExitReceiver") key "The process-exit quotation differs from its exact receiving declaration and original formal name."
+                        let anchorMatches =
+                            match scopeRecord |> Option.bind(fun fields -> fields.TryFind "ExitBinding") |> Option.bind facts.TryFind, anchor with
+                            | Some value, None -> (value.Form="case" || value.Form="settled-case") && value.Text=["None"] && value.References.IsEmpty
+                            | Some value, Some selected when (value.Form="case" || value.Form="settled-case") && value.Text=["Some"] ->
+                                match value.References with
+                                | [text] ->
+                                    match facts.TryFind text, revision.SourceReadings.ContextHeaders.TryFind imported.Scope with
+                                    | Some literal, Some header ->
+                                        literal.Form="string" && literal.Text.Length=1 &&
+                                        header.Identity=imported.Scope &&
+                                        (boundary.Imports.Values |> Seq.exists(fun target ->
+                                            target.Binding=selected && target.Scope=imported.Scope &&
+                                            target.Library=imported.Library && target.Result.IsNone && target.CallingConvention="CDecl" &&
+                                            (target.Parameters |> List.map snd)=[BoundaryScalar.Integer(32,true)] &&
+                                            (target.DeclarationFacts.TryFind selected |> Option.exists(fun binding ->
+                                                binding.Form="binding" && List.tryHead binding.Numbers=Some 0I && binding.Parent=Some target.Scope &&
+                                                binding.Children=binding.References &&
+                                                match binding.Text with [name] -> literal.Text=[header.Name+"."+name] | _ -> false))))
+                                    | _ -> false
+                                | _ -> false
+                            | _ -> false
+                        if not statusMatches || not anchorMatches then
+                            yield defect (part+".ProcessExitDeclaration") key "The process-exit extent differs from its exact immutable status and selected optional anchor declaration."
+                    | _ -> yield defect (part+".ProcessExitSignature") key "A process-exit declaration requires a signed32 registration result and exact zero-argument void callback."
             for KeyValue(key, entry) in boundary.ClosedEntries do
                 let part = "Emission.Boundary.ClosedEntries"
                 if key <> entry.Formation then
@@ -1162,6 +1261,34 @@ module Integrity =
                       revision.Emission.Callable.Declarations.TryFind entry.Implementation,
                       revision.Emission.Callable.Carriers.TryFind entry.Formation with
                 | Some invocation, Some declaration, Some carrier ->
+                    match invocation.Extent with
+                    | BoundaryCallbackExtent.DuringCall when not entry.Registrations.IsEmpty ->
+                        yield defect (part+".Registrations") key "A synchronous callback cannot carry process-exit registration uses."
+                    | BoundaryCallbackExtent.ProcessExit _ ->
+                        let expected =
+                            boundary.Calls.Values |> Seq.collect(fun call ->
+                                call.Arguments |> List.choose(fun operand ->
+                                    if operand.Abi=BoundaryScalar.Entry invocation.Identity && entry.Transport.Contains operand.Actual then Some call else None))
+                            |> Seq.collect(fun call -> revision.Emission.Numeric.ForeignResultUses |> List.choose(fun sourceUse ->
+                                if sourceUse.Application.Call=call.Site && (boundary.Imports.TryFind invocation.Import |> Option.exists(fun imported -> sourceUse.Application.Declaration=imported.Binding)) then
+                                    Some(call.Site, invocation.Parameter, sourceUse.Application.Context) else None)) |> Set.ofSeq
+                        if entry.Registrations.IsEmpty || (entry.Registrations |> Map.keys |> Set.ofSeq)<>expected then
+                            yield defect (part+".Registrations") key "The process-exit registration census differs from its current call and per-application result contexts."
+                        for KeyValue((callId,parameter,context),registration) in entry.Registrations do
+                            let source = revision.Emission.Numeric.ForeignResultUses |> List.tryFind(fun source ->
+                                source.Application.Call=callId && source.Application.Context=context &&
+                                (boundary.Imports.TryFind invocation.Import |> Option.exists(fun imported -> source.Application.Declaration=imported.Binding)))
+                            match boundary.Calls.TryFind callId, source with
+                            | Some call, Some source when registration.Call=callId && registration.Parameter=parameter && registration.Context=context &&
+                                registration.Result=callId && registration.Formation=key && registration.Invocation=entry.Invocation &&
+                                parameter=invocation.Parameter && call.Import=invocation.Import && call.Result=Some(BoundaryScalar.Integer(32,true)) &&
+                                (call.Arguments |> List.tryItem parameter |> Option.exists(fun operand -> entry.Transport.Contains operand.Actual)) ->
+                                let support = match source.Participants with ParticipantEvidence.Established rows -> rows |> List.map _.Node |> Set.ofList | _ -> Set.empty
+                                if support.IsEmpty || not(Set.isSubset (Set.union support (Set.ofList(callId::context))) registration.Participants) ||
+                                   not(Set.isSubset registration.Participants entry.Participants) then
+                                    yield defect (part+".RegistrationParticipants") key "The registration lost its current caller/context dependency support."
+                            | _ -> yield defect (part+".RegistrationResult") key "The registration differs from its exact receiving application, original formation or signed32 result."
+                    | _ -> ()
                     let unitParameterOmission =
                         invocation.Contract.Signature.Parameters.Length = 0 &&
                         invocation.Contract.Signature.ReturnType = BAREWire.Descriptors.TypeRef.Void &&
@@ -1912,6 +2039,8 @@ module Integrity =
                 | "Emission.Boundary.ClosedEntries.Invocation" -> boundary.CallbackInvocations.ContainsKey id
                 | "Emission.Boundary.CallbackInvocations.Import" -> boundary.Imports.ContainsKey id
                 | "Emission.Boundary.CallbackInvocations.Formal" -> boundaryType id
+                | "Emission.Boundary.CallbackInvocations.Extent" ->
+                    boundary.Imports.Values |> Seq.exists(fun imported -> imported.Binding=id)
                 | "Emission.Boundary.CallbackInvocations.Scope" ->
                     boundary.CallbackInvocations.Values |> Seq.exists (fun invocation ->
                         invocation.Scope = id && (boundary.Imports.TryFind invocation.Import |> Option.exists (fun imported -> imported.DeclarationFacts.ContainsKey id)))
@@ -1921,12 +2050,25 @@ module Integrity =
                 | "Emission.Boundary.ClosedEntries.Implementation" -> implementation id
                 | "Emission.Boundary.ClosedEntries.Formals" | "Emission.Boundary.ClosedEntries.Body" -> typeFact id
                 | "Emission.Boundary.ClosedEntries.Transport" -> body id || binding id || implementation id
+                | "Emission.Boundary.ClosedEntries.Registrations" ->
+                    boundary.ClosedEntries.Values |> Seq.exists(fun entry ->
+                        entry.Registrations.Values |> Seq.exists(fun registration -> registration.Participants.Contains id && entry.Participants.Contains id))
                 | "Emission.Boundary.ClosedEntries.Lifetime" ->
                     callable.Contracts.Values |> Seq.exists (fun contract ->
                         match contract.Convention with
                         | CallableConvention.CompilerOwnedPortable convention ->
                             List.contains id [convention.CodeLifetime.Module; convention.CodeLifetime.Binding; convention.CodeLifetime.Implementation]
                         | _ -> false)
+                | "Emission.Boundary.ClosedEntries.Participants" when
+                    boundary.ClosedEntries.Values |> Seq.exists(fun entry ->
+                        entry.Registrations.Values |> Seq.exists(fun registration ->
+                            registration.Participants.Contains id &&
+                            (revision.Emission.Numeric.Values.TryFind registration.Call |> Option.exists(fun carrier -> carrier.Declaration=Some id)) &&
+                            (revision.Emission.Numeric.ForeignResultUses |> List.exists(fun sourceUse ->
+                                sourceUse.Application.Call=registration.Call && sourceUse.Application.Context=registration.Context &&
+                                match sourceUse.Participants with
+                                | ParticipantEvidence.Established rows -> rows |> List.exists(fun row -> row.Node=id && row.Role=ParticipantRole.ForeignResultDestination)
+                                | _ -> false)))) -> true
                 | "Emission.Boundary.ClosedEntries.Participants" when
                     boundary.ClosedEntries.Values |> Seq.exists (fun entry ->
                         entry.Participants.Contains id &&
