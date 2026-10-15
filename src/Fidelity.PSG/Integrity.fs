@@ -1141,12 +1141,16 @@ module Integrity =
                 let parameters = contract.Signature.Parameters |> Array.map (fun parameter ->
                     if parameter.PassBy = BAREWire.Descriptors.PassBy.Value then scalar parameter.Type else None) |> Array.toList
                 let result = scalar contract.Signature.ReturnType
+                let resultMatches =
+                    match contract.Signature.ReturnType with
+                    | BAREWire.Descriptors.TypeRef.Void -> invocation.Signature.Result.IsNone
+                    | _ -> result.IsSome && result = invocation.Signature.Result
                 if contract.Parameter <> invocation.Parameter ||
                    contract.Signature.CallingConvention <> BAREWire.Descriptors.CallConv.CDecl ||
                    invocation.Signature.CallingConvention <> "CDecl" ||
-                   parameters.IsEmpty || (parameters |> List.exists Option.isNone) || result.IsNone ||
-                   List.choose id parameters <> invocation.Signature.Parameters || result <> invocation.Signature.Result then
-                    yield defect (part + ".Signature") key "The callback signature differs from its complete nonempty integer CDecl receiving quotation."
+                   parameters.IsEmpty || (parameters |> List.exists Option.isNone) || not resultMatches ||
+                   List.choose id parameters <> invocation.Signature.Parameters then
+                    yield defect (part + ".Signature") key "The callback signature differs from its complete nonempty integer-formal CDecl receiving quotation and exact integer or void result."
                 if [contract.Binding; contract.Scope; contract.Hypothesis.Identity; contract.Hypothesis.Version; contract.Hypothesis.Source]
                    |> List.exists System.String.IsNullOrWhiteSpace then
                     yield defect (part + ".Provenance") key "The callback invocation has missing receiver, scope or trusted hypothesis provenance."
@@ -1198,6 +1202,15 @@ module Integrity =
                         yield defect (part + ".Formation") key "The closed entry differs from its original typed ofFunction formation and operand."
                     if entry.ResultAdaptation <> revision.Codata.ReturnMeets.TryFind entry.Implementation then
                         yield defect (part + ".ResultAdaptation") key "The closed entry result adaptation differs from its exact original return meet."
+                    if invocation.Contract.Signature.ReturnType = BAREWire.Descriptors.TypeRef.Void then
+                        let unitBody =
+                            revision.Nodes.TryFind entry.Body
+                            |> Option.exists (fun body -> TypeIdentity.isUnit body.Type)
+                        if not unitBody || not (revision.Emission.Callable.UnitNodes.Contains entry.Body) ||
+                           invocation.Signature.Result.IsSome || entry.ResultAdaptation.IsSome ||
+                           revision.Codata.ReturnMeets.ContainsKey entry.Implementation ||
+                           revision.Emission.Numeric.Values.ContainsKey entry.Body then
+                            yield defect (part + ".UnitResult") key "A void native callback requires its actual unit source body and no numeric result or return adaptation."
                     if entry.Formals.Length = entry.ParameterAdaptations.Length then
                         for formal, adaptation in List.zip entry.Formals entry.ParameterAdaptations do
                             for meet in Option.toList adaptation do
