@@ -5,9 +5,9 @@ module internal BinaryGenerated =
     [<Literal>]
     let Format = 2u
     [<Literal>]
-    let Schema = 38
+    let Schema = 39
     [<Literal>]
-    let Fingerprint = "2521EE15F0FCDB2902EF7A14976A8974E0180BC1874F48675FBE13A40307BE49"
+    let Fingerprint = "57A7092B3E079ED6A29192825A2A5951AAD43E9A6DEE82F41290C1E30D7B9DAE"
     [<Literal>]
     let NamedTypes = 330
     [<Literal>]
@@ -1057,6 +1057,10 @@ module internal BinaryGenerated =
               }
             | global.Fidelity.PSG.CallableAggregateOperation.``Transport`` -> result {
                 let! state = writeTag state 4
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.CallableAggregateOperation.``Result`` -> result {
+                let! state = writeTag state 5
                 return leaveWrite state
               }
     }
@@ -8356,6 +8360,9 @@ module internal BinaryGenerated =
               }
             | 4 -> result {
                 return! finishRead (global.Fidelity.PSG.CallableAggregateOperation.``Transport``) state
+              }
+            | 5 -> result {
+                return! finishRead (global.Fidelity.PSG.CallableAggregateOperation.``Result``) state
               }
             | _ -> malformed state "Unknown Fidelity.PSG.CallableAggregateOperation case"
     }

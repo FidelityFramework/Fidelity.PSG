@@ -2086,8 +2086,24 @@ module Integrity =
                                     | _ -> false
                                 let current =
                                     selected |> List.exists (fun row ->
+                                        let instance =
+                                            if operand.Actual=optional.Construction || row.FormationInputs |> List.contains optional.Construction then true
+                                            else
+                                                let supplier =
+                                                    if row.Operation=CallableAggregateOperation.Result then Some row.Occurrence
+                                                    elif row.Operation=CallableAggregateOperation.Transport then Some row.Aggregate
+                                                    else None
+                                                supplier |> Option.exists(fun site->
+                                                    callable.AggregateValues.TryFind site |> Option.defaultValue []
+                                                    |> List.exists(fun result->
+                                                        result.Operation=CallableAggregateOperation.Result && result.Occurrence=site && result.Aggregate=site &&
+                                                        result.Slot=row.Slot && result.Tag=construction.Tag && result.Alternatives=construction.Alternatives &&
+                                                        (match result.FormationInputs with
+                                                         | [_;_;_;_;_;ctor] when optional.Payload.IsNone -> ctor=optional.Construction
+                                                         | [_;_;_;_;_;ctor;payload] -> ctor=optional.Construction && optional.Payload=Some payload
+                                                         | _ -> false)))
                                         row.Slot = construction.Slot && row.Tag = construction.Tag && row.Alternatives = construction.Alternatives &&
-                                        (operand.Actual = optional.Construction || row.FormationInputs |> List.contains optional.Construction))
+                                        instance)
                                 let support =
                                     match callable.AggregateDependencies.TryFind operand.Actual with
                                     | Some account when account.Occurrence = operand.Actual ->

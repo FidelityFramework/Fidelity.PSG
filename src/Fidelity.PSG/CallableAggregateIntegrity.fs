@@ -202,6 +202,67 @@ module internal CallableAggregateIntegrity =
                         match node.Kind with SemanticKind.TupleExpr fields -> List.tryItem ordinal fields | _ -> None)
                 | _ -> None
             | _ -> None
+        // Result incidence is authored by Baker from its completed call reading.
+        // Check the held ordered call/return relation; never discover an origin.
+        let returnedWrite (row: CallableAggregateValue) (slot: CallableAggregateSlot) =
+            let has role ordinal group node =
+                row.Participants |> List.filter ((=) {Node=node;Role=role;Ordinal=ordinal;Group=group}) |> List.length = 1
+            let sameComponent (source:CallableAggregateValue) =
+                source.Value=row.Value && source.Alternatives=row.Alternatives && source.Selector=row.Selector &&
+                source.SelectedAlternative=row.SelectedAlternative && source.Tag=row.Tag &&
+                source.Bytes=row.Bytes && source.Alignment=row.Alignment
+            match row.FormationInputs with
+            | callee::argument::implementation::formal::body::construction::payload
+                when row.Aggregate=row.Occurrence && row.Frontier.IsNone && payload=Option.toList row.Value ->
+                let site=row.Occurrence
+                let sources=callable.AggregateValues.TryFind construction |> Option.defaultValue []
+                            |> List.filter(fun source->source.Slot=row.Slot && source.Operation=CallableAggregateOperation.Construct)
+                let nominalType =
+                    match slot.AggregateType,slot.Path with
+                    | TypeIdentity.Application(constructor,[TypeIdentity.Application(entry,[TypeIdentity.Function _])]),
+                      [CallableAggregatePathStep.UnionPayload(1,0)] ->
+                        constructor={Declaration={Module=[];Name="option"};Parameters=[TypeParamKind.Type];NativeKind=None} &&
+                        entry.NativeKind=Some NTUKind.NTUfnptr
+                    | _ -> false
+                match revision.Nodes.TryFind site,revision.Nodes.TryFind callee,revision.Nodes.TryFind implementation,sources with
+                | Some {Kind=SemanticKind.Application(heldCallee,[heldArgument]);Children=children},
+                  Some {Kind=SemanticKind.VarRef(_,Some binding)},
+                  Some {Kind=SemanticKind.Lambda([(_,parameterType,heldFormal)],heldBody,[],_,_);Children=lambdaChildren},[source] ->
+                    let bindingMatches =
+                        revision.Nodes.TryFind binding |> Option.exists(fun node->
+                            match node.Kind,node.Children with
+                            | SemanticKind.Binding(_,false,false,_),[child] -> child=implementation
+                            | _ -> false)
+                    let bodyMatches =
+                        body=construction ||
+                        (revision.Nodes.TryFind body |> Option.exists(fun node->
+                            match node.Kind,node.Children with
+                            | SemanticKind.TypeAnnotation(actual,declared),[child] ->
+                                actual=construction && child=actual && declared=slot.AggregateType
+                            | _ -> false))
+                    let nominal =
+                        revision.Nodes.TryFind construction |> Option.exists(fun node->
+                            node.Type=slot.AggregateType &&
+                            match node.Kind,row.Tag with
+                            | (SemanticKind.UnionCase("None",0,None) | SemanticKind.DUConstruct("None",0,None,_)),Some tag ->
+                                row.Value.IsNone && tag.Constructor=construction && tag.CaseOrdinal=0 && tag.Payload.IsNone && tag.PayloadOrdinal.IsNone
+                            | (SemanticKind.UnionCase("Some",1,Some value) | SemanticKind.DUConstruct("Some",1,Some value,_)),Some tag ->
+                                row.Value=Some value && tag.Constructor=construction && tag.CaseOrdinal=1 && tag.Payload=Some value && tag.PayloadOrdinal=Some 0
+                            | _ -> false)
+                    heldCallee=callee && heldArgument=argument && children=[callee;argument] &&
+                    heldFormal=formal && heldBody=body && lambdaChildren=[formal;body] &&
+                    TypeIdentity.isUnit parameterType && (sourceType argument |> Option.exists TypeIdentity.isUnit) &&
+                    sourceType site=Some slot.AggregateType && nominalType && bindingMatches && bodyMatches && nominal &&
+                    source.Occurrence=construction && source.Aggregate=construction && sameComponent source &&
+                    callable.Symbols.ContainsKey implementation &&
+                    has ParticipantRole.Site 0 site site && has ParticipantRole.Path 0 site callee &&
+                    has ParticipantRole.Path 1 site binding && has ParticipantRole.CalleeArgument 0 site argument &&
+                    has ParticipantRole.Callee 0 site implementation && has ParticipantRole.CallableImplementation 0 site implementation &&
+                    has ParticipantRole.CalleeParameter 0 site formal && has ParticipantRole.CalleeBody 0 implementation body &&
+                    has ParticipantRole.AggregateConstructor 0 site construction &&
+                    (row.Value |> Option.forall(fun value->has ParticipantRole.AggregatePayload 0 site value))
+                | _ -> false
+            | _ -> false
         let transportedWrite (row: CallableAggregateValue) (slot: CallableAggregateSlot) =
             let path =
                 match row.Value, List.rev row.FormationInputs with
@@ -220,6 +281,9 @@ module internal CallableAggregateIntegrity =
                         if site<>construction then None else
                         match revision.Nodes.TryFind site |> Option.map _.Kind with
                         | Some(SemanticKind.RecordExpr _ | SemanticKind.UnionCase _ | SemanticKind.DUConstruct _) -> Some site
+                        | Some(SemanticKind.Application _) when
+                            callable.AggregateValues.TryFind site |> Option.defaultValue []
+                            |> List.exists(fun source->source.Slot=row.Slot && source.Operation=CallableAggregateOperation.Result && returnedWrite source slot) -> Some site
                         | _ -> None)
                 let sameCanonical source target =
                     match canonical source, canonical target with
@@ -242,7 +306,9 @@ module internal CallableAggregateIntegrity =
                         | _ -> false
                     | None -> false
                 let suppliers = callable.AggregateValues.TryFind construction |> Option.defaultValue []
-                                |> List.filter (fun source -> source.Slot=row.Slot && source.Operation=CallableAggregateOperation.Construct)
+                                |> List.filter (fun source ->
+                                    source.Slot=row.Slot &&
+                                    (source.Operation=CallableAggregateOperation.Construct || source.Operation=CallableAggregateOperation.Result))
                 row.Aggregate = construction && canonical construction=Some construction && path.Length = (List.distinct path).Length &&
                 (path |> List.forall (fun site -> sourceType site = Some slot.AggregateType)) &&
                 (path |> List.pairwise |> List.forall edge) &&
@@ -251,7 +317,8 @@ module internal CallableAggregateIntegrity =
                                source.Value=row.Value && source.Alternatives=row.Alternatives &&
                                source.Selector=row.Selector && source.SelectedAlternative=row.SelectedAlternative &&
                                source.Tag=row.Tag && source.Bytes=row.Bytes && source.Alignment=row.Alignment &&
-                               (source.Tag |> Option.forall (fun tag -> tag.Constructor=construction))
+                               (if source.Operation=CallableAggregateOperation.Result then returnedWrite source slot
+                                else source.Tag |> Option.forall (fun tag -> tag.Constructor=construction))
                  | _ -> false)
             | _ -> false
         // The producer gives an ordered path, not a bag of candidate origins.
@@ -464,6 +531,8 @@ module internal CallableAggregateIntegrity =
                       if row.Tag.IsNone then yield failure "I5" site "A callable union payload has no current constructor/tag evidence."
                   elif row.Tag.IsSome then
                       yield failure "I5" site "A record component carries union tag evidence."
+                  if row.Operation = CallableAggregateOperation.Result && not (returnedWrite row slot) then
+                      yield failure "I5" site "The aggregate result differs from its exact closed application, return or original constructor."
                   match representation row with
                   | Some(Ok held) ->
                       if row.Operation = CallableAggregateOperation.Transport && not (transportedWrite row slot) then

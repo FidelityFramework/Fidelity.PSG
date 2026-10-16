@@ -262,6 +262,7 @@ module internal JsonGenerated =
         | global.Fidelity.PSG.CallableAggregateOperation.``Assign`` -> union "Assign" []
         | global.Fidelity.PSG.CallableAggregateOperation.``Snapshot`` -> union "Snapshot" []
         | global.Fidelity.PSG.CallableAggregateOperation.``Transport`` -> union "Transport" []
+        | global.Fidelity.PSG.CallableAggregateOperation.``Result`` -> union "Result" []
 
     and write_Fidelity_PSG_CallableAggregatePathStep (value: global.Fidelity.PSG.CallableAggregatePathStep) : JsonValue =
         match value with
