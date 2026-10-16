@@ -263,6 +263,26 @@ type BoundaryCallbackInvocation = {
 
 /// Source-issued closed native entry. Lifetime and numeric conversions retain
 /// their existing owners; activation supplies no fabricated foreign arguments.
+[<RequireQualifiedAccess>]
+type CallbackAbsenceInputRole =
+    | Binding | Parameter | Hypothesis | HypothesisIdentity | HypothesisVersion | HypothesisSource
+
+/// Independent quoted absence promise, with complete current source content.
+/// Invocation names the receiving descriptor, never a callable occurrence.
+type BoundaryCallbackAbsence = {
+    Quote: NodeId
+    DescriptorBinding: NodeId
+    Record: NodeId
+    Import: NodeId
+    Parameter: int
+    Formal: NodeId
+    Invocation: NodeId
+    Contract: BAREWire.Descriptors.CallbackAbsenceContract
+    SourcePath: NodeId list
+    Inputs: (CallbackAbsenceInputRole * NodeId list) list
+    DeclarationFacts: Map<NodeId, BoundaryDeclarationFact>
+}
+
 type BoundaryClosedEntry = {
     Formation: NodeId
     Operand: NodeId

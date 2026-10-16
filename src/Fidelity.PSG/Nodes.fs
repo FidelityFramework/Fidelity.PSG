@@ -247,6 +247,21 @@ type OptionalEntryPlanArm = {
     Formation: NodeId option
 }
 
+[<RequireQualifiedAccess>]
+type OptionalEntryAbsencePlanChoice = AbsentEntry | RequiresClosedEntry
+
+type OptionalEntryAbsencePlanArm = { CaseOrdinal: int; Choice: OptionalEntryAbsencePlanChoice }
+
+type OptionalEntryAbsenceArgumentConversionModel = {
+    Call: NodeId
+    Parameter: int
+    Actual: NodeId
+    Construction: NodeId
+    SourceCase: int
+    Absence: NodeId
+    Arms: OptionalEntryAbsencePlanArm list
+}
+
 type OptionalEntryArgumentConversionModel = {
     Call: NodeId
     Parameter: int
@@ -718,6 +733,30 @@ module OptionalEntryArgumentProof =
             Alternatives = [equal sourceCase (number 1)]
         }
 
+
+    /// Conditional finite source correspondence. The account-bound Boolean is
+    /// an external binding hypothesis, never compiler-proved foreign behavior.
+    let projectAbsence (model: OptionalEntryAbsenceArgumentConversionModel) : Result<ResourceProof.Projection, string> =
+        let number (value: int) = ResourceProof.Expr.Integer(bigint value)
+        let equal left right = ResourceProof.Expr.Equal(left, right)
+        let all values = ResourceProof.Expr.And values
+        let sourceCase = ResourceProof.Expr.Variable "optional_entry_absence_case"
+        let promiseName = sprintf "optional_entry_absence_accepted_%d" (NodeId.value model.Absence)
+        let promise = ResourceProof.Expr.Variable promiseName
+        let selected = model.Arms |> List.map (fun arm ->
+            ResourceProof.Expr.IfThenElse(equal sourceCase (number arm.CaseOrdinal), number 1, number 0))
+        let table = model.Arms |> List.map (fun arm ->
+            equal (number arm.CaseOrdinal) (number (match arm.Choice with OptionalEntryAbsencePlanChoice.AbsentEntry -> 0 | OptionalEntryAbsencePlanChoice.RequiresClosedEntry -> 1)))
+        Ok {
+            Declarations = ["optional_entry_absence_case", ResourceProof.Sort.Integer; promiseName, ResourceProof.Sort.Boolean]
+            Premises = all [equal sourceCase (number model.SourceCase); promise]
+            Conclusion = all ([equal sourceCase (number 0); promise
+                               equal (number model.Arms.Length) (number 2)
+                               ResourceProof.Expr.Boolean ((model.Arms |> List.map _.CaseOrdinal |> List.sort) = [0;1])
+                               equal (ResourceProof.Expr.Add selected) (number 1)] @ table)
+            Alternatives = [equal sourceCase (number 0)]
+        }
+
 /// Arithmetic for a complete local snapshot whose copy and allocation use the
 /// same source count. The producer supplies that incidence; this projection
 /// neither discovers equality nor substitutes a range endpoint for the count.
@@ -1123,6 +1162,7 @@ type ObligationBody =
     | Pending of reasons: string list
     /// Source-plan correspondence only; the target artifact must realize it.
     | OptionalEntryArgumentConversion of OptionalEntryArgumentConversionModel
+    | OptionalEntryAbsenceArgumentConversion of OptionalEntryAbsenceArgumentConversionModel
 
 /// The obligation record carried by an Obligation node.
 type ObligationInfo = {

@@ -252,6 +252,7 @@ type BoundaryDomain = {
     Failures: (NodeId * Set<NodeId> * string) list
     ResultHypotheses: ForeignResultHypothesis list
     CallbackInvocations: NodeId list
+    CallbackAbsences: NodeId list
     ClosedEntries: NodeId list
 }
 
@@ -629,6 +630,7 @@ type EdgeRole =
     | BoundaryEntry of BoundaryEntry
     | BoundaryCallbackInvocation of BoundaryCallbackInvocation
     | BoundaryClosedEntry of BoundaryClosedEntry
+    | BoundaryCallbackAbsence of BoundaryCallbackAbsence
 
 /// One directed relation. Sources retain ordered participant occurrences;
 /// structural projections may be single-source while joint facts are n-ary.

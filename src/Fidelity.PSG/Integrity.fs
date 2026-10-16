@@ -20,6 +20,68 @@ module Integrity =
     let private rows (table: Map<NodeId, 'value>) : Set<NodeId> =
         table |> Map.toList |> List.map fst |> Set.ofList
 
+    let private absenceAccountCurrent (boundary:BoundaryEmissionProjection) (row:BoundaryCallbackAbsence) =
+        let facts=row.DeclarationFacts
+        let field record name =
+            facts.TryFind record |> Option.bind(fun fact ->
+                if fact.Form="record" && fact.Text.Length=fact.References.Length && fact.Children=fact.References && fact.Numbers.IsEmpty then
+                    List.zip fact.Text fact.References |> List.filter(fst >> (=) name) |> function [_,id]->Some id | _->None
+                else None)
+        let pathCurrent (path:NodeId list) =
+            not path.IsEmpty && (path |> List.forall facts.ContainsKey) &&
+            (path |> List.pairwise |> List.forall(fun(before,after)->
+                match facts.TryFind before with
+                | Some fact when fact.Form="quotation" || fact.Form="annotation" || fact.Form="reference" || fact.Form="binding" ->
+                    fact.References=[after] && (fact.Form<>"binding" || fact.Numbers=[0I;0I])
+                | _ -> false))
+        let roles=[CallbackAbsenceInputRole.Binding;CallbackAbsenceInputRole.Parameter;CallbackAbsenceInputRole.Hypothesis
+                   CallbackAbsenceInputRole.HypothesisIdentity;CallbackAbsenceInputRole.HypothesisVersion;CallbackAbsenceInputRole.HypothesisSource]
+        let inputs=Map.ofList row.Inputs
+        let hypothesis=field row.Record "Hypothesis"
+        let root role =
+            match role with
+            | CallbackAbsenceInputRole.Binding -> field row.Record "Binding"
+            | CallbackAbsenceInputRole.Parameter -> field row.Record "Parameter"
+            | CallbackAbsenceInputRole.Hypothesis -> hypothesis
+            | CallbackAbsenceInputRole.HypothesisIdentity -> hypothesis |> Option.bind(fun id->field id "Identity")
+            | CallbackAbsenceInputRole.HypothesisVersion -> hypothesis |> Option.bind(fun id->field id "Version")
+            | CallbackAbsenceInputRole.HypothesisSource -> hypothesis |> Option.bind(fun id->field id "Source")
+        let literal role form texts numbers =
+            inputs.TryFind role |> Option.bind List.tryLast |> Option.bind facts.TryFind
+            |> Option.exists(fun fact -> fact.Form=form && fact.Text=texts && fact.Numbers=numbers && fact.References.IsEmpty && fact.Children.IsEmpty)
+        let nominal=facts.TryFind row.Record |> Option.exists(fun fact ->
+            match fact.SourceType with
+            | TypeIdentity.Application(constructor,[]) -> constructor.Declaration.Module=["BAREWire";"Descriptors"] && constructor.Declaration.Name="Descriptors.CallbackAbsenceContract" && constructor.Parameters=[] && constructor.NativeKind=None
+            | _ -> false)
+        let immutable=facts.TryFind row.DescriptorBinding |> Option.exists(fun fact ->
+            fact.Form="binding" && fact.Numbers=[0I;0I] && fact.Children=(row.SourcePath |> List.tryHead |> Option.toList))
+        let quote=facts.TryFind row.Quote |> Option.exists(fun fact -> fact.Form="quotation")
+        let receiver=
+            match boundary.Imports.TryFind row.Import,boundary.CallbackInvocations.TryFind row.Invocation with
+            | Some imported,Some invocation ->
+                (imported.Parameters |> List.tryItem row.Parameter) = Some(row.Formal,BoundaryScalar.Entry row.Invocation) &&
+                invocation.Import=row.Import && invocation.Parameter=row.Parameter && invocation.Formal=row.Formal && invocation.Extent=BoundaryCallbackExtent.DuringCall &&
+                invocation.Contract.Binding=row.Contract.Binding && row.Contract.Parameter=row.Parameter && invocation.Contract.Hypothesis.Identity<>row.Contract.Hypothesis.Identity &&
+                (match imported.SourceTypes.TryFind row.Formal with Some(TypeIdentity.Application(option,[TypeIdentity.Application(entry,[_])])) -> option.Declaration.Module=[] && option.Declaration.Name="option" && entry.NativeKind=Some NTUKind.NTUfnptr | _->false)
+            | _ -> false
+        let rec closure seen pending =
+            match pending with
+            | [] -> Some seen
+            | id::rest when Set.contains id seen -> closure seen rest
+            | id::rest -> facts.TryFind id |> Option.bind(fun fact->closure (Set.add id seen) (fact.References @ fact.Children @ rest))
+        nominal && immutable && quote && receiver && pathCurrent row.SourcePath && List.tryLast row.SourcePath=Some row.Record && List.contains row.Quote row.SourcePath &&
+        List.map fst row.Inputs=roles &&
+        (row.Inputs |> List.forall(fun(role,path)->pathCurrent path && List.tryHead path=root role)) &&
+        (closure Set.empty [row.DescriptorBinding]=Some(facts |> Map.keys |> Set.ofSeq)) &&
+        (facts.TryFind row.Record |> Option.exists(fun fact -> fact.Text=["Binding";"Parameter";"Hypothesis"])) &&
+        (hypothesis |> Option.bind facts.TryFind |> Option.exists(fun fact->fact.Text=["Identity";"Version";"Source"])) &&
+        ([row.Contract.Hypothesis.Identity;row.Contract.Hypothesis.Version;row.Contract.Hypothesis.Source] |> List.forall(System.String.IsNullOrWhiteSpace >> not)) &&
+        literal CallbackAbsenceInputRole.Binding "string" [row.Contract.Binding] [] &&
+        (inputs.TryFind CallbackAbsenceInputRole.Parameter |> Option.bind List.tryLast |> Option.bind facts.TryFind |> Option.exists(fun fact -> (fact.Form="integer" || fact.Form="unsigned-integer") && fact.Numbers=[bigint row.Parameter] && fact.References.IsEmpty && fact.Children.IsEmpty)) &&
+        literal CallbackAbsenceInputRole.HypothesisIdentity "string" [row.Contract.Hypothesis.Identity] [] &&
+        literal CallbackAbsenceInputRole.HypothesisVersion "string" [row.Contract.Hypothesis.Version] [] &&
+        literal CallbackAbsenceInputRole.HypothesisSource "string" [row.Contract.Hypothesis.Source] []
+
     /// The literals the storage, view and sentinel proofs of string literals name:
     /// the sources of every current claim with one of those bodies. Claim facts
     /// have no executable SemanticNode body in a live publication.
@@ -435,7 +497,7 @@ module Integrity =
         let optionalOwners =
             [ for KeyValue(id, claim) in revision.CurrentClaims do
                   match claim.Body with
-                  | ObligationBody.OptionalEntryArgumentConversion _ ->
+                  | ObligationBody.OptionalEntryArgumentConversion _ | ObligationBody.OptionalEntryAbsenceArgumentConversion _ ->
                       let owners = revision.Emission.Boundary.Calls.Values |> Seq.collect (fun call ->
                           call.Arguments |> List.choose (fun operand -> operand.OptionalEntry |> Option.filter (fun selected -> selected.Obligation=id))) |> Seq.length
                       if owners<>1 then yield defect "CurrentClaims.OptionalEntry" id "A finite optional-entry source plan requires one exact current per-call operand owner."
@@ -1726,6 +1788,9 @@ module Integrity =
                     if owners.Length <> 1 then
                         yield defect "CurrentClaims.Pending.Owner" id "A Pending claim requires exactly one current optional-entry operand account."
                 | _ -> ()
+            for KeyValue(key, account) in boundary.CallbackAbsences do
+                if key<>account.Quote || not(absenceAccountCurrent boundary account) then
+                    yield defect "Emission.Boundary.CallbackAbsences" key "The absence promise differs from its exact current quoted content, original optional formal or independent hypothesis."
             for KeyValue(_, call) in boundary.Calls do
                 if not (resourceCall call) then
                     yield defect "Emission.Boundary.Calls.Resource" call.Site "The resource call differs from its exact current conversion, cleanup or original source incidence."
@@ -2036,24 +2101,14 @@ module Integrity =
                            not (optional.Transport.Contains operand.Actual) || not (optional.Transport.Contains optional.Construction) then
                             yield defect (part + ".Participants") call.Site "The optional callback omits its exact source selection, transport, invocation or conversion claim support."
                         let claimMatches =
-                            let optionalClaims = call.Arguments |> List.choose (fun argument -> argument.OptionalEntry |> Option.map _.Obligation) |> Set.ofList
-                            let accountsCurrent =
-                                call.Arguments |> List.fold (fun state argument ->
-                                    match state, argument.OptionalEntry with
-                                    | None, _ -> None
-                                    | Some (), None -> Some ()
-                                    | Some (), Some _ ->
-                                        match callable.AggregateDependencies.TryFind argument.Actual with
-                                        | Some account when account.Occurrence = argument.Actual && not account.Slots.IsEmpty ->
-                                            let identities = account.Slots |> List.map _.Identity |> Set.ofList
-                                            if identities |> Set.forall (fun identity ->
-                                                account.Participants |> List.exists (fun participant ->
-                                                    participant.Node = identity && participant.Role = ParticipantRole.AggregateSlot)) then
-                                                let sources = account.Sources |> List.map _.Node |> Set.ofList
-                                                if Set.isSubset sources call.Participants then Some () else None
-                                            else None
-                                        | _ -> None) (Some ())
-                            let expectedSupport = accountsCurrent |> Option.map (fun () -> Set.difference call.Participants optionalClaims)
+                            let expectedSupport =
+                                match callable.AggregateDependencies.TryFind operand.Actual,boundary.Imports.TryFind call.Import,boundary.CallbackInvocations.TryFind invocation with
+                                | Some account,Some imported,Some receiver when account.Occurrence=operand.Actual && not account.Slots.IsEmpty &&
+                                    (account.Slots |> List.forall(fun slot->account.Participants |> List.exists(fun participant->participant.Node=slot.Identity && participant.Role=ParticipantRole.AggregateSlot))) ->
+                                    let own=account.Sources |> List.map _.Node |> Set.ofList
+                                    let extra=if optional.Payload.IsSome then Set.empty else boundary.CallbackAbsences.Values |> Seq.filter(fun row->row.Import=call.Import && row.Parameter=ordinal && row.Invocation=invocation) |> Seq.collect(fun row->row.DeclarationFacts |> Map.keys) |> Set.ofSeq
+                                    Some(Set.unionMany[own;optional.Transport;Set.ofList[call.Site;call.Import;call.Callee;operand.Actual;operand.Formal;optional.Construction];imported.Participants;receiver.Participants;extra])
+                                | _ -> None
                             let expectedReasons =
                                 if optional.CaseOrdinal = 0 then
                                     ["Selected-target optional-entry conversion and the foreign nullable-acceptance premise remain Pending."]
@@ -2072,6 +2127,12 @@ module Integrity =
                                         optional.Payload=Some model.Payload && optional.Formation=Some model.Formation &&
                                         model.Invocation=invocation && model.Arms=arms &&
                                         claim.Logic="QF_LIA" && claim.Statement="The exact source Some selection has complete finite native-choice plan correspondence; target realization remains an artifact obligation."
+                                    | ObligationBody.OptionalEntryAbsenceArgumentConversion model ->
+                                        let arms=[{CaseOrdinal=0;Choice=OptionalEntryAbsencePlanChoice.AbsentEntry};{CaseOrdinal=1;Choice=OptionalEntryAbsencePlanChoice.RequiresClosedEntry}]
+                                        model.Call=call.Site && model.Parameter=ordinal && model.Actual=operand.Actual && model.Construction=optional.Construction && model.SourceCase=0 &&
+                                        optional.CaseOrdinal=0 && optional.Payload.IsNone && optional.Formation.IsNone && model.Arms=arms &&
+                                        (boundary.CallbackAbsences.TryFind model.Absence |> Option.exists(fun row->row.Quote=model.Absence && row.Import=call.Import && row.Parameter=ordinal && row.Formal=operand.Formal && row.Invocation=invocation && absenceAccountCurrent boundary row)) &&
+                                        claim.Logic="QF_LIA" && claim.Statement="The exact source None selection has complete finite absence-choice correspondence under its external binding hypothesis; target realization remains an artifact obligation."
                                     | _ -> false
                                 claim.Kind = $"foreign-optional-entry-conversion-{ordinal}" &&
                                 bodyMatches &&
@@ -2080,7 +2141,7 @@ module Integrity =
                                 // claim sources; analytical F edges stay with Baker.
                                 (match revision.ObligationSources.TryFind optional.Obligation, expectedSupport with
                                  | Some [group], Some support ->
-                                     group = List.distinct (call.Site :: Set.toList support)
+                                     Set.isSubset support call.Participants && group = List.distinct (call.Site :: Set.toList support)
                                  | _ -> false)
                             | _ -> false
                         if not claimMatches then
@@ -2706,7 +2767,8 @@ module Integrity =
              | Some(TypeIdentity.Application(constructor, [])) -> constructor.NativeKind = Some NTUKind.NTUunit
              | _ -> false)
         let boundary = revision.Emission.Boundary
-        let declarationFact id = boundary.Imports |> Map.exists (fun _ imported -> imported.DeclarationFacts.ContainsKey id)
+        let absenceFact id = boundary.CallbackAbsences.Values |> Seq.exists(fun row->absenceAccountCurrent boundary row && row.DeclarationFacts.ContainsKey id)
+        let declarationFact id = (boundary.Imports |> Map.exists (fun _ imported -> imported.DeclarationFacts.ContainsKey id)) || absenceFact id
         let boundaryType id = boundary.Imports |> Map.exists (fun _ imported -> imported.SourceTypes.ContainsKey id)
         let loadingFact id = boundary.Loading |> Option.exists (fun loading -> loading.DeclarationFacts.ContainsKey id)
         let loadingSupport id = body id || loadingFact id || source.ContextHeaders.ContainsKey id
@@ -2913,6 +2975,11 @@ module Integrity =
                 | "Emission.Boundary.Calls.Resource" ->
                     boundary.Calls.Values |> Seq.exists (fun call -> call.Resource |> Option.exists (fun row -> resourceUseRole row id))
                 | "Emission.Boundary.Imports.Result" | "Emission.Boundary.Calls.Result" -> resourceDeclaration id
+                | part when part.StartsWith("Emission.Boundary.CallbackAbsences",System.StringComparison.Ordinal) ->
+                    absenceFact id || boundary.Imports.ContainsKey id || boundary.CallbackInvocations.ContainsKey id || boundaryType id || source.ContextHeaders.ContainsKey id
+                | "Obligations.Body.OptionalEntryAbsenceArgumentConversion"
+                | "CurrentClaims.Body.OptionalEntryAbsenceArgumentConversion" ->
+                    body id || (boundary.CallbackAbsences.TryFind id |> Option.exists(absenceAccountCurrent boundary))
                 | "Emission.Boundary.CallbackInvocations" | "Emission.Boundary.CallbackInvocations.Identity"
                 | "Emission.Boundary.ClosedEntries.Invocation" -> boundary.CallbackInvocations.ContainsKey id
                 | "Emission.Boundary.CallbackInvocations.Import" -> boundary.Imports.ContainsKey id

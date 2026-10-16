@@ -843,6 +843,7 @@ type BoundaryEmissionProjection = {
     Links: Set<string>
     ResultHypotheses: ForeignResultHypothesis list
     CallbackInvocations: Map<NodeId, BoundaryCallbackInvocation>
+    CallbackAbsences: Map<NodeId, BoundaryCallbackAbsence>
     ClosedEntries: Map<NodeId, BoundaryClosedEntry>
 }
 

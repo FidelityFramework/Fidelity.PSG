@@ -157,6 +157,32 @@ let private renderValue (ty: Type) value =
     methodInfo.Invoke(null, [|value|]) :?> JsonValue
 
 [<Fact>]
+let ``inspection retains absence source plan and each independent promise input role`` () =
+  let model : OptionalEntryAbsenceArgumentConversionModel =
+    { Call = NodeId 100; Parameter = 2; Actual = NodeId 101; Construction = NodeId 102; SourceCase = 0; Absence = NodeId 70
+      Arms = [{CaseOrdinal = 0; Choice = OptionalEntryAbsencePlanChoice.AbsentEntry}
+              {CaseOrdinal = 1; Choice = OptionalEntryAbsencePlanChoice.RequiresClosedEntry}] }
+  let body = ObligationBody.OptionalEntryAbsenceArgumentConversion model
+  let rendered = renderValue typeof<ObligationBody> (box body)
+  check typeof<ObligationBody> (box body) rendered
+  Assert.Equal("OptionalEntryAbsenceArgumentConversion", (properties rendered)["$case"] |> text)
+  Assert.Equal<JsonValue>(rendered, Json.serialize rendered |> Json.parse |> take)
+  let roles = [CallbackAbsenceInputRole.Binding; CallbackAbsenceInputRole.Parameter; CallbackAbsenceInputRole.Hypothesis
+               CallbackAbsenceInputRole.HypothesisIdentity; CallbackAbsenceInputRole.HypothesisVersion; CallbackAbsenceInputRole.HypothesisSource]
+  let names = roles |> List.map (fun role ->
+    let json = renderValue typeof<CallbackAbsenceInputRole> (box role)
+    check typeof<CallbackAbsenceInputRole> (box role) json
+    Assert.Equal<JsonValue>(json, Json.serialize json |> Json.parse |> take)
+    (properties json)["$case"] |> text)
+  Assert.Equal<string list>(["Binding"; "Parameter"; "Hypothesis"; "HypothesisIdentity"; "HypothesisVersion"; "HypothesisSource"], names)
+  let account = sample 0 1 typeof<BoundaryCallbackAbsence> |> unbox<BoundaryCallbackAbsence>
+  let edge = EdgeRole.BoundaryCallbackAbsence account
+  let json = renderValue typeof<EdgeRole> (box edge)
+  check typeof<EdgeRole> (box edge) json
+  Assert.Equal("BoundaryCallbackAbsence", (properties json)["$case"] |> text)
+  Assert.Equal<JsonValue>(json, Json.serialize json |> Json.parse |> take)
+
+[<Fact>]
 let ``inspection preserves ordinary omission origin kind without inventing an initializer ordinal`` () =
   let cases =
     [ OrdinaryOmissionOrigin.CallArgument 0, "CallArgument", Some 0L

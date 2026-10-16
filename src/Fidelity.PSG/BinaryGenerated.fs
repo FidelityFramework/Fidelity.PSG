@@ -5,11 +5,11 @@ module internal BinaryGenerated =
     [<Literal>]
     let Format = 2u
     [<Literal>]
-    let Schema = 37
+    let Schema = 38
     [<Literal>]
-    let Fingerprint = "14C9E027EF9FE3E949D46E68E41BAD9375FFF2EF69DF4D8A4DF2FD0AECB7367D"
+    let Fingerprint = "2521EE15F0FCDB2902EF7A14976A8974E0180BC1874F48675FBE13A40307BE49"
     [<Literal>]
-    let NamedTypes = 324
+    let NamedTypes = 330
     [<Literal>]
     let RevisionFields = 17
     [<Literal>]
@@ -30,6 +30,14 @@ module internal BinaryGenerated =
                 let! state = writeTag state 2
                 return leaveWrite state
               }
+    }
+
+    and write_BAREWire_Descriptors_CallbackAbsenceContract (state: WriteState) (value: global.BAREWire.Descriptors.CallbackAbsenceContract) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = writeString state value.``Binding``
+        let! state = writeI32 state value.``Parameter``
+        let! state = write_BAREWire_Descriptors_ExternalExecutionHypothesis state value.``Hypothesis``
+        return leaveWrite state
     }
 
     and write_BAREWire_Descriptors_CallbackInvocationContract (state: WriteState) (value: global.BAREWire.Descriptors.CallbackInvocationContract) : Result<WriteState, BinaryError> = result {
@@ -450,6 +458,22 @@ module internal BinaryGenerated =
         return leaveWrite state
     }
 
+    and write_Fidelity_PSG_BoundaryCallbackAbsence (state: WriteState) (value: global.Fidelity.PSG.BoundaryCallbackAbsence) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = write_Fidelity_PSG_NodeId state value.``Quote``
+        let! state = write_Fidelity_PSG_NodeId state value.``DescriptorBinding``
+        let! state = write_Fidelity_PSG_NodeId state value.``Record``
+        let! state = write_Fidelity_PSG_NodeId state value.``Import``
+        let! state = writeI32 state value.``Parameter``
+        let! state = write_Fidelity_PSG_NodeId state value.``Formal``
+        let! state = write_Fidelity_PSG_NodeId state value.``Invocation``
+        let! state = write_BAREWire_Descriptors_CallbackAbsenceContract state value.``Contract``
+        let! state = (writeList write_Fidelity_PSG_NodeId) state value.``SourcePath``
+        let! state = (writeList (fun state (v1_0, v1_1) -> enterWrite state |> Result.bind (fun state -> write_Fidelity_PSG_CallbackAbsenceInputRole state v1_0 |> Result.bind (fun state -> (writeList write_Fidelity_PSG_NodeId) state v1_1 |> Result.bind (fun state -> Ok(leaveWrite state)))))) state value.``Inputs``
+        let! state = (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_BoundaryDeclarationFact) state value.``DeclarationFacts``
+        return leaveWrite state
+    }
+
     and write_Fidelity_PSG_BoundaryCallbackExtent (state: WriteState) (value: global.Fidelity.PSG.BoundaryCallbackExtent) : Result<WriteState, BinaryError> = result {
         let! state = enterWrite state
         return!
@@ -588,6 +612,7 @@ module internal BinaryGenerated =
         let! state = (writeList (fun state (v1_0, v1_1, v1_2) -> enterWrite state |> Result.bind (fun state -> write_Fidelity_PSG_NodeId state v1_0 |> Result.bind (fun state -> (writeSet write_Fidelity_PSG_NodeId) state v1_1 |> Result.bind (fun state -> writeString state v1_2 |> Result.bind (fun state -> Ok(leaveWrite state))))))) state value.``Failures``
         let! state = (writeList write_Fidelity_PSG_ForeignResultHypothesis) state value.``ResultHypotheses``
         let! state = (writeList write_Fidelity_PSG_NodeId) state value.``CallbackInvocations``
+        let! state = (writeList write_Fidelity_PSG_NodeId) state value.``CallbackAbsences``
         let! state = (writeList write_Fidelity_PSG_NodeId) state value.``ClosedEntries``
         return leaveWrite state
     }
@@ -614,6 +639,7 @@ module internal BinaryGenerated =
         let! state = (writeSet writeString) state value.``Links``
         let! state = (writeList write_Fidelity_PSG_ForeignResultHypothesis) state value.``ResultHypotheses``
         let! state = (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_BoundaryCallbackInvocation) state value.``CallbackInvocations``
+        let! state = (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_BoundaryCallbackAbsence) state value.``CallbackAbsences``
         let! state = (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_BoundaryClosedEntry) state value.``ClosedEntries``
         return leaveWrite state
     }
@@ -1409,6 +1435,36 @@ module internal BinaryGenerated =
             | global.Fidelity.PSG.CallableValueShape.``Lazy``(a0) -> result {
                 let! state = writeTag state 3
                 let! state = write_Fidelity_PSG_NodeId state a0
+                return leaveWrite state
+              }
+    }
+
+    and write_Fidelity_PSG_CallbackAbsenceInputRole (state: WriteState) (value: global.Fidelity.PSG.CallbackAbsenceInputRole) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        return!
+            match value with
+            | global.Fidelity.PSG.CallbackAbsenceInputRole.``Binding`` -> result {
+                let! state = writeTag state 0
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.CallbackAbsenceInputRole.``Parameter`` -> result {
+                let! state = writeTag state 1
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.CallbackAbsenceInputRole.``Hypothesis`` -> result {
+                let! state = writeTag state 2
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.CallbackAbsenceInputRole.``HypothesisIdentity`` -> result {
+                let! state = writeTag state 3
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.CallbackAbsenceInputRole.``HypothesisVersion`` -> result {
+                let! state = writeTag state 4
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.CallbackAbsenceInputRole.``HypothesisSource`` -> result {
+                let! state = writeTag state 5
                 return leaveWrite state
               }
     }
@@ -2624,6 +2680,11 @@ module internal BinaryGenerated =
             | global.Fidelity.PSG.EdgeRole.``BoundaryClosedEntry``(a0) -> result {
                 let! state = writeTag state 178
                 let! state = write_Fidelity_PSG_BoundaryClosedEntry state a0
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.EdgeRole.``BoundaryCallbackAbsence``(a0) -> result {
+                let! state = writeTag state 179
+                let! state = write_Fidelity_PSG_BoundaryCallbackAbsence state a0
                 return leaveWrite state
               }
     }
@@ -4766,6 +4827,11 @@ module internal BinaryGenerated =
                 let! state = write_Fidelity_PSG_OptionalEntryArgumentConversionModel state a0
                 return leaveWrite state
               }
+            | global.Fidelity.PSG.ObligationBody.``OptionalEntryAbsenceArgumentConversion``(a0) -> result {
+                let! state = writeTag state 35
+                let! state = write_Fidelity_PSG_OptionalEntryAbsenceArgumentConversionModel state a0
+                return leaveWrite state
+              }
     }
 
     and write_Fidelity_PSG_ObligationInfo (state: WriteState) (value: global.Fidelity.PSG.ObligationInfo) : Result<WriteState, BinaryError> = result {
@@ -4806,6 +4872,39 @@ module internal BinaryGenerated =
                 return leaveWrite state
               }
             | global.Fidelity.PSG.OccurrencePort.``ModuleDeclaration`` -> result {
+                let! state = writeTag state 1
+                return leaveWrite state
+              }
+    }
+
+    and write_Fidelity_PSG_OptionalEntryAbsenceArgumentConversionModel (state: WriteState) (value: global.Fidelity.PSG.OptionalEntryAbsenceArgumentConversionModel) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = write_Fidelity_PSG_NodeId state value.``Call``
+        let! state = writeI32 state value.``Parameter``
+        let! state = write_Fidelity_PSG_NodeId state value.``Actual``
+        let! state = write_Fidelity_PSG_NodeId state value.``Construction``
+        let! state = writeI32 state value.``SourceCase``
+        let! state = write_Fidelity_PSG_NodeId state value.``Absence``
+        let! state = (writeList write_Fidelity_PSG_OptionalEntryAbsencePlanArm) state value.``Arms``
+        return leaveWrite state
+    }
+
+    and write_Fidelity_PSG_OptionalEntryAbsencePlanArm (state: WriteState) (value: global.Fidelity.PSG.OptionalEntryAbsencePlanArm) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = writeI32 state value.``CaseOrdinal``
+        let! state = write_Fidelity_PSG_OptionalEntryAbsencePlanChoice state value.``Choice``
+        return leaveWrite state
+    }
+
+    and write_Fidelity_PSG_OptionalEntryAbsencePlanChoice (state: WriteState) (value: global.Fidelity.PSG.OptionalEntryAbsencePlanChoice) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        return!
+            match value with
+            | global.Fidelity.PSG.OptionalEntryAbsencePlanChoice.``AbsentEntry`` -> result {
+                let! state = writeTag state 0
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.OptionalEntryAbsencePlanChoice.``RequiresClosedEntry`` -> result {
                 let! state = writeTag state 1
                 return leaveWrite state
               }
@@ -7247,6 +7346,14 @@ module internal BinaryGenerated =
             | _ -> malformed state "Unknown BAREWire.Descriptors.CallConv case"
     }
 
+    and read_BAREWire_Descriptors_CallbackAbsenceContract (state: ReadState) : Result<global.BAREWire.Descriptors.CallbackAbsenceContract * ReadState, BinaryError> = result {
+        let! state = enterReadFields 3 state
+        let! a0, state = readString state
+        let! a1, state = readI32 state
+        let! a2, state = read_BAREWire_Descriptors_ExternalExecutionHypothesis state
+        return! finishRead ({ ``Binding`` = a0; ``Parameter`` = a1; ``Hypothesis`` = a2 } : global.BAREWire.Descriptors.CallbackAbsenceContract) state
+    }
+
     and read_BAREWire_Descriptors_CallbackInvocationContract (state: ReadState) : Result<global.BAREWire.Descriptors.CallbackInvocationContract * ReadState, BinaryError> = result {
         let! state = enterReadFields 5 state
         let! a0, state = readString state
@@ -7658,6 +7765,22 @@ module internal BinaryGenerated =
         return! finishRead ({ ``Site`` = a0; ``Import`` = a1; ``Callee`` = a2; ``Entry`` = a3; ``Arguments`` = a4; ``ErasedUnitArguments`` = a5; ``Result`` = a6; ``ResultAdaptation`` = a7; ``Resource`` = a8; ``Participants`` = a9; ``SourceTypes`` = a10 } : global.Fidelity.PSG.BoundaryCall) state
     }
 
+    and read_Fidelity_PSG_BoundaryCallbackAbsence (state: ReadState) : Result<global.Fidelity.PSG.BoundaryCallbackAbsence * ReadState, BinaryError> = result {
+        let! state = enterReadFields 11 state
+        let! a0, state = read_Fidelity_PSG_NodeId state
+        let! a1, state = read_Fidelity_PSG_NodeId state
+        let! a2, state = read_Fidelity_PSG_NodeId state
+        let! a3, state = read_Fidelity_PSG_NodeId state
+        let! a4, state = readI32 state
+        let! a5, state = read_Fidelity_PSG_NodeId state
+        let! a6, state = read_Fidelity_PSG_NodeId state
+        let! a7, state = read_BAREWire_Descriptors_CallbackAbsenceContract state
+        let! a8, state = (readList read_Fidelity_PSG_NodeId) state
+        let! a9, state = (readList (fun state -> enterReadFields 2 state |> Result.bind (fun state -> read_Fidelity_PSG_CallbackAbsenceInputRole state |> Result.bind (fun (v1_0, state) -> (readList read_Fidelity_PSG_NodeId) state |> Result.bind (fun (v1_1, state) -> finishRead (v1_0, v1_1) state))))) state
+        let! a10, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_BoundaryDeclarationFact) state
+        return! finishRead ({ ``Quote`` = a0; ``DescriptorBinding`` = a1; ``Record`` = a2; ``Import`` = a3; ``Parameter`` = a4; ``Formal`` = a5; ``Invocation`` = a6; ``Contract`` = a7; ``SourcePath`` = a8; ``Inputs`` = a9; ``DeclarationFacts`` = a10 } : global.Fidelity.PSG.BoundaryCallbackAbsence) state
+    }
+
     and read_Fidelity_PSG_BoundaryCallbackExtent (state: ReadState) : Result<global.Fidelity.PSG.BoundaryCallbackExtent * ReadState, BinaryError> = result {
         let! state = enterReadCases 3 state
         let! tag, state = readTag state
@@ -7759,7 +7882,7 @@ module internal BinaryGenerated =
     }
 
     and read_Fidelity_PSG_BoundaryDomain (state: ReadState) : Result<global.Fidelity.PSG.BoundaryDomain * ReadState, BinaryError> = result {
-        let! state = enterReadFields 37 state
+        let! state = enterReadFields 38 state
         let! a0, state = (readOption read_Fidelity_PSG_BoundaryResourceEvidence) state
         let! a1, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_BoundarySourcePremise) state
         let! a2, state = (readOption read_Fidelity_PSG_BoundaryPlatformPremise) state
@@ -7797,11 +7920,12 @@ module internal BinaryGenerated =
         let! a34, state = (readList read_Fidelity_PSG_ForeignResultHypothesis) state
         let! a35, state = (readList read_Fidelity_PSG_NodeId) state
         let! a36, state = (readList read_Fidelity_PSG_NodeId) state
-        return! finishRead ({ ``ResourceEvidence`` = a0; ``Premises`` = a1; ``Platform`` = a2; ``Meets`` = a3; ``Declarations`` = a4; ``WritableBufferDeclarations`` = a5; ``WritableBufferUses`` = a6; ``ResourceDeclarations`` = a7; ``ResourceAccesses`` = a8; ``ResourceEvaluationRoots`` = a9; ``ResourceEvaluationRelations`` = a10; ``Imports`` = a11; ``Loading`` = a12; ``Entries`` = a13; ``Calls`` = a14; ``ByteViews`` = a15; ``StringExtents`` = a16; ``StringOriginRelations`` = a17; ``StringOriginRoots`` = a18; ``StringComparisons`` = a19; ``StringLengthComparisons`` = a20; ``StringComparisonReads`` = a21; ``StringBorrowSnapshots`` = a22; ``StringBorrowCopies`` = a23; ``StringBorrowAllocations`` = a24; ``IntrinsicDeclarations`` = a25; ``IntrinsicImports`` = a26; ``IntrinsicCalls`` = a27; ``IntrinsicProofs`` = a28; ``StringStorage`` = a29; ``DeclarationLeaves`` = a30; ``DeclarationOnly`` = a31; ``Links`` = a32; ``Failures`` = a33; ``ResultHypotheses`` = a34; ``CallbackInvocations`` = a35; ``ClosedEntries`` = a36 } : global.Fidelity.PSG.BoundaryDomain) state
+        let! a37, state = (readList read_Fidelity_PSG_NodeId) state
+        return! finishRead ({ ``ResourceEvidence`` = a0; ``Premises`` = a1; ``Platform`` = a2; ``Meets`` = a3; ``Declarations`` = a4; ``WritableBufferDeclarations`` = a5; ``WritableBufferUses`` = a6; ``ResourceDeclarations`` = a7; ``ResourceAccesses`` = a8; ``ResourceEvaluationRoots`` = a9; ``ResourceEvaluationRelations`` = a10; ``Imports`` = a11; ``Loading`` = a12; ``Entries`` = a13; ``Calls`` = a14; ``ByteViews`` = a15; ``StringExtents`` = a16; ``StringOriginRelations`` = a17; ``StringOriginRoots`` = a18; ``StringComparisons`` = a19; ``StringLengthComparisons`` = a20; ``StringComparisonReads`` = a21; ``StringBorrowSnapshots`` = a22; ``StringBorrowCopies`` = a23; ``StringBorrowAllocations`` = a24; ``IntrinsicDeclarations`` = a25; ``IntrinsicImports`` = a26; ``IntrinsicCalls`` = a27; ``IntrinsicProofs`` = a28; ``StringStorage`` = a29; ``DeclarationLeaves`` = a30; ``DeclarationOnly`` = a31; ``Links`` = a32; ``Failures`` = a33; ``ResultHypotheses`` = a34; ``CallbackInvocations`` = a35; ``CallbackAbsences`` = a36; ``ClosedEntries`` = a37 } : global.Fidelity.PSG.BoundaryDomain) state
     }
 
     and read_Fidelity_PSG_BoundaryEmissionProjection (state: ReadState) : Result<global.Fidelity.PSG.BoundaryEmissionProjection * ReadState, BinaryError> = result {
-        let! state = enterReadFields 21 state
+        let! state = enterReadFields 22 state
         let! a0, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_BoundaryWritableBufferDeclaration) state
         let! a1, state = (readMap (fun state -> enterReadFields 2 state |> Result.bind (fun state -> read_Fidelity_PSG_NodeId state |> Result.bind (fun (v1_0, state) -> readI32 state |> Result.bind (fun (v1_1, state) -> finishRead (v1_0, v1_1) state)))) read_Fidelity_PSG_BoundaryWritableBufferUse) state
         let! a2, state = (readOption read_Fidelity_PSG_BoundaryResourceEvidence) state
@@ -7822,8 +7946,9 @@ module internal BinaryGenerated =
         let! a17, state = (readSet readString) state
         let! a18, state = (readList read_Fidelity_PSG_ForeignResultHypothesis) state
         let! a19, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_BoundaryCallbackInvocation) state
-        let! a20, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_BoundaryClosedEntry) state
-        return! finishRead ({ ``WritableBufferDeclarations`` = a0; ``WritableBufferUses`` = a1; ``ResourceEvidence`` = a2; ``ResourceDeclarations`` = a3; ``ResourceAccesses`` = a4; ``Imports`` = a5; ``Loading`` = a6; ``Entries`` = a7; ``ByScope`` = a8; ``Calls`` = a9; ``ByteViews`` = a10; ``StringExtents`` = a11; ``IntrinsicWriteImports`` = a12; ``IntrinsicWrites`` = a13; ``IntrinsicWriteProofs`` = a14; ``DeclarationLeaves`` = a15; ``DeclarationOnly`` = a16; ``Links`` = a17; ``ResultHypotheses`` = a18; ``CallbackInvocations`` = a19; ``ClosedEntries`` = a20 } : global.Fidelity.PSG.BoundaryEmissionProjection) state
+        let! a20, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_BoundaryCallbackAbsence) state
+        let! a21, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_BoundaryClosedEntry) state
+        return! finishRead ({ ``WritableBufferDeclarations`` = a0; ``WritableBufferUses`` = a1; ``ResourceEvidence`` = a2; ``ResourceDeclarations`` = a3; ``ResourceAccesses`` = a4; ``Imports`` = a5; ``Loading`` = a6; ``Entries`` = a7; ``ByScope`` = a8; ``Calls`` = a9; ``ByteViews`` = a10; ``StringExtents`` = a11; ``IntrinsicWriteImports`` = a12; ``IntrinsicWrites`` = a13; ``IntrinsicWriteProofs`` = a14; ``DeclarationLeaves`` = a15; ``DeclarationOnly`` = a16; ``Links`` = a17; ``ResultHypotheses`` = a18; ``CallbackInvocations`` = a19; ``CallbackAbsences`` = a20; ``ClosedEntries`` = a21 } : global.Fidelity.PSG.BoundaryEmissionProjection) state
     }
 
     and read_Fidelity_PSG_BoundaryEntry (state: ReadState) : Result<global.Fidelity.PSG.BoundaryEntry * ReadState, BinaryError> = result {
@@ -8609,6 +8734,32 @@ module internal BinaryGenerated =
                 return! finishRead (global.Fidelity.PSG.CallableValueShape.``Lazy``(a0)) state
               }
             | _ -> malformed state "Unknown Fidelity.PSG.CallableValueShape case"
+    }
+
+    and read_Fidelity_PSG_CallbackAbsenceInputRole (state: ReadState) : Result<global.Fidelity.PSG.CallbackAbsenceInputRole * ReadState, BinaryError> = result {
+        let! state = enterReadCases 1 state
+        let! tag, state = readTag state
+        return!
+            match tag with
+            | 0 -> result {
+                return! finishRead (global.Fidelity.PSG.CallbackAbsenceInputRole.``Binding``) state
+              }
+            | 1 -> result {
+                return! finishRead (global.Fidelity.PSG.CallbackAbsenceInputRole.``Parameter``) state
+              }
+            | 2 -> result {
+                return! finishRead (global.Fidelity.PSG.CallbackAbsenceInputRole.``Hypothesis``) state
+              }
+            | 3 -> result {
+                return! finishRead (global.Fidelity.PSG.CallbackAbsenceInputRole.``HypothesisIdentity``) state
+              }
+            | 4 -> result {
+                return! finishRead (global.Fidelity.PSG.CallbackAbsenceInputRole.``HypothesisVersion``) state
+              }
+            | 5 -> result {
+                return! finishRead (global.Fidelity.PSG.CallbackAbsenceInputRole.``HypothesisSource``) state
+              }
+            | _ -> malformed state "Unknown Fidelity.PSG.CallbackAbsenceInputRole case"
     }
 
     and read_Fidelity_PSG_CaptureInfo (state: ReadState) : Result<global.Fidelity.PSG.CaptureInfo * ReadState, BinaryError> = result {
@@ -9623,6 +9774,10 @@ module internal BinaryGenerated =
             | 178 -> result {
                 let! a0, state = read_Fidelity_PSG_BoundaryClosedEntry state
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``BoundaryClosedEntry``(a0)) state
+              }
+            | 179 -> result {
+                let! a0, state = read_Fidelity_PSG_BoundaryCallbackAbsence state
+                return! finishRead (global.Fidelity.PSG.EdgeRole.``BoundaryCallbackAbsence``(a0)) state
               }
             | _ -> malformed state "Unknown Fidelity.PSG.EdgeRole case"
     }
@@ -11589,6 +11744,10 @@ module internal BinaryGenerated =
                 let! a0, state = read_Fidelity_PSG_OptionalEntryArgumentConversionModel state
                 return! finishRead (global.Fidelity.PSG.ObligationBody.``OptionalEntryArgumentConversion``(a0)) state
               }
+            | 35 -> result {
+                let! a0, state = read_Fidelity_PSG_OptionalEntryAbsenceArgumentConversionModel state
+                return! finishRead (global.Fidelity.PSG.ObligationBody.``OptionalEntryAbsenceArgumentConversion``(a0)) state
+              }
             | _ -> malformed state "Unknown Fidelity.PSG.ObligationBody case"
     }
 
@@ -11633,6 +11792,39 @@ module internal BinaryGenerated =
                 return! finishRead (global.Fidelity.PSG.OccurrencePort.``ModuleDeclaration``) state
               }
             | _ -> malformed state "Unknown Fidelity.PSG.OccurrencePort case"
+    }
+
+    and read_Fidelity_PSG_OptionalEntryAbsenceArgumentConversionModel (state: ReadState) : Result<global.Fidelity.PSG.OptionalEntryAbsenceArgumentConversionModel * ReadState, BinaryError> = result {
+        let! state = enterReadFields 7 state
+        let! a0, state = read_Fidelity_PSG_NodeId state
+        let! a1, state = readI32 state
+        let! a2, state = read_Fidelity_PSG_NodeId state
+        let! a3, state = read_Fidelity_PSG_NodeId state
+        let! a4, state = readI32 state
+        let! a5, state = read_Fidelity_PSG_NodeId state
+        let! a6, state = (readList read_Fidelity_PSG_OptionalEntryAbsencePlanArm) state
+        return! finishRead ({ ``Call`` = a0; ``Parameter`` = a1; ``Actual`` = a2; ``Construction`` = a3; ``SourceCase`` = a4; ``Absence`` = a5; ``Arms`` = a6 } : global.Fidelity.PSG.OptionalEntryAbsenceArgumentConversionModel) state
+    }
+
+    and read_Fidelity_PSG_OptionalEntryAbsencePlanArm (state: ReadState) : Result<global.Fidelity.PSG.OptionalEntryAbsencePlanArm * ReadState, BinaryError> = result {
+        let! state = enterReadFields 2 state
+        let! a0, state = readI32 state
+        let! a1, state = read_Fidelity_PSG_OptionalEntryAbsencePlanChoice state
+        return! finishRead ({ ``CaseOrdinal`` = a0; ``Choice`` = a1 } : global.Fidelity.PSG.OptionalEntryAbsencePlanArm) state
+    }
+
+    and read_Fidelity_PSG_OptionalEntryAbsencePlanChoice (state: ReadState) : Result<global.Fidelity.PSG.OptionalEntryAbsencePlanChoice * ReadState, BinaryError> = result {
+        let! state = enterReadCases 1 state
+        let! tag, state = readTag state
+        return!
+            match tag with
+            | 0 -> result {
+                return! finishRead (global.Fidelity.PSG.OptionalEntryAbsencePlanChoice.``AbsentEntry``) state
+              }
+            | 1 -> result {
+                return! finishRead (global.Fidelity.PSG.OptionalEntryAbsencePlanChoice.``RequiresClosedEntry``) state
+              }
+            | _ -> malformed state "Unknown Fidelity.PSG.OptionalEntryAbsencePlanChoice case"
     }
 
     and read_Fidelity_PSG_OptionalEntryArgumentConversionModel (state: ReadState) : Result<global.Fidelity.PSG.OptionalEntryArgumentConversionModel * ReadState, BinaryError> = result {

@@ -100,6 +100,53 @@ let ``Pending binary retains reason order duplicates and Unicode without a solve
     Assert.Equal(0, state.Depth)
 
 [<Fact>]
+let ``absence conversion binary retains exact promise content and source plan`` () =
+  let roles = [CallbackAbsenceInputRole.Binding; CallbackAbsenceInputRole.Parameter; CallbackAbsenceInputRole.Hypothesis
+               CallbackAbsenceInputRole.HypothesisIdentity; CallbackAbsenceInputRole.HypothesisVersion; CallbackAbsenceInputRole.HypothesisSource]
+  let account : BoundaryCallbackAbsence =
+    { Quote = NodeId 70; DescriptorBinding = NodeId 71; Record = NodeId 72; Import = NodeId 73
+      Parameter = 2; Formal = NodeId 74; Invocation = NodeId 75
+      Contract = {Binding = "Foreign.receive"; Parameter = 2
+                  Hypothesis = {Identity = "foreign.absence"; Version = "v2"; Source = "fixture-λ.pilot.toml"}}
+      SourcePath = [NodeId 71; NodeId 70; NodeId 72]
+      Inputs = roles |> List.mapi (fun index role -> role, [NodeId(80 + index); NodeId(90 + index)])
+      DeclarationFacts = Map.ofList [NodeId 72,
+        {Form = "record"; Text = ["current"; "λ"]; Numbers = [-1I; 2I]; References = [NodeId 73]
+         Children = [NodeId 80; NodeId 81]; Parent = Some(NodeId 70); SourceType = Build.unitType}] }
+  let model : OptionalEntryAbsenceArgumentConversionModel =
+    { Call = NodeId 100; Parameter = 2; Actual = NodeId 101; Construction = NodeId 102; SourceCase = 0; Absence = account.Quote
+      Arms = [{CaseOrdinal = 0; Choice = OptionalEntryAbsencePlanChoice.AbsentEntry}
+              {CaseOrdinal = 1; Choice = OptionalEntryAbsencePlanChoice.RequiresClosedEntry}] }
+  let body = ObligationBody.OptionalEntryAbsenceArgumentConversion model
+  let bodyBytes = indexedEncoded BinaryGenerated.write_Fidelity_PSG_ObligationBody body
+  let decodedBody, bodyState = BinaryGenerated.read_Fidelity_PSG_ObligationBody (indexedReadState limits bodyBytes) |> take
+  Assert.Equal(body, decodedBody)
+  Assert.Equal(0, bodyState.Depth)
+  let projection = {Empty.boundary with CallbackAbsences = Map.ofList [account.Quote, account]}
+  let bytes = indexedEncoded BinaryGenerated.write_Fidelity_PSG_BoundaryEmissionProjection projection
+  let actual, state = BinaryGenerated.read_Fidelity_PSG_BoundaryEmissionProjection (indexedReadState limits bytes) |> take
+  Assert.Equal(projection, actual)
+  Assert.Equal(0, state.Depth)
+  let edge = EdgeRole.BoundaryCallbackAbsence account
+  let bytes = indexedEncoded BinaryGenerated.write_Fidelity_PSG_EdgeRole edge
+  let actual, state = BinaryGenerated.read_Fidelity_PSG_EdgeRole (indexedReadState limits bytes) |> take
+  Assert.Equal(edge, actual)
+  Assert.Equal(0, state.Depth)
+
+[<Fact>]
+let ``absence promise binary refuses a record missing its current content field`` () =
+  let contract : BAREWire.Descriptors.CallbackAbsenceContract =
+    {Binding = "Foreign.receive"; Parameter = 0; Hypothesis = {Identity = "absence"; Version = "1"; Source = "fixture"}}
+  let bytes = indexedEncoded BinaryGenerated.write_BAREWire_Descriptors_CallbackAbsenceContract contract
+  // The record frame must retain all three declared fields, including provenance.
+  BAREWire.Encoding.Encoder.writeU64 bytes 0 2UL |> ignore
+  match BinaryGenerated.read_BAREWire_Descriptors_CallbackAbsenceContract (indexedReadState limits bytes) with
+  | Result.Error(BinaryError.Malformed(offset, reason)) ->
+    Assert.Equal(0, offset)
+    Assert.Equal("Directory arity disagrees with its schema", reason)
+  | other -> failwithf "Expected exact absence record field-count refusal, got %A" other
+
+[<Fact>]
 let ``Pending binary refuses a ledger claim detached from its optional operand owner`` () =
     let claim : ObligationInfo =
         {Id = "optional-conversion-1"; Kind = "foreign-optional-entry-conversion-0"; Logic = ""
@@ -165,7 +212,7 @@ let ``snapshot header has independent version schema and fingerprint bytes`` () 
     // Pin the approved schema/shape pair independently of the generated values.
     // A changed published shape must earn a deliberate schema migration; merely
     // regenerating the codecs cannot update this oracle.
-    let prefix = Convert.FromHexString("4650534749445832020000002500000014C9E027EF9FE3E949D46E68E41BAD9375FFF2EF69DF4D8A4DF2FD0AECB7367D")
+    let prefix = Convert.FromHexString("465053474944583202000000260000002521EE15F0FCDB2902EF7A14976A8974E0180BC1874F48675FBE13A40307BE49")
     Assert.Equal<byte>(prefix, bytes[..47])
     Assert.Equal(Revision.Schema, System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(12, 4)))
     Assert.Equal<byte>(Convert.FromHexString(BinaryGenerated.Fingerprint), bytes[16..47])
