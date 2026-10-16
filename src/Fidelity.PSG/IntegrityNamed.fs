@@ -394,6 +394,14 @@ module IntegrityNamed =
         @ [ value.Owner ]
         @ (value.Adaptation |> Option.toList |> List.collect (fun v0 -> [ v0 ]))
 
+    and private idsOfCallableAggregateResultRetirement (value: Fidelity.PSG.CallableAggregateResultRetirement) : NodeId list =
+        [ value.Application ]
+        @ [ value.Caller ]
+        @ [ value.Construction ]
+        @ [ value.Actual ]
+        @ [ value.Receiver ]
+        @ (value.Uses |> List.collect (fun v0 -> [ v0 ]))
+
     and private idsOfCallableAggregateSelector (value: Fidelity.PSG.CallableAggregateSelector) : NodeId list =
         (value.Storage |> Option.toList |> List.collect (fun v0 -> [ v0 ]))
 
@@ -423,6 +431,7 @@ module IntegrityNamed =
         @ (value.Selector |> Option.toList |> List.collect (fun v0 -> (idsOfCallableAggregateSelector v0)))
         @ (value.FormationInputs |> List.collect (fun v0 -> [ v0 ]))
         @ (value.Value |> Option.toList |> List.collect (fun v0 -> [ v0 ]))
+        @ (value.ResultRetirement |> Option.toList |> List.collect (fun v0 -> (match v0 with Ok v1 -> (idsOfCallableAggregateResultRetirement v1) | Error v1 -> [])))
         @ (value.Frontier |> Option.toList |> List.collect (fun v0 -> [ v0 ]))
         @ (value.Tag |> Option.toList |> List.collect (fun v0 -> (idsOfCallableAggregateTag v0)))
         @ (value.Participants |> List.collect (fun v0 -> (idsOfParticipant v0)))
@@ -1401,6 +1410,7 @@ module IntegrityNamed =
         @ [ value.Actual ]
         @ [ value.Construction ]
         @ [ value.Absence ]
+        @ (value.ResultRetirement |> Option.toList |> List.collect (fun v0 -> (idsOfCallableAggregateResultRetirement v0)))
 
     and private idsOfOptionalEntryArgumentConversionModel (value: Fidelity.PSG.OptionalEntryArgumentConversionModel) : NodeId list =
         [ value.Call ]
@@ -1410,6 +1420,7 @@ module IntegrityNamed =
         @ [ value.Formation ]
         @ [ value.Invocation ]
         @ (value.Arms |> List.collect (fun v0 -> (idsOfOptionalEntryPlanArm v0)))
+        @ (value.ResultRetirement |> Option.toList |> List.collect (fun v0 -> (idsOfCallableAggregateResultRetirement v0)))
 
     and private idsOfOptionalEntryPlanArm (value: Fidelity.PSG.OptionalEntryPlanArm) : NodeId list =
         (value.Formation |> Option.toList |> List.collect (fun v0 -> [ v0 ]))

@@ -340,6 +340,9 @@ type CallableAggregateValue = {
     Value: NodeId option
     SelectedAlternative: int option
     Operation: CallableAggregateOperation
+    /// Structural Result remains readable without allocation authority. Only
+    /// an admitted account permits allocation and exact caller retirement.
+    ResultRetirement: Result<CallableAggregateResultRetirement, string> option
     Frontier: NodeId option
     Tag: CallableAggregateTag option
     Bytes: int
@@ -399,6 +402,8 @@ type CallableAggregateDependencyAccount = {
     /// Exact names of referenced implementations, including symbol-only code.
     Symbols: (NodeId * CallableSymbolName) list
     Inactivity: (NodeId * OrdinaryInactivityProjection) list
+    /// Exact current project input projection; absent on standalone checks.
+    MemoryPolicy: ProjectMemoryPolicy option
 }
 
 /// A write updates the finite alternative discriminator and the actual

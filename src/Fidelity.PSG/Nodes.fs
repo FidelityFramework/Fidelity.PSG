@@ -252,6 +252,22 @@ type OptionalEntryAbsencePlanChoice = AbsentEntry | RequiresClosedEntry
 
 type OptionalEntryAbsencePlanArm = { CaseOrdinal: int; Choice: OptionalEntryAbsencePlanChoice }
 
+/// Frozen projection of the selected project's parsed memory policy. Model is
+/// diagnostic provenance; only Baker's admitted retirement grants allocation.
+type ProjectMemoryPolicy = { ProjectPath: string; SourceVersion: string; Model: string }
+
+/// One source-owned application instance retires after this exact receiver.
+/// Uses includes the application, ordered immutable transports and receiver.
+type CallableAggregateResultRetirement = {
+    Application: NodeId
+    Caller: NodeId
+    Construction: NodeId
+    Actual: NodeId
+    Receiver: NodeId
+    Policy: ProjectMemoryPolicy
+    Uses: NodeId list
+}
+
 type OptionalEntryAbsenceArgumentConversionModel = {
     Call: NodeId
     Parameter: int
@@ -260,6 +276,7 @@ type OptionalEntryAbsenceArgumentConversionModel = {
     SourceCase: int
     Absence: NodeId
     Arms: OptionalEntryAbsencePlanArm list
+    ResultRetirement: CallableAggregateResultRetirement option
 }
 
 type OptionalEntryArgumentConversionModel = {
@@ -272,6 +289,7 @@ type OptionalEntryArgumentConversionModel = {
     Formation: NodeId
     Invocation: NodeId
     Arms: OptionalEntryPlanArm list
+    ResultRetirement: CallableAggregateResultRetirement option
 }
 
 /// Observations of the existing evaluation owner's rows, not another flow
@@ -703,6 +721,31 @@ module ResourceProof =
 /// Finite source Option-to-choice correspondence, never a native address law.
 /// The target pathway must independently realize the retained entry identity.
 module OptionalEntryArgumentProof =
+    /// The same finite conversion citizen binds its source-owned retirement
+    /// and captured policy version. These constants grant no policy by parsing.
+    let private withRetirement call actual construction retirement (projection:ResourceProof.Projection) =
+        match retirement with
+        | None -> projection
+        | Some (row:CallableAggregateResultRetirement) ->
+            let integer value = ResourceProof.Expr.Integer value
+            let number value = integer(bigint(NodeId.value value))
+            let text (value:string) = value |> Seq.fold(fun total c->total*65537I+bigint(int c+1)) 0I |> integer
+            let fields =
+                ["application",number row.Application;"caller",number row.Caller;"construction",number row.Construction
+                 "actual",number row.Actual;"receiver",number row.Receiver
+                 "policy_path",text row.Policy.ProjectPath;"policy_version",text row.Policy.SourceVersion;"policy_model",text row.Policy.Model] @
+                (row.Uses |> List.mapi(fun ordinal use' -> $"use_{ordinal}",number use'))
+            let bindings = fields |> List.map(fun(name,value)->ResourceProof.Expr.Equal(ResourceProof.Expr.Variable("optional_retirement_"+name),value))
+            let complete =
+                row.Receiver=call && row.Actual=actual && row.Construction=construction &&
+                row.Application<>row.Receiver && List.tryHead row.Uses=Some row.Application && List.tryLast row.Uses=Some row.Receiver &&
+                List.contains row.Actual row.Uses && List.distinct row.Uses=row.Uses &&
+                row.Policy.ProjectPath<>"" && row.Policy.SourceVersion<>"" && row.Policy.Model<>""
+            { projection with
+                Declarations=projection.Declarations @ (fields |> List.map(fun(name,_)->"optional_retirement_"+name,ResourceProof.Sort.Integer))
+                Premises=ResourceProof.Expr.And(projection.Premises::bindings)
+                Conclusion=ResourceProof.Expr.And(projection.Conclusion::ResourceProof.Expr.Boolean complete::bindings) }
+
     let project (model: OptionalEntryArgumentConversionModel) : Result<ResourceProof.Projection, string> =
         let number (value: int) = ResourceProof.Expr.Integer(bigint value)
         let equal left right = ResourceProof.Expr.Equal(left, right)
@@ -720,7 +763,7 @@ module OptionalEntryArgumentProof =
             | OptionalEntryPlanChoice.ClosedEntry, Some entry ->
                 all [equal (number arm.CaseOrdinal) (number 1); equal (identity entry) formation]
             | _ -> boolean false)
-        Ok {
+        Ok (withRetirement model.Call model.Actual model.Construction model.ResultRetirement {
             Declarations = ["optional_entry_case", ResourceProof.Sort.Integer; "optional_entry_formation", ResourceProof.Sort.Integer]
             Premises = all [equal sourceCase (number model.SourceCase); equal formation (identity model.Formation)]
             Conclusion = all (
@@ -731,7 +774,7 @@ module OptionalEntryArgumentProof =
             // Only Some is source-feasible in this tranche. Both table arms
             // remain mandatory in the conclusion; None grants no admission.
             Alternatives = [equal sourceCase (number 1)]
-        }
+        })
 
 
     /// Conditional finite source correspondence. The account-bound Boolean is
@@ -747,7 +790,7 @@ module OptionalEntryArgumentProof =
             ResourceProof.Expr.IfThenElse(equal sourceCase (number arm.CaseOrdinal), number 1, number 0))
         let table = model.Arms |> List.map (fun arm ->
             equal (number arm.CaseOrdinal) (number (match arm.Choice with OptionalEntryAbsencePlanChoice.AbsentEntry -> 0 | OptionalEntryAbsencePlanChoice.RequiresClosedEntry -> 1)))
-        Ok {
+        Ok (withRetirement model.Call model.Actual model.Construction model.ResultRetirement {
             Declarations = ["optional_entry_absence_case", ResourceProof.Sort.Integer; promiseName, ResourceProof.Sort.Boolean]
             Premises = all [equal sourceCase (number model.SourceCase); promise]
             Conclusion = all ([equal sourceCase (number 0); promise
@@ -755,7 +798,7 @@ module OptionalEntryArgumentProof =
                                ResourceProof.Expr.Boolean ((model.Arms |> List.map _.CaseOrdinal |> List.sort) = [0;1])
                                equal (ResourceProof.Expr.Add selected) (number 1)] @ table)
             Alternatives = [equal sourceCase (number 0)]
-        }
+        })
 
 /// Arithmetic for a complete local snapshot whose copy and allocation use the
 /// same source count. The producer supplies that incidence; this projection

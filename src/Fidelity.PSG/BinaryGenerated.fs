@@ -5,11 +5,11 @@ module internal BinaryGenerated =
     [<Literal>]
     let Format = 2u
     [<Literal>]
-    let Schema = 39
+    let Schema = 40
     [<Literal>]
-    let Fingerprint = "57A7092B3E079ED6A29192825A2A5951AAD43E9A6DEE82F41290C1E30D7B9DAE"
+    let Fingerprint = "652E3397C3A073A8B648BF77D904A3D6A5ED2D148CA00E70DFF5B225DB682DDA"
     [<Literal>]
-    let NamedTypes = 330
+    let NamedTypes = 332
     [<Literal>]
     let RevisionFields = 17
     [<Literal>]
@@ -1005,6 +1005,7 @@ module internal BinaryGenerated =
         let! state = (writeList (fun state (v1_0, v1_1) -> enterWrite state |> Result.bind (fun state -> write_Fidelity_PSG_NodeId state v1_0 |> Result.bind (fun state -> write_Fidelity_PSG_ObligationInfo state v1_1 |> Result.bind (fun state -> Ok(leaveWrite state)))))) state value.``Claims``
         let! state = (writeList (fun state (v1_0, v1_1) -> enterWrite state |> Result.bind (fun state -> write_Fidelity_PSG_NodeId state v1_0 |> Result.bind (fun state -> write_Fidelity_PSG_CallableSymbolName state v1_1 |> Result.bind (fun state -> Ok(leaveWrite state)))))) state value.``Symbols``
         let! state = (writeList (fun state (v1_0, v1_1) -> enterWrite state |> Result.bind (fun state -> write_Fidelity_PSG_NodeId state v1_0 |> Result.bind (fun state -> write_Fidelity_PSG_OrdinaryInactivityProjection state v1_1 |> Result.bind (fun state -> Ok(leaveWrite state)))))) state value.``Inactivity``
+        let! state = (writeOption write_Fidelity_PSG_ProjectMemoryPolicy) state value.``MemoryPolicy``
         return leaveWrite state
     }
 
@@ -1082,6 +1083,18 @@ module internal BinaryGenerated =
               }
     }
 
+    and write_Fidelity_PSG_CallableAggregateResultRetirement (state: WriteState) (value: global.Fidelity.PSG.CallableAggregateResultRetirement) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = write_Fidelity_PSG_NodeId state value.``Application``
+        let! state = write_Fidelity_PSG_NodeId state value.``Caller``
+        let! state = write_Fidelity_PSG_NodeId state value.``Construction``
+        let! state = write_Fidelity_PSG_NodeId state value.``Actual``
+        let! state = write_Fidelity_PSG_NodeId state value.``Receiver``
+        let! state = write_Fidelity_PSG_ProjectMemoryPolicy state value.``Policy``
+        let! state = (writeList write_Fidelity_PSG_NodeId) state value.``Uses``
+        return leaveWrite state
+    }
+
     and write_Fidelity_PSG_CallableAggregateSelector (state: WriteState) (value: global.Fidelity.PSG.CallableAggregateSelector) : Result<WriteState, BinaryError> = result {
         let! state = enterWrite state
         let! state = writeI32 state value.``Lower``
@@ -1137,6 +1150,7 @@ module internal BinaryGenerated =
         let! state = (writeOption write_Fidelity_PSG_NodeId) state value.``Value``
         let! state = (writeOption writeI32) state value.``SelectedAlternative``
         let! state = write_Fidelity_PSG_CallableAggregateOperation state value.``Operation``
+        let! state = (writeOption (writeResult write_Fidelity_PSG_CallableAggregateResultRetirement writeString)) state value.``ResultRetirement``
         let! state = (writeOption write_Fidelity_PSG_NodeId) state value.``Frontier``
         let! state = (writeOption write_Fidelity_PSG_CallableAggregateTag) state value.``Tag``
         let! state = writeI32 state value.``Bytes``
@@ -4890,6 +4904,7 @@ module internal BinaryGenerated =
         let! state = writeI32 state value.``SourceCase``
         let! state = write_Fidelity_PSG_NodeId state value.``Absence``
         let! state = (writeList write_Fidelity_PSG_OptionalEntryAbsencePlanArm) state value.``Arms``
+        let! state = (writeOption write_Fidelity_PSG_CallableAggregateResultRetirement) state value.``ResultRetirement``
         return leaveWrite state
     }
 
@@ -4925,6 +4940,7 @@ module internal BinaryGenerated =
         let! state = write_Fidelity_PSG_NodeId state value.``Formation``
         let! state = write_Fidelity_PSG_NodeId state value.``Invocation``
         let! state = (writeList write_Fidelity_PSG_OptionalEntryPlanArm) state value.``Arms``
+        let! state = (writeOption write_Fidelity_PSG_CallableAggregateResultRetirement) state value.``ResultRetirement``
         return leaveWrite state
     }
 
@@ -5637,6 +5653,14 @@ module internal BinaryGenerated =
                 let! state = write_Fidelity_PSG_NodeId state a0
                 return leaveWrite state
               }
+    }
+
+    and write_Fidelity_PSG_ProjectMemoryPolicy (state: WriteState) (value: global.Fidelity.PSG.ProjectMemoryPolicy) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = writeString state value.``ProjectPath``
+        let! state = writeString state value.``SourceVersion``
+        let! state = writeString state value.``Model``
+        return leaveWrite state
     }
 
     and write_Fidelity_PSG_RecurrencePowerStep (state: WriteState) (value: global.Fidelity.PSG.RecurrencePowerStep) : Result<WriteState, BinaryError> = result {
@@ -8298,7 +8322,7 @@ module internal BinaryGenerated =
     }
 
     and read_Fidelity_PSG_CallableAggregateDependencyAccount (state: ReadState) : Result<global.Fidelity.PSG.CallableAggregateDependencyAccount * ReadState, BinaryError> = result {
-        let! state = enterReadFields 12 state
+        let! state = enterReadFields 13 state
         let! a0, state = read_Fidelity_PSG_NodeId state
         let! a1, state = (readList read_Fidelity_PSG_CallableAggregateSlot) state
         let! a2, state = (readList read_Fidelity_PSG_CallableAggregateValue) state
@@ -8311,7 +8335,8 @@ module internal BinaryGenerated =
         let! a9, state = (readList (fun state -> enterReadFields 2 state |> Result.bind (fun state -> read_Fidelity_PSG_NodeId state |> Result.bind (fun (v1_0, state) -> read_Fidelity_PSG_ObligationInfo state |> Result.bind (fun (v1_1, state) -> finishRead (v1_0, v1_1) state))))) state
         let! a10, state = (readList (fun state -> enterReadFields 2 state |> Result.bind (fun state -> read_Fidelity_PSG_NodeId state |> Result.bind (fun (v1_0, state) -> read_Fidelity_PSG_CallableSymbolName state |> Result.bind (fun (v1_1, state) -> finishRead (v1_0, v1_1) state))))) state
         let! a11, state = (readList (fun state -> enterReadFields 2 state |> Result.bind (fun state -> read_Fidelity_PSG_NodeId state |> Result.bind (fun (v1_0, state) -> read_Fidelity_PSG_OrdinaryInactivityProjection state |> Result.bind (fun (v1_1, state) -> finishRead (v1_0, v1_1) state))))) state
-        return! finishRead ({ ``Occurrence`` = a0; ``Slots`` = a1; ``Values`` = a2; ``Carriers`` = a3; ``Contracts`` = a4; ``Flows`` = a5; ``Joins`` = a6; ``Participants`` = a7; ``Sources`` = a8; ``Claims`` = a9; ``Symbols`` = a10; ``Inactivity`` = a11 } : global.Fidelity.PSG.CallableAggregateDependencyAccount) state
+        let! a12, state = (readOption read_Fidelity_PSG_ProjectMemoryPolicy) state
+        return! finishRead ({ ``Occurrence`` = a0; ``Slots`` = a1; ``Values`` = a2; ``Carriers`` = a3; ``Contracts`` = a4; ``Flows`` = a5; ``Joins`` = a6; ``Participants`` = a7; ``Sources`` = a8; ``Claims`` = a9; ``Symbols`` = a10; ``Inactivity`` = a11; ``MemoryPolicy`` = a12 } : global.Fidelity.PSG.CallableAggregateDependencyAccount) state
     }
 
     and read_Fidelity_PSG_CallableAggregateEnvironmentPlacement (state: ReadState) : Result<global.Fidelity.PSG.CallableAggregateEnvironmentPlacement * ReadState, BinaryError> = result {
@@ -8384,6 +8409,18 @@ module internal BinaryGenerated =
             | _ -> malformed state "Unknown Fidelity.PSG.CallableAggregatePathStep case"
     }
 
+    and read_Fidelity_PSG_CallableAggregateResultRetirement (state: ReadState) : Result<global.Fidelity.PSG.CallableAggregateResultRetirement * ReadState, BinaryError> = result {
+        let! state = enterReadFields 7 state
+        let! a0, state = read_Fidelity_PSG_NodeId state
+        let! a1, state = read_Fidelity_PSG_NodeId state
+        let! a2, state = read_Fidelity_PSG_NodeId state
+        let! a3, state = read_Fidelity_PSG_NodeId state
+        let! a4, state = read_Fidelity_PSG_NodeId state
+        let! a5, state = read_Fidelity_PSG_ProjectMemoryPolicy state
+        let! a6, state = (readList read_Fidelity_PSG_NodeId) state
+        return! finishRead ({ ``Application`` = a0; ``Caller`` = a1; ``Construction`` = a2; ``Actual`` = a3; ``Receiver`` = a4; ``Policy`` = a5; ``Uses`` = a6 } : global.Fidelity.PSG.CallableAggregateResultRetirement) state
+    }
+
     and read_Fidelity_PSG_CallableAggregateSelector (state: ReadState) : Result<global.Fidelity.PSG.CallableAggregateSelector * ReadState, BinaryError> = result {
         let! state = enterReadFields 5 state
         let! a0, state = readI32 state
@@ -8429,7 +8466,7 @@ module internal BinaryGenerated =
     }
 
     and read_Fidelity_PSG_CallableAggregateValue (state: ReadState) : Result<global.Fidelity.PSG.CallableAggregateValue * ReadState, BinaryError> = result {
-        let! state = enterReadFields 14 state
+        let! state = enterReadFields 15 state
         let! a0, state = read_Fidelity_PSG_NodeId state
         let! a1, state = read_Fidelity_PSG_NodeId state
         let! a2, state = read_Fidelity_PSG_NodeId state
@@ -8439,12 +8476,13 @@ module internal BinaryGenerated =
         let! a6, state = (readOption read_Fidelity_PSG_NodeId) state
         let! a7, state = (readOption readI32) state
         let! a8, state = read_Fidelity_PSG_CallableAggregateOperation state
-        let! a9, state = (readOption read_Fidelity_PSG_NodeId) state
-        let! a10, state = (readOption read_Fidelity_PSG_CallableAggregateTag) state
-        let! a11, state = readI32 state
+        let! a9, state = (readOption (readResult read_Fidelity_PSG_CallableAggregateResultRetirement readString)) state
+        let! a10, state = (readOption read_Fidelity_PSG_NodeId) state
+        let! a11, state = (readOption read_Fidelity_PSG_CallableAggregateTag) state
         let! a12, state = readI32 state
-        let! a13, state = (readList read_Fidelity_PSG_Participant) state
-        return! finishRead ({ ``Occurrence`` = a0; ``Aggregate`` = a1; ``Slot`` = a2; ``Alternatives`` = a3; ``Selector`` = a4; ``FormationInputs`` = a5; ``Value`` = a6; ``SelectedAlternative`` = a7; ``Operation`` = a8; ``Frontier`` = a9; ``Tag`` = a10; ``Bytes`` = a11; ``Alignment`` = a12; ``Participants`` = a13 } : global.Fidelity.PSG.CallableAggregateValue) state
+        let! a13, state = readI32 state
+        let! a14, state = (readList read_Fidelity_PSG_Participant) state
+        return! finishRead ({ ``Occurrence`` = a0; ``Aggregate`` = a1; ``Slot`` = a2; ``Alternatives`` = a3; ``Selector`` = a4; ``FormationInputs`` = a5; ``Value`` = a6; ``SelectedAlternative`` = a7; ``Operation`` = a8; ``ResultRetirement`` = a9; ``Frontier`` = a10; ``Tag`` = a11; ``Bytes`` = a12; ``Alignment`` = a13; ``Participants`` = a14 } : global.Fidelity.PSG.CallableAggregateValue) state
     }
 
     and read_Fidelity_PSG_CallableBranchAlternative (state: ReadState) : Result<global.Fidelity.PSG.CallableBranchAlternative * ReadState, BinaryError> = result {
@@ -11802,7 +11840,7 @@ module internal BinaryGenerated =
     }
 
     and read_Fidelity_PSG_OptionalEntryAbsenceArgumentConversionModel (state: ReadState) : Result<global.Fidelity.PSG.OptionalEntryAbsenceArgumentConversionModel * ReadState, BinaryError> = result {
-        let! state = enterReadFields 7 state
+        let! state = enterReadFields 8 state
         let! a0, state = read_Fidelity_PSG_NodeId state
         let! a1, state = readI32 state
         let! a2, state = read_Fidelity_PSG_NodeId state
@@ -11810,7 +11848,8 @@ module internal BinaryGenerated =
         let! a4, state = readI32 state
         let! a5, state = read_Fidelity_PSG_NodeId state
         let! a6, state = (readList read_Fidelity_PSG_OptionalEntryAbsencePlanArm) state
-        return! finishRead ({ ``Call`` = a0; ``Parameter`` = a1; ``Actual`` = a2; ``Construction`` = a3; ``SourceCase`` = a4; ``Absence`` = a5; ``Arms`` = a6 } : global.Fidelity.PSG.OptionalEntryAbsenceArgumentConversionModel) state
+        let! a7, state = (readOption read_Fidelity_PSG_CallableAggregateResultRetirement) state
+        return! finishRead ({ ``Call`` = a0; ``Parameter`` = a1; ``Actual`` = a2; ``Construction`` = a3; ``SourceCase`` = a4; ``Absence`` = a5; ``Arms`` = a6; ``ResultRetirement`` = a7 } : global.Fidelity.PSG.OptionalEntryAbsenceArgumentConversionModel) state
     }
 
     and read_Fidelity_PSG_OptionalEntryAbsencePlanArm (state: ReadState) : Result<global.Fidelity.PSG.OptionalEntryAbsencePlanArm * ReadState, BinaryError> = result {
@@ -11835,7 +11874,7 @@ module internal BinaryGenerated =
     }
 
     and read_Fidelity_PSG_OptionalEntryArgumentConversionModel (state: ReadState) : Result<global.Fidelity.PSG.OptionalEntryArgumentConversionModel * ReadState, BinaryError> = result {
-        let! state = enterReadFields 9 state
+        let! state = enterReadFields 10 state
         let! a0, state = read_Fidelity_PSG_NodeId state
         let! a1, state = readI32 state
         let! a2, state = read_Fidelity_PSG_NodeId state
@@ -11845,7 +11884,8 @@ module internal BinaryGenerated =
         let! a6, state = read_Fidelity_PSG_NodeId state
         let! a7, state = read_Fidelity_PSG_NodeId state
         let! a8, state = (readList read_Fidelity_PSG_OptionalEntryPlanArm) state
-        return! finishRead ({ ``Call`` = a0; ``Parameter`` = a1; ``Actual`` = a2; ``Construction`` = a3; ``SourceCase`` = a4; ``Payload`` = a5; ``Formation`` = a6; ``Invocation`` = a7; ``Arms`` = a8 } : global.Fidelity.PSG.OptionalEntryArgumentConversionModel) state
+        let! a9, state = (readOption read_Fidelity_PSG_CallableAggregateResultRetirement) state
+        return! finishRead ({ ``Call`` = a0; ``Parameter`` = a1; ``Actual`` = a2; ``Construction`` = a3; ``SourceCase`` = a4; ``Payload`` = a5; ``Formation`` = a6; ``Invocation`` = a7; ``Arms`` = a8; ``ResultRetirement`` = a9 } : global.Fidelity.PSG.OptionalEntryArgumentConversionModel) state
     }
 
     and read_Fidelity_PSG_OptionalEntryPlanArm (state: ReadState) : Result<global.Fidelity.PSG.OptionalEntryPlanArm * ReadState, BinaryError> = result {
@@ -12451,6 +12491,14 @@ module internal BinaryGenerated =
                 return! finishRead (global.Fidelity.PSG.ProgramStorageShape.``NativeEntry``(a0)) state
               }
             | _ -> malformed state "Unknown Fidelity.PSG.ProgramStorageShape case"
+    }
+
+    and read_Fidelity_PSG_ProjectMemoryPolicy (state: ReadState) : Result<global.Fidelity.PSG.ProjectMemoryPolicy * ReadState, BinaryError> = result {
+        let! state = enterReadFields 3 state
+        let! a0, state = readString state
+        let! a1, state = readString state
+        let! a2, state = readString state
+        return! finishRead ({ ``ProjectPath`` = a0; ``SourceVersion`` = a1; ``Model`` = a2 } : global.Fidelity.PSG.ProjectMemoryPolicy) state
     }
 
     and read_Fidelity_PSG_RecurrencePowerStep (state: ReadState) : Result<global.Fidelity.PSG.RecurrencePowerStep * ReadState, BinaryError> = result {

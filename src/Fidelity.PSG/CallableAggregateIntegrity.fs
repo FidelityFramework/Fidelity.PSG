@@ -507,6 +507,34 @@ module internal CallableAggregateIntegrity =
             let site = row.Occurrence
             let exactRow role ordinal node = exact site role ordinal site node row.Participants
             [ yield! vector site row.Participants
+              match row.Operation,row.ResultRetirement with
+              | CallableAggregateOperation.Result,Some(Error _) -> ()
+              | CallableAggregateOperation.Result,Some(Ok retirement) ->
+                  let aliases = callable.AggregateValues |> Map.toList |> List.choose(fun (id,rows)->
+                      if rows |> List.exists(fun value->value.Slot=row.Slot && value.Operation=CallableAggregateOperation.Transport && value.Aggregate=site) then Some id else None)
+                  let expected = Set.ofList(site::retirement.Receiver::aliases)
+                  let receiving =
+                      revision.Emission.Boundary.Calls.TryFind retirement.Receiver |> Option.bind(fun call ->
+                          call.Arguments |> List.tryFind(fun operand ->
+                              operand.Actual=retirement.Actual &&
+                              (operand.OptionalEntry |> Option.exists(fun selection -> Some selection.Construction=(row.Tag |> Option.map _.Constructor))))
+                          |> Option.bind(fun operand ->
+                              match operand.Abi with
+                              | BoundaryScalar.Entry invocation -> revision.Emission.Boundary.CallbackInvocations.TryFind invocation
+                              | _ -> None))
+                  if retirement.Application<>site || row.Aggregate<>site ||
+                     Some retirement.Construction<>(row.Tag |> Option.map _.Constructor) ||
+                     List.tryHead retirement.Uses<>Some site || List.tryLast retirement.Uses<>Some retirement.Receiver ||
+                     Set.ofList retirement.Uses<>expected || (List.distinct retirement.Uses).Length<>retirement.Uses.Length ||
+                     not (expected.Contains retirement.Actual) || retirement.Actual=retirement.Receiver ||
+                     retirement.Policy.ProjectPath="" || retirement.Policy.SourceVersion="" || retirement.Policy.Model="" ||
+                     (revision.Nodes.TryFind retirement.Caller |> Option.exists(fun node->match node.Kind with SemanticKind.Lambda _ -> true | _ -> false) |> not) ||
+                     (receiving |> Option.exists(fun invocation->invocation.Extent=BoundaryCallbackExtent.DuringCall) |> not) ||
+                     (retirement.Caller::retirement.Uses |> List.exists(fun node->row.Participants |> List.exists(fun p->p.Node=node && p.Role=ParticipantRole.Source) |> not)) then
+                      yield failure "I5" site "The returned optional retirement differs from its exact caller, instance, receiver or closed use inventory."
+              | CallableAggregateOperation.Result,None -> yield failure "I5" site "A returned optional instance lacks its explicit retirement readiness."
+              | _,None -> ()
+              | _ -> yield failure "I5" site "Only a Result instance may own returned optional retirement."
               yield! exactRow ParticipantRole.AggregateValue 0 site
               yield! exactRow ParticipantRole.AggregateSource 0 row.Aggregate
               yield! exactRow ParticipantRole.AggregateSlot 0 row.Slot
@@ -696,6 +724,11 @@ module internal CallableAggregateIntegrity =
                  (account.Values |> List.filter (fun row -> row.Occurrence = site)) <> direct ||
                  not (unique (fun (row: CallableAggregateValue) -> row.Occurrence, row.Slot) account.Values) then
                   yield failure "I6" site "The dependency account drops, repeats or replays an aggregate value row."
+              if account.Values |> List.exists(fun row->
+                  match row.ResultRetirement with
+                  | Some(Ok retirement) -> account.MemoryPolicy<>Some retirement.Policy
+                  | _ -> false) then
+                  yield failure "I6" site "The returned optional retirement lost its captured project policy provenance."
               for row in account.Values do
                   for input in row.FormationInputs do
                       match callable.AggregateValues.TryFind input with

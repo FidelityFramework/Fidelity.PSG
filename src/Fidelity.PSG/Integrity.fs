@@ -2167,11 +2167,23 @@ module Integrity =
                                         model.Construction=optional.Construction && model.SourceCase=1 && optional.CaseOrdinal=1 &&
                                         optional.Payload=Some model.Payload && optional.Formation=Some model.Formation &&
                                         model.Invocation=invocation && model.Arms=arms &&
+                                        (revision.Emission.Callable.AggregateDependencies.TryFind operand.Actual |> Option.exists(fun account->
+                                            match account.Values |> List.filter(fun value->value.Operation=CallableAggregateOperation.Result) with
+                                            | [] -> model.ResultRetirement.IsNone
+                                            | [row] -> row.ResultRetirement=Option.map Ok model.ResultRetirement &&
+                                                       (model.ResultRetirement |> Option.exists(fun retirement->retirement.Receiver=call.Site && retirement.Actual=operand.Actual && retirement.Construction=optional.Construction && account.MemoryPolicy=Some retirement.Policy))
+                                            | _ -> false)) &&
                                         claim.Logic="QF_LIA" && claim.Statement="The exact source Some selection has complete finite native-choice plan correspondence; target realization remains an artifact obligation."
                                     | ObligationBody.OptionalEntryAbsenceArgumentConversion model ->
                                         let arms=[{CaseOrdinal=0;Choice=OptionalEntryAbsencePlanChoice.AbsentEntry};{CaseOrdinal=1;Choice=OptionalEntryAbsencePlanChoice.RequiresClosedEntry}]
                                         model.Call=call.Site && model.Parameter=ordinal && model.Actual=operand.Actual && model.Construction=optional.Construction && model.SourceCase=0 &&
                                         optional.CaseOrdinal=0 && optional.Payload.IsNone && optional.Formation.IsNone && model.Arms=arms &&
+                                        (revision.Emission.Callable.AggregateDependencies.TryFind operand.Actual |> Option.exists(fun account->
+                                            match account.Values |> List.filter(fun value->value.Operation=CallableAggregateOperation.Result) with
+                                            | [] -> model.ResultRetirement.IsNone
+                                            | [row] -> row.ResultRetirement=Option.map Ok model.ResultRetirement &&
+                                                       (model.ResultRetirement |> Option.exists(fun retirement->retirement.Receiver=call.Site && retirement.Actual=operand.Actual && retirement.Construction=optional.Construction && account.MemoryPolicy=Some retirement.Policy))
+                                            | _ -> false)) &&
                                         (boundary.CallbackAbsences.TryFind model.Absence |> Option.exists(fun row->row.Quote=model.Absence && row.Import=call.Import && row.Parameter=ordinal && row.Formal=operand.Formal && row.Invocation=invocation && absenceAccountCurrent boundary row)) &&
                                         claim.Logic="QF_LIA" && claim.Statement="The exact source None selection has complete finite absence-choice correspondence under its external binding hypothesis; target realization remains an artifact obligation."
                                     | _ -> false
@@ -2809,6 +2821,21 @@ module Integrity =
              | _ -> false)
         let boundary = revision.Emission.Boundary
         let absenceFact id = boundary.CallbackAbsences.Values |> Seq.exists(fun row->absenceAccountCurrent boundary row && row.DeclarationFacts.ContainsKey id)
+        let retirementReference absent id =
+            revision.CurrentClaims.Values |> Seq.exists(fun claim ->
+                let owned =
+                    match claim.Body with
+                    | ObligationBody.OptionalEntryArgumentConversion model when not absent -> Some(model.Actual,model.ResultRetirement)
+                    | ObligationBody.OptionalEntryAbsenceArgumentConversion model when absent -> Some(model.Actual,model.ResultRetirement)
+                    | _ -> None
+                owned |> Option.exists(fun (actual,held) ->
+                    match held,callable.AggregateDependencies.TryFind actual with
+                    | Some retirement,Some account ->
+                        List.contains id (retirement.Caller::retirement.Construction::retirement.Uses) &&
+                        (account.Values |> List.exists(fun row->row.Operation=CallableAggregateOperation.Result && row.Occurrence=retirement.Application && row.ResultRetirement=Some(Ok retirement))) &&
+                        (account.Participants |> List.exists(fun part->part.Node=id && part.Role=ParticipantRole.Source)) &&
+                        (account.Sources |> List.exists(fun source->source.Node=id))
+                    | _ -> false))
         let declarationFact id = (boundary.Imports |> Map.exists (fun _ imported -> imported.DeclarationFacts.ContainsKey id)) || absenceFact id
         let boundaryType id = boundary.Imports |> Map.exists (fun _ imported -> imported.SourceTypes.ContainsKey id)
         let loadingFact id = boundary.Loading |> Option.exists (fun loading -> loading.DeclarationFacts.ContainsKey id)
@@ -3020,7 +3047,7 @@ module Integrity =
                     absenceFact id || boundary.Imports.ContainsKey id || boundary.CallbackInvocations.ContainsKey id || boundaryType id || source.ContextHeaders.ContainsKey id
                 | "Obligations.Body.OptionalEntryAbsenceArgumentConversion"
                 | "CurrentClaims.Body.OptionalEntryAbsenceArgumentConversion" ->
-                    body id || (boundary.CallbackAbsences.TryFind id |> Option.exists(absenceAccountCurrent boundary))
+                    body id || retirementReference true id || (boundary.CallbackAbsences.TryFind id |> Option.exists(absenceAccountCurrent boundary))
                 | "Emission.Boundary.CallbackInvocations" | "Emission.Boundary.CallbackInvocations.Identity"
                 | "Emission.Boundary.ClosedEntries.Invocation" -> boundary.CallbackInvocations.ContainsKey id
                 | "Emission.Boundary.CallbackInvocations.Import" -> boundary.Imports.ContainsKey id
@@ -3123,7 +3150,7 @@ module Integrity =
                         match claim.Body with
                         | ObligationBody.OptionalEntryArgumentConversion model ->
                             (List.contains id [model.Call;model.Actual;model.Construction;model.Payload;model.Formation] && body id) ||
-                            (id=model.Invocation && boundary.CallbackInvocations.ContainsKey id)
+                            (id=model.Invocation && boundary.CallbackInvocations.ContainsKey id) || retirementReference false id
                         | _ -> false)
                 | "Obligations.Body"
                 | "CurrentClaims.Body" -> body id
