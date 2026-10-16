@@ -21,6 +21,8 @@ type BoundaryScalar =
     /// Exact resource declaration owns the opaque native ABI and nullability.
     /// This is neither a source integer nor permission to expose an address.
     | ResourceHandle of declaration: NodeId * nullable: bool
+    /// Exact direct-call writable byte-buffer declaration; never a numeric scalar.
+    | WritableBytes of declaration: NodeId
 
 /// The physical target carriers settled from a quoted native entry signature.
 /// This has no C symbol: the code is the original Clef declaration.
@@ -153,6 +155,22 @@ type BoundaryWritableBufferDeclaration = {
     CountFormal: NodeId
     Contract: BAREWire.Descriptors.WritableBufferDescriptor
     DeclarationFacts: Map<NodeId, BoundaryDeclarationFact>
+    Participants: Set<NodeId>
+}
+
+/// Current direct application and finite byte-storage/proof incidence.
+type BoundaryWritableBufferUse = {
+    Call: NodeId
+    Declaration: NodeId
+    Parameter: int
+    CountParameter: int
+    Buffer: NodeId
+    Count: NodeId
+    Allocation: NodeId
+    Capacity: NodeId
+    ByteFormat: NodeId
+    CountCoverage: NodeId
+    StorageCoverage: NodeId
     Participants: Set<NodeId>
 }
 

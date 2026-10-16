@@ -219,6 +219,7 @@ type BoundaryDomain = {
     Meets: Map<NodeId, Meet list>
     Declarations: BoundaryDeclaration list
     WritableBufferDeclarations: NodeId list
+    WritableBufferUses: (NodeId * int) list
     ResourceDeclarations: NodeId list
     ResourceAccesses: NodeId list
     ResourceEvaluationRoots: (NodeId * NodeId * NodeId) list
@@ -293,6 +294,7 @@ type EdgeRole =
     | BoundaryDomain of BoundaryDomain
     | BoundaryResourceDeclaration of BoundaryResourceDeclaration
     | BoundaryWritableBufferDeclaration of BoundaryWritableBufferDeclaration
+    | BoundaryWritableBufferUse of BoundaryWritableBufferUse
     | BoundaryResourceAccess of BoundaryResourceAccess
     | BoundaryImport of BoundaryImport
     | BoundaryCall of BoundaryCall

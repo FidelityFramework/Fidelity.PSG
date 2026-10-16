@@ -819,6 +819,7 @@ type StorageWitnessProjection = {
 
 type BoundaryEmissionProjection = {
     WritableBufferDeclarations: Map<NodeId, BoundaryWritableBufferDeclaration>
+    WritableBufferUses: Map<NodeId * int, BoundaryWritableBufferUse>
     ResourceEvidence: BoundaryResourceEvidence option
     ResourceDeclarations: Map<NodeId, BoundaryResourceDeclaration>
     ResourceAccesses: Map<NodeId, BoundaryResourceAccess>

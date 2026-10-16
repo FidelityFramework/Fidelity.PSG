@@ -1403,6 +1403,81 @@ module Integrity =
                  row.Identity::row.Declaration::row.Body::row.Descriptor::row.Formals |> List.exists(facts.ContainsKey >> not) then
                   yield defect "Emission.Boundary.WritableBufferDeclarations.Participants" key "The writable buffer declaration lost its exact immutable source support." ]
 
+        let writableUse ((site,ordinal):NodeId*int) (row:BoundaryWritableBufferUse) =
+            let rec allocation seen current =
+                if Set.contains current seen then None else
+                let seen=Set.add current seen
+                match revision.Nodes.TryFind current with
+                | Some node ->
+                    match node.Kind,node.Children with
+                    | SemanticKind.ArrayAllocate _,_ -> Some current
+                    | SemanticKind.VarRef(_,Some binding),[] -> allocation seen binding
+                    | SemanticKind.Binding(_,false,false,_),[value] -> allocation seen value
+                    | SemanticKind.TypeAnnotation(value,_),[child] when value=child -> allocation seen value
+                    | SemanticKind.Sequential values,children when values=children -> List.tryLast values |> Option.bind(allocation seen)
+                    | _ -> None
+                | None -> None
+            let original=boundary.WritableBufferDeclarations.TryFind row.Declaration
+            let call=boundary.Calls.TryFind site
+            let storage=memory.Operations.TryFind row.Allocation |> Option.bind(function MemoryWitnessOperation.ArrayAllocation value->Some value | _->None)
+            let count=revision.Emission.Numeric.Values.TryFind row.Count
+            let claim citizen role body =
+                match revision.CurrentClaims.TryFind citizen,revision.ObligationSources.TryFind citizen with
+                | Some info,Some [sources] ->
+                    info.Kind="foreign-writable-buffer-"+role && info.Body=body && List.contains info revision.Obligations &&
+                    List.tryHead sources=Some site &&
+                    [row.Declaration;row.Buffer;row.Count;row.Allocation;row.Capacity;row.ByteFormat] |> List.forall(fun id->List.contains id sources) &&
+                    original |> Option.exists(fun declaration ->
+                        info.Refs=[declaration.Contract.Hypothesis.Identity;declaration.Contract.Hypothesis.Version;declaration.Contract.Hypothesis.Source])
+                | _ -> false
+            let account =
+                match original,call with
+                | Some declaration,Some call ->
+                    row.Call=site && row.Parameter=ordinal && row.Parameter=declaration.Parameter && row.CountParameter=declaration.CountParameter &&
+                    call.Entry.IsNone && call.Resource.IsNone && call.Result.IsNone && call.ResultAdaptation.IsNone &&
+                    (revision.Nodes.TryFind site |> Option.exists(fun node->match node.Kind with SemanticKind.Application(callee,args)->callee=call.Callee && args=(call.Arguments |> List.map _.Actual) && node.Children=callee::args | _->false)) &&
+                    (call.Arguments |> List.tryItem ordinal |> Option.exists(fun argument->argument.Actual=row.Buffer && argument.Formal=declaration.BufferFormal && argument.Abi=BoundaryScalar.WritableBytes row.Declaration && argument.Adaptation.IsNone)) &&
+                    (call.Arguments |> List.tryItem row.CountParameter |> Option.exists(fun argument->argument.Actual=row.Count && argument.Formal=declaration.CountFormal && match argument.Abi with BoundaryScalar.Integer _->true | _->false)) &&
+                    (boundary.Imports.TryFind call.Import |> Option.exists(fun imported ->
+                        let field name=boundaryRecordFields imported.DeclarationFacts imported.Identity |> Option.bind(Map.tryFind name) |> Option.bind imported.DeclarationFacts.TryFind
+                        imported.Binding=declaration.Declaration && imported.Identity=declaration.Descriptor && imported.Result.IsNone &&
+                        imported.DeclarationFacts.TryFind row.Declaration=declaration.DeclarationFacts.TryFind row.Declaration &&
+                        field "CName" |> Option.exists(fun fact->fact.Form="string" && fact.Text=[imported.Symbol])))
+                | _ -> false
+            let layout = storage |> Option.exists(fun storage ->
+                allocation Set.empty row.Buffer=Some row.Allocation && storage.Site=row.Allocation && storage.ElementBytes=1 &&
+                (match storage.Element with SettledSlot.Integer(8,Some _)->true | _->false) &&
+                storage.MinimumCount=4I && storage.MaximumCount=4I && storage.Construction.Count.Actual=row.Capacity &&
+                revision.Emission.Numeric.Elements.TryFind row.Buffer=Some storage.Element)
+            let format =
+                match call,storage with
+                | Some call,Some storage ->
+                    boundary.Imports.TryFind call.Import |> Option.exists(fun imported->
+                        match boundaryRecordFields imported.DeclarationFacts row.ByteFormat,storage.Element with
+                        | Some fields,SettledSlot.Integer(8,Some name) ->
+                            let fact key=fields.TryFind key |> Option.bind imported.DeclarationFacts.TryFind
+                            (fact "Name" |> Option.exists(fun row->row.Form="string" && row.Text=[name])) &&
+                            (fact "Family" |> Option.exists(fun row->row.Form="string" && row.Text=["uint"])) &&
+                            (fact "Bits" |> Option.exists(fun row->row.Form="integer" && row.Numbers=[8I]))
+                        | _ -> false)
+                | _ -> false
+            let bounds,claims =
+                match count,storage with
+                | Some count,Some storage ->
+                    match count.Range with
+                    | ValueRange.Bounded(lo,hi) when lo=hi && lo>=0I && hi<=4I ->
+                        true,claim row.CountCoverage "count" (ObligationBody.IntegerRepresentationCoverage(lo,hi,0I,storage.MinimumCount)) &&
+                             claim row.StorageCoverage "storage" (ObligationBody.IntegerRepresentationCoverage(0I,255I,0I,255I))
+                    | _ -> false,false
+                | _ -> false,false
+            let support = [row.Call;row.Declaration;row.Buffer;row.Count;row.Allocation;row.Capacity;row.ByteFormat;row.CountCoverage;row.StorageCoverage]
+                          |> List.forall row.Participants.Contains
+            [if not account then yield defect "Emission.Boundary.WritableBufferUses.Account" site "The writable use differs from its exact direct void call, current import, declaration or native ordinals."
+             if not layout || not format then yield defect "Emission.Boundary.WritableBufferUses.Storage" site "The writable use lacks its original finite four-byte allocation, selected byte declaration or exact live immutable alias lineage."
+             if not bounds then yield defect "Emission.Boundary.WritableBufferUses.Bounds" site "The actual writable count is not a constant nonnegative byte count within the original four-byte capacity."
+             if not claims then yield defect "Emission.Boundary.WritableBufferUses.Claims" site "The writable use lacks its exact current required count/storage proof citizens and source hypothesis."
+             if not support then yield defect "Emission.Boundary.WritableBufferUses.Participants" site "The writable use lost its current source, byte format or proof support."]
+
         // Passive replay of resource evidence. A well-formed claim may still
         // be refuted; this reader checks its source correspondence, not safety.
         let resourceClaim kind citizen =
@@ -1600,6 +1675,16 @@ module Integrity =
                 yield! writableDeclaration key writable
                 if boundary.WritableBufferDeclarations.Values |> Seq.filter(fun row -> row.Declaration=writable.Declaration && row.Parameter=writable.Parameter) |> Seq.length <> 1 then
                     yield defect "Emission.Boundary.WritableBufferDeclarations.Contract" key "A writable buffer ordinal has duplicate declaration contracts."
+            for KeyValue(key, writable) in boundary.WritableBufferUses do
+                yield! writableUse key writable
+            for KeyValue(_, call) in boundary.Calls do
+                for ordinal,operand in List.indexed call.Arguments do
+                    match operand.Abi with
+                    | BoundaryScalar.WritableBytes declaration ->
+                        if call.Entry.IsSome || call.Result.IsSome ||
+                           not(boundary.WritableBufferUses.TryFind(call.Site,ordinal) |> Option.exists(fun row->row.Declaration=declaration)) then
+                            yield defect "Emission.Boundary.Calls.WritableBuffer" call.Site "A writable byte operand requires its exact direct-call per-use account."
+                    | _ -> ()
             for KeyValue(key, invocation) in boundary.CallbackInvocations do
                 let part = "Emission.Boundary.CallbackInvocations"
                 if key <> invocation.Identity then
@@ -2595,6 +2680,8 @@ module Integrity =
             if explicitParts.Contains part || supportParts.Contains part || aggregatePart || inactivityPart || part.StartsWith("SourceReadings.", System.StringComparison.Ordinal) then true
             else
                 match part with
+                | part when part.StartsWith("Emission.Boundary.WritableBufferUses",System.StringComparison.Ordinal) ->
+                    boundary.WritableBufferUses.Values |> Seq.exists(fun row -> row.Participants.Contains id || row.Call=id)
                 | "Emission.Boundary.WritableBufferDeclarations.DeclarationFacts" ->
                     boundary.WritableBufferDeclarations.Values |> Seq.exists(fun row ->
                         row.DeclarationFacts.ContainsKey id || boundaryContext revision row.DeclarationFacts row.Declaration |> Option.exists(fun(scope,_)->scope=id))
@@ -2725,7 +2812,7 @@ module Integrity =
                 | "Obligations.Body"
                 | "CurrentClaims.Body" -> body id
                 | "Emission.Boundary.IntrinsicWriteImports.Scope" -> source.ContextHeaders.ContainsKey id
-                | "Emission.Boundary.Imports.Parameters" -> boundaryType id || boundary.CallbackInvocations.ContainsKey id || resourceDeclaration id
+                | "Emission.Boundary.Imports.Parameters" -> boundaryType id || boundary.CallbackInvocations.ContainsKey id || resourceDeclaration id || boundary.WritableBufferDeclarations.ContainsKey id
                 | "Emission.Boundary.Imports.SourceTypes" -> boundaryType id
                 | "Emission.Boundary.ByScope (values)" | "Emission.Boundary.Calls.Import" -> boundary.Imports.ContainsKey id
                 | "Emission.Spatial.Kernels.Scope" | "Emission.Spatial.Hardware.Scope" -> body id || source.ContextHeaders.ContainsKey id
