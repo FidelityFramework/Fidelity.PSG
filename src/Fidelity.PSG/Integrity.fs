@@ -1421,6 +1421,40 @@ module Integrity =
             let call=boundary.Calls.TryFind site
             let storage=memory.Operations.TryFind row.Allocation |> Option.bind(function MemoryWitnessOperation.ArrayAllocation value->Some value | _->None)
             let count=revision.Emission.Numeric.Values.TryFind row.Count
+            let resultAccount (call:BoundaryCall) (imported:BoundaryImport) =
+                match call.Result,imported.Result with
+                | None,None -> call.ResultAdaptation.IsNone
+                | Some(BoundaryScalar.Integer(64,true)),Some(BoundaryScalar.Integer(64,true)) ->
+                    count |> Option.exists(fun value->value.Range=ValueRange.Bounded(3I,3I)) &&
+                    (revision.Emission.Numeric.ForeignResultUses |> List.filter(fun account->
+                        account.Application.Call=site && account.Application.Declaration=imported.Binding)
+                     |> function
+                        | [account] ->
+                            let application=account.Application
+                            let hypothesis=application.Hypothesis |> Option.exists(fun hypothesis->
+                                hypothesis.Declaration=imported.Binding && hypothesis.Lower=ForeignResultBound.Constant -1I &&
+                                hypothesis.Upper=ForeignResultBound.Argument row.CountParameter &&
+                                List.contains hypothesis boundary.ResultHypotheses)
+                            let claims=List.map fst account.Claims=[ForeignResultProofRole.LogicalCoverage;ForeignResultProofRole.AbiNarrowing] &&
+                                       (account.Claims |> List.map snd |> List.distinct).Length=2 &&
+                                       (account.Claims |> List.forall(fun(role,citizen)->
+                                           match revision.CurrentClaims.TryFind citizen with
+                                           | Some info when List.contains info revision.Obligations ->
+                                               match info.Body with
+                                               | ObligationBody.ForeignResultCoverage model ->
+                                                   info.Kind="foreign-result-coverage" && model.Application=application && model.Role=role &&
+                                                   model.Abi=Some imported.Identity && model.AbiRange=ValueRange.Bounded(-(1I<<<63),(1I<<<63)-1I) &&
+                                                   model.ResultRange=ValueRange.Bounded(-1I,3I) && row.Participants.Contains citizen
+                                               | _ -> false
+                                           | _ -> false))
+                            let support=match account.Participants with
+                                        | ParticipantEvidence.Established rows->rows |> List.forall(fun support->row.Participants.Contains support.Node)
+                                        | ParticipantEvidence.Pending _->false
+                            hypothesis && claims && support &&
+                            (application.Arguments |> List.map(fun argument->argument.Index,argument.Node))=
+                                (call.Arguments |> List.mapi(fun ordinal argument->ordinal,argument.Actual))
+                        | _ -> false)
+                | _ -> false
             let claim citizen role body =
                 match revision.CurrentClaims.TryFind citizen,revision.ObligationSources.TryFind citizen with
                 | Some info,Some [sources] ->
@@ -1434,13 +1468,13 @@ module Integrity =
                 match original,call with
                 | Some declaration,Some call ->
                     row.Call=site && row.Parameter=ordinal && row.Parameter=declaration.Parameter && row.CountParameter=declaration.CountParameter &&
-                    call.Entry.IsNone && call.Resource.IsNone && call.Result.IsNone && call.ResultAdaptation.IsNone &&
+                    call.Entry.IsNone && call.Resource.IsNone &&
                     (revision.Nodes.TryFind site |> Option.exists(fun node->match node.Kind with SemanticKind.Application(callee,args)->callee=call.Callee && args=(call.Arguments |> List.map _.Actual) && node.Children=callee::args | _->false)) &&
                     (call.Arguments |> List.tryItem ordinal |> Option.exists(fun argument->argument.Actual=row.Buffer && argument.Formal=declaration.BufferFormal && argument.Abi=BoundaryScalar.WritableBytes row.Declaration && argument.Adaptation.IsNone)) &&
                     (call.Arguments |> List.tryItem row.CountParameter |> Option.exists(fun argument->argument.Actual=row.Count && argument.Formal=declaration.CountFormal && match argument.Abi with BoundaryScalar.Integer _->true | _->false)) &&
                     (boundary.Imports.TryFind call.Import |> Option.exists(fun imported ->
                         let field name=boundaryRecordFields imported.DeclarationFacts imported.Identity |> Option.bind(Map.tryFind name) |> Option.bind imported.DeclarationFacts.TryFind
-                        imported.Binding=declaration.Declaration && imported.Identity=declaration.Descriptor && imported.Result.IsNone &&
+                        imported.Binding=declaration.Declaration && imported.Identity=declaration.Descriptor && resultAccount call imported &&
                         imported.DeclarationFacts.TryFind row.Declaration=declaration.DeclarationFacts.TryFind row.Declaration &&
                         field "CName" |> Option.exists(fun fact->fact.Form="string" && fact.Text=[imported.Symbol])))
                 | _ -> false
@@ -1472,7 +1506,7 @@ module Integrity =
                 | _ -> false,false
             let support = [row.Call;row.Declaration;row.Buffer;row.Count;row.Allocation;row.Capacity;row.ByteFormat;row.CountCoverage;row.StorageCoverage]
                           |> List.forall row.Participants.Contains
-            [if not account then yield defect "Emission.Boundary.WritableBufferUses.Account" site "The writable use differs from its exact direct void call, current import, declaration or native ordinals."
+            [if not account then yield defect "Emission.Boundary.WritableBufferUses.Account" site "The writable use differs from its exact direct call, current result account, import, declaration or native ordinals."
              if not layout || not format then yield defect "Emission.Boundary.WritableBufferUses.Storage" site "The writable use lacks its original finite four-byte allocation, selected byte declaration or exact live immutable alias lineage."
              if not bounds then yield defect "Emission.Boundary.WritableBufferUses.Bounds" site "The actual writable count is not a constant nonnegative byte count within the original four-byte capacity."
              if not claims then yield defect "Emission.Boundary.WritableBufferUses.Claims" site "The writable use lacks its exact current required count/storage proof citizens and source hypothesis."
@@ -1681,7 +1715,7 @@ module Integrity =
                 for ordinal,operand in List.indexed call.Arguments do
                     match operand.Abi with
                     | BoundaryScalar.WritableBytes declaration ->
-                        if call.Entry.IsSome || call.Result.IsSome ||
+                        if call.Entry.IsSome ||
                            not(boundary.WritableBufferUses.TryFind(call.Site,ordinal) |> Option.exists(fun row->row.Declaration=declaration)) then
                             yield defect "Emission.Boundary.Calls.WritableBuffer" call.Site "A writable byte operand requires its exact direct-call per-use account."
                     | _ -> ()
@@ -1886,6 +1920,16 @@ module Integrity =
                         yield defect (part + ".Participants") key "The closed entry omits original code, lifetime, signature or immutable transport support."
                 | _ -> yield defect (part + ".Account") key "The closed entry lacks its exact invocation, original callable declaration or native carrier."
             for KeyValue(_, call) in boundary.Calls do
+                match call.Result with
+                | Some(BoundaryScalar.Integer _ | BoundaryScalar.Boolean) ->
+                    let current=revision.Codata.Meets.TryFind call.Site |> Option.defaultValue []
+                                |> List.filter(fun meet->meet.Operand=call.Site) |> List.distinct
+                    let expected=match current with []->Some None | [meet]->Some(Some meet) | _->None
+                    if expected<>Some call.ResultAdaptation then
+                        yield defect "Emission.Boundary.Calls.ResultAdaptation" call.Site "The boundary result adaptation differs from its exact current source numeric meet."
+                    for meet in Option.toList call.ResultAdaptation do
+                        yield! adaptationRow "Emission.Boundary.Calls.ResultAdaptation" call.Site call.Site meet
+                | _ -> ()
                 for operand in call.Arguments do
                     match operand.Abi with
                     | BoundaryScalar.Entry invocation ->
