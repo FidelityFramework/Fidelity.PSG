@@ -189,7 +189,25 @@ type BoundaryImport = {
     DeclarationFacts: Map<NodeId, BoundaryDeclarationFact>
 }
 
-type BoundaryOperand = { Actual: NodeId; Formal: NodeId; Abi: BoundaryScalar; Adaptation: Meet option }
+/// Original tagged Option selection at one native-entry argument. Absence is
+/// explicit source evidence, never a null function value or native authority.
+type BoundaryOptionalEntry = {
+    Construction: NodeId
+    CaseOrdinal: int
+    Payload: NodeId option
+    Formation: NodeId option
+    Transport: Set<NodeId>
+    /// The existing boundary ledger owns target conversion/absence readiness.
+    Obligation: NodeId
+}
+
+type BoundaryOperand = {
+    Actual: NodeId
+    Formal: NodeId
+    Abi: BoundaryScalar
+    Adaptation: Meet option
+    OptionalEntry: BoundaryOptionalEntry option
+}
 
 /// A source-stated loading assumption; node identities describe this revision.
 type BoundaryLoading = {

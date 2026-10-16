@@ -4,7 +4,7 @@ open Fidelity.Data.JSON
 module internal JsonGenerated =
     open JsonRuntime
     [<Literal>]
-    let NamedTypes = 307
+    let NamedTypes = 308
     let rec write_BAREWire_Descriptors_CallConv (value: global.BAREWire.Descriptors.CallConv) : JsonValue =
         match value with
         | global.BAREWire.Descriptors.CallConv.``CDecl`` -> union "CDecl" []
@@ -159,7 +159,10 @@ module internal JsonGenerated =
         JsonValue.Object [("Identity", write_Fidelity_PSG_NodeId value.``Identity``); ("Binding", write_Fidelity_PSG_NodeId value.``Binding``); ("Selector", writeString value.``Selector``); ("Contract", write_BAREWire_Platform_ProcessLinkContract value.``Contract``); ("Platform", write_Fidelity_PSG_NodeId value.``Platform``); ("Core", write_Fidelity_PSG_NodeId value.``Core``); ("DeclarationFacts", (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_BoundaryDeclarationFact) value.``DeclarationFacts``); ("Participants", (writeSet write_Fidelity_PSG_NodeId) value.``Participants``)]
 
     and write_Fidelity_PSG_BoundaryOperand (value: global.Fidelity.PSG.BoundaryOperand) : JsonValue =
-        JsonValue.Object [("Actual", write_Fidelity_PSG_NodeId value.``Actual``); ("Formal", write_Fidelity_PSG_NodeId value.``Formal``); ("Abi", write_Fidelity_PSG_BoundaryScalar value.``Abi``); ("Adaptation", (writeOption write_Fidelity_PSG_Meet) value.``Adaptation``)]
+        JsonValue.Object [("Actual", write_Fidelity_PSG_NodeId value.``Actual``); ("Formal", write_Fidelity_PSG_NodeId value.``Formal``); ("Abi", write_Fidelity_PSG_BoundaryScalar value.``Abi``); ("Adaptation", (writeOption write_Fidelity_PSG_Meet) value.``Adaptation``); ("OptionalEntry", (writeOption write_Fidelity_PSG_BoundaryOptionalEntry) value.``OptionalEntry``)]
+
+    and write_Fidelity_PSG_BoundaryOptionalEntry (value: global.Fidelity.PSG.BoundaryOptionalEntry) : JsonValue =
+        JsonValue.Object [("Construction", write_Fidelity_PSG_NodeId value.``Construction``); ("CaseOrdinal", writeInt32 value.``CaseOrdinal``); ("Payload", (writeOption write_Fidelity_PSG_NodeId) value.``Payload``); ("Formation", (writeOption write_Fidelity_PSG_NodeId) value.``Formation``); ("Transport", (writeSet write_Fidelity_PSG_NodeId) value.``Transport``); ("Obligation", write_Fidelity_PSG_NodeId value.``Obligation``)]
 
     and write_Fidelity_PSG_BoundaryPlatformPremise (value: global.Fidelity.PSG.BoundaryPlatformPremise) : JsonValue =
         JsonValue.Object [("Id", writeString value.``Id``); ("Description", (writeOption writeString) value.``Description``); ("Loading", (writeOption writeString) value.``Loading``); ("LibraryPath", (writeOption writeString) value.``LibraryPath``); ("SourcePaths", (writeSet writeString) value.``SourcePaths``); ("Architecture", (writeOption writeString) value.``Architecture``); ("OS", (writeOption writeString) value.``OS``); ("RuntimeClaim", (writeOption write_Fidelity_PSG_RuntimeModel) value.``RuntimeClaim``); ("Substrate", (writeOption write_Fidelity_PSG_SubstrateKind) value.``Substrate``); ("Dimensions", (writeMap writeString writeInt32) value.``Dimensions``); ("Representations", (writeMap writeString write_Fidelity_PSG_NumericRepresentation) value.``Representations``); ("EndpointReturns", (writeMap writeString write_Fidelity_PSG_ReturnBound) value.``EndpointReturns``)]
@@ -252,6 +255,7 @@ module internal JsonGenerated =
         | global.Fidelity.PSG.CallableAggregateOperation.``Project`` -> union "Project" []
         | global.Fidelity.PSG.CallableAggregateOperation.``Assign`` -> union "Assign" []
         | global.Fidelity.PSG.CallableAggregateOperation.``Snapshot`` -> union "Snapshot" []
+        | global.Fidelity.PSG.CallableAggregateOperation.``Transport`` -> union "Transport" []
 
     and write_Fidelity_PSG_CallableAggregatePathStep (value: global.Fidelity.PSG.CallableAggregatePathStep) : JsonValue =
         match value with
@@ -1176,6 +1180,7 @@ module internal JsonGenerated =
         | global.Fidelity.PSG.ObligationBody.``ForeignResultCoverage``(a0) -> union "ForeignResultCoverage" [("Item", write_Fidelity_PSG_ForeignResultCoverageModel a0)]
         | global.Fidelity.PSG.ObligationBody.``ResourceConversion``(a0) -> union "ResourceConversion" [("Item", write_Fidelity_PSG_ResourceConversionModel a0)]
         | global.Fidelity.PSG.ObligationBody.``ResourceCleanup``(a0) -> union "ResourceCleanup" [("Item", write_Fidelity_PSG_ResourceCleanupModel a0)]
+        | global.Fidelity.PSG.ObligationBody.``Pending``(a0) -> union "Pending" [("reasons", (writeList writeString) a0)]
 
     and write_Fidelity_PSG_ObligationInfo (value: global.Fidelity.PSG.ObligationInfo) : JsonValue =
         JsonValue.Object [("Id", writeString value.``Id``); ("Kind", writeString value.``Kind``); ("Logic", writeString value.``Logic``); ("Statement", writeString value.``Statement``); ("Source", writeString value.``Source``); ("Refs", (writeList writeString) value.``Refs``); ("Body", write_Fidelity_PSG_ObligationBody value.``Body``)]

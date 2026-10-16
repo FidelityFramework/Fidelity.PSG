@@ -1674,7 +1674,7 @@ let private boundaryCalleeFacts =
          DeclarationFacts = Map.ofList [NodeId 72, declared]}
     let call : BoundaryCall =
         {Site = NodeId 1; Import = NodeId 72; Callee = NodeId 2; Entry = None; Resource = None
-         Arguments = [3;4] |> List.map(fun id -> {Actual = NodeId id; Formal = NodeId id; Abi = BoundaryScalar.Integer(32, true); Adaptation = None})
+         Arguments = [3;4] |> List.map(fun id -> {Actual = NodeId id; Formal = NodeId id; Abi = BoundaryScalar.Integer(32, true); Adaptation = None; OptionalEntry = None})
          ErasedUnitArguments = []; Result = Some(BoundaryScalar.Integer(32, true)); ResultAdaptation = None; Participants = Set.singleton(NodeId 8000); SourceTypes = imported.SourceTypes}
     let callable =
         {numericOperationFacts.Emission.Callable with
@@ -1694,6 +1694,87 @@ let ``a boundary call retains its live callee occurrence separately from its dec
     Assert.Empty(Integrity.check boundaryCalleeFacts)
     Assert.NotEqual(boundaryCalleeFacts.Emission.Boundary.Calls[NodeId 1].Callee, boundaryCalleeFacts.Emission.Boundary.Imports[NodeId 72].Identity)
     Assert.False(boundaryCalleeFacts.Nodes.ContainsKey(NodeId 72))
+
+[<Theory>]
+[<InlineData("reverse")>]
+[<InlineData("repeat")>]
+[<InlineData("drop")>]
+[<InlineData("erased")>]
+let ``a direct boundary call preserves the original ordered source argument occurrences`` change =
+    Assert.Empty(Integrity.check boundaryCalleeFacts)
+    let call = boundaryCalleeFacts.Emission.Boundary.Calls[NodeId 1]
+    let changed =
+        match change with
+        | "reverse" -> {call with Arguments = List.rev call.Arguments}
+        | "repeat" -> {call with Arguments = [call.Arguments.Head; call.Arguments.Head]}
+        | "drop" -> {call with Arguments = [call.Arguments.Head]}
+        | _ -> {call with ErasedUnitArguments = [NodeId 3]}
+    let boundary = {boundaryCalleeFacts.Emission.Boundary with Calls = Map.ofList [call.Site, changed]}
+    let violations = Integrity.check {boundaryCalleeFacts with Emission = {boundaryCalleeFacts.Emission with Boundary = boundary}}
+    let violation = within "Emission.Boundary.Calls.Callee" violations
+    Assert.Contains("live source application", violation.Reason)
+
+[<Fact>]
+let ``an ordinary scalar operand cannot acquire an optional entry account`` () =
+    Assert.Empty(Integrity.check boundaryCalleeFacts)
+    let call = boundaryCalleeFacts.Emission.Boundary.Calls[NodeId 1]
+    let optional : BoundaryOptionalEntry =
+        {Construction = NodeId 3; CaseOrdinal = 0; Payload = None; Formation = None
+         Transport = Set.singleton(NodeId 3)
+         Obligation = NodeId 404}
+    let changed = {call with Arguments = {call.Arguments.Head with OptionalEntry = Some optional} :: call.Arguments.Tail}
+    let boundary = {boundaryCalleeFacts.Emission.Boundary with Calls = Map.ofList [call.Site, changed]}
+    let violations = Integrity.check {boundaryCalleeFacts with Emission = {boundaryCalleeFacts.Emission with Boundary = boundary}}
+    let violation = within "Emission.Boundary.Calls.OptionalEntry" violations
+    Assert.Equal("An optional-entry account requires its original Entry formal.", violation.Reason)
+
+[<Theory>]
+[<InlineData(false)>]
+[<InlineData(true)>]
+let ``optional entry inventory retains absent and present selection identities`` present =
+    let call = boundaryCalleeFacts.Emission.Boundary.Calls[NodeId 1]
+    let optional : BoundaryOptionalEntry =
+        {Construction = NodeId 9101; CaseOrdinal = if present then 1 else 0
+         Payload = if present then Some(NodeId 9102) else None
+         Formation = if present then Some(NodeId 9103) else None
+         Transport = Set.singleton(NodeId 9104)
+         Obligation = NodeId 9106}
+    let changed = {call with Arguments = [{call.Arguments.Head with OptionalEntry = Some optional}]}
+    let boundary = {boundaryCalleeFacts.Emission.Boundary with Calls = Map.ofList [call.Site, changed]}
+    let named = Integrity.named {boundaryCalleeFacts with Emission = {boundaryCalleeFacts.Emission with Boundary = boundary}}
+                |> List.collect snd |> Set.ofList
+    for identity in [9101; 9104; 9106] @ (if present then [9102; 9103] else []) do
+        Assert.Contains(NodeId identity, named)
+
+[<Theory>]
+[<InlineData("empty")>]
+[<InlineData("blank")>]
+[<InlineData("whitespace")>]
+[<InlineData("logic")>]
+let ``Pending claims retain explicit reasons and cannot advertise solver logic`` change =
+    let original = scopedFacts.CurrentClaims[NodeId 404]
+    let reasons =
+        match change with
+        | "empty" -> []
+        | "blank" -> [""]
+        | "whitespace" -> [" "]
+        | _ -> ["Selected-target optional-entry conversion remains Pending."]
+    let claim = {original with Body = ObligationBody.Pending reasons; Logic = if change = "logic" then "QF_LIA" else ""}
+    let changed = {scopedFacts with CurrentClaims = Map.ofList [NodeId 404, claim]; Obligations = [claim]}
+    let violation = within "CurrentClaims.Pending" (Integrity.check changed)
+    Assert.Equal("A Pending claim requires nonempty reason strings and no solver logic.", violation.Reason)
+
+[<Fact>]
+let ``a reasoned Pending claim cannot be detached from its current optional operand`` () =
+    let claim =
+        {scopedFacts.CurrentClaims[NodeId 404] with
+            Kind = "foreign-optional-entry-conversion-0"; Logic = ""
+            Body = ObligationBody.Pending ["Selected-target optional-entry conversion remains Pending."]}
+    let changed = {scopedFacts with CurrentClaims = Map.ofList [NodeId 404, claim]; Obligations = [claim]}
+    let violations = Integrity.check changed
+    Assert.DoesNotContain(violations, fun violation -> violation.Part = "CurrentClaims.Pending")
+    let violation = within "CurrentClaims.Pending.Owner" violations
+    Assert.Equal("A Pending claim requires exactly one current optional-entry operand account.", violation.Reason)
 
 [<Theory>]
 [<InlineData("callee")>]

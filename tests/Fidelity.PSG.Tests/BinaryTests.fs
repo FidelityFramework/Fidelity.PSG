@@ -73,6 +73,52 @@ let ``closed callback binary retains receiving hypothesis and complete original 
     let bytes = indexedEncoded BinaryGenerated.write_Fidelity_PSG_BoundaryScalar carrier
     Assert.Equal(carrier, BinaryGenerated.read_Fidelity_PSG_BoundaryScalar (indexedReadState limits bytes) |> take |> fst)
 
+[<Theory>]
+[<InlineData(false)>]
+[<InlineData(true)>]
+let ``optional entry binary retains exact absent and present source selection`` present =
+    let selected : BoundaryOptionalEntry =
+        {Construction = NodeId 60; CaseOrdinal = if present then 1 else 0
+         Payload = if present then Some(NodeId 61) else None
+         Formation = if present then Some(NodeId 62) else None
+         Transport = Set.ofList [NodeId 60; NodeId 63]
+         Obligation = NodeId 64}
+    let operand : BoundaryOperand =
+        {Actual = NodeId 63; Formal = NodeId 42; Abi = BoundaryScalar.Entry(NodeId 40)
+         Adaptation = None; OptionalEntry = Some selected}
+    let bytes = indexedEncoded BinaryGenerated.write_Fidelity_PSG_BoundaryOperand operand
+    let actual, state = BinaryGenerated.read_Fidelity_PSG_BoundaryOperand (indexedReadState limits bytes) |> take
+    Assert.Equal(operand, actual)
+    Assert.Equal(0, state.Depth)
+
+[<Fact>]
+let ``Pending binary retains reason order duplicates and Unicode without a solver body`` () =
+    let expected = ObligationBody.Pending ["Selected target conversion remains Pending."; "λ nullable premise"; "λ nullable premise"]
+    let bytes = indexedEncoded BinaryGenerated.write_Fidelity_PSG_ObligationBody expected
+    let actual, state = BinaryGenerated.read_Fidelity_PSG_ObligationBody (indexedReadState limits bytes) |> take
+    Assert.Equal(expected, actual)
+    Assert.Equal(0, state.Depth)
+
+[<Fact>]
+let ``Pending binary refuses a ledger claim detached from its optional operand owner`` () =
+    let claim : ObligationInfo =
+        {Id = "optional-conversion-1"; Kind = "foreign-optional-entry-conversion-0"; Logic = ""
+         Statement = "The exact source Option selection requires an admitted target boundary conversion."
+         Source = "contract-test.clef:1:1"; Refs = []
+         Body = ObligationBody.Pending ["Selected-target optional-entry conversion remains Pending."]}
+    let sourceGroups = [[NodeId 1; NodeId 2]; [NodeId 2]]
+    let expected =
+        {Build.bindingWithLiteral with
+            Obligations = [claim]; CurrentClaims = Map.ofList [NodeId 90, claim]
+            ObligationSources = Map.ofList [NodeId 90, sourceGroups]}
+    match Binary.encode limits expected with
+    | Result.Error(BinaryError.InvalidRevision violations) ->
+        let violation = Assert.Single violations
+        Assert.Equal("CurrentClaims.Pending.Owner", violation.Part)
+        Assert.Equal(Some(NodeId 90), violation.Node)
+        Assert.Equal("A Pending claim requires exactly one current optional-entry operand account.", violation.Reason)
+    | other -> failwithf "Expected exact Pending ownership refusal, got %A" other
+
 [<Fact>]
 let ``ordinary omission origins retain their kind ordinal and identities in the binary contract`` () =
   let omissions : OrdinaryOmission list =
@@ -116,24 +162,22 @@ let ``binary generator output agrees with every reachable compiled contract fiel
 [<Fact>]
 let ``snapshot header has independent version schema and fingerprint bytes`` () =
     let bytes = Binary.encode limits (Revision.empty "g") |> take
-    // AGENTS contract rule: "A change to a published type changes the contract
-    // version in Revision.fs." D6(b)'s approved Contract extension requires the
-    // callable component foundation. Keep this independent literal
-    // oracle: indexed magic, little-endian format/schema, complete shape digest.
-    // Spec closure-representation §2.4: "The account retains typed relation
-    // identities, roles, ordinals and operand order and multiplicity." The old
-    // schema/digest names a shape without those newly published aggregate rows.
-    // Schema 28 adds typed receiving callback signatures and original closed
-    // entries while retaining all native formals and the trusted hypothesis.
-    let prefix = Convert.FromHexString("4650534749445832020000001C00000062FAE930D5F91696A8C446C72AF48FD8CAACE4C05D0E3CBFBD2717312AC88401")
+    // Pin the approved schema/shape pair independently of the generated values.
+    // A changed published shape must earn a deliberate schema migration; merely
+    // regenerating the codecs cannot update this oracle.
+    let prefix = Convert.FromHexString("465053474944583202000000240000008AB443151779ECEA969FB67DC23C86E601A44894A002480247DCE05652994731")
     Assert.Equal<byte>(prefix, bytes[..47])
+    Assert.Equal(Revision.Schema, System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(12, 4)))
+    Assert.Equal<byte>(Convert.FromHexString(BinaryGenerated.Fingerprint), bytes[16..47])
     Assert.Equal<byte>([|64uy;0uy;0uy;0uy;0uy;0uy;0uy;0uy|], bytes[48..55])
     let header = child bytes 64 0
     let schema = child bytes header 0
     let producer = child bytes header 1
-    Assert.Equal<byte>([|28uy;0uy;0uy;0uy|], bytes[schema..schema + 3])
+    Assert.Equal(Revision.Schema, System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(schema, 4)))
     Assert.Equal<byte>([|1uy;byte 'g'|], bytes[producer..producer + 1])
-    Assert.Equal("g", (Binary.decode limits bytes |> take).Header.Producer)
+    let copy = Binary.decode limits bytes |> take
+    Assert.Equal(Revision.Schema, copy.Header.Schema)
+    Assert.Equal("g", copy.Header.Producer)
 
 [<Fact>]
 let ``complete populated snapshot preserves identity ranges relations and literal bits`` () =
@@ -230,9 +274,15 @@ let ``unknown format schema digest and union cases fail closed`` () =
     match Binary.decode limits (mutate 8 3uy) with
     | Result.Error(BinaryError.UnsupportedFormat 3u) -> () | other -> failwithf "%A" other
     // Binary_Images.md: "A schema, format or fingerprint mismatch is refused."
-    // Exercise the preceding schema against this reader.
-    match Binary.decode limits (mutate 12 24uy) with
-    | Result.Error(BinaryError.SchemaMismatch(25, 24)) -> () | other -> failwithf "%A" other
+    // Change only the schema; preserve format and digest to isolate refusal.
+    let precedingSchema = Revision.Schema - 1
+    let incompatibleSchema = Array.copy bytes
+    System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(incompatibleSchema.AsSpan(12, 4), precedingSchema)
+    match Binary.decode limits incompatibleSchema with
+    | Result.Error(BinaryError.SchemaMismatch(expected, actual)) ->
+        Assert.Equal(Revision.Schema, expected)
+        Assert.Equal(precedingSchema, actual)
+    | other -> failwithf "%A" other
     match Binary.decode limits (mutate 16 (bytes[16] ^^^ 0xFFuy)) with
     | Result.Error BinaryError.ContractMismatch -> () | other -> failwithf "%A" other
     let unknown = indexedEncoded BinaryGenerated.write_Fidelity_PSG_NativeLiteral NativeLiteral.Unit

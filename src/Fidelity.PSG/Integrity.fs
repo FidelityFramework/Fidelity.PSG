@@ -1704,6 +1704,20 @@ module Integrity =
                         yield { Part = "Emission.Boundary.ResourceAccesses"; Node = None
                                 Reason = "The resource access inventory was withdrawn, duplicated or changed." }
                 | None -> yield { Part = "Emission.Boundary.ResourceEvaluation"; Node = None; Reason = "Resource evidence requires its independently issued original source census." }
+            for KeyValue(id, claim) in revision.CurrentClaims do
+                match claim.Body with
+                | ObligationBody.Pending reasons ->
+                    if reasons.IsEmpty || (reasons |> List.exists System.String.IsNullOrWhiteSpace) || claim.Logic <> "" then
+                        yield defect "CurrentClaims.Pending" id "A Pending claim requires nonempty reason strings and no solver logic."
+                    let owners =
+                        boundary.Calls.Values |> Seq.collect (fun call ->
+                            call.Arguments |> List.indexed |> List.choose (fun (ordinal, operand) ->
+                                operand.OptionalEntry |> Option.bind (fun optional ->
+                                    if optional.Obligation = id && claim.Kind = $"foreign-optional-entry-conversion-{ordinal}" then Some call.Site else None)))
+                        |> Seq.toList
+                    if owners.Length <> 1 then
+                        yield defect "CurrentClaims.Pending.Owner" id "A Pending claim requires exactly one current optional-entry operand account."
+                | _ -> ()
             for KeyValue(_, call) in boundary.Calls do
                 if not (resourceCall call) then
                     yield defect "Emission.Boundary.Calls.Resource" call.Site "The resource call differs from its exact current conversion, cleanup or original source incidence."
@@ -1938,7 +1952,9 @@ module Integrity =
                     for meet in Option.toList call.ResultAdaptation do
                         yield! adaptationRow "Emission.Boundary.Calls.ResultAdaptation" call.Site call.Site meet
                 | _ -> ()
-                for operand in call.Arguments do
+                for ordinal, operand in List.indexed call.Arguments do
+                    if operand.OptionalEntry.IsSome && (match operand.Abi with BoundaryScalar.Entry _ -> false | _ -> true) then
+                        yield defect "Emission.Boundary.Calls.OptionalEntry" call.Site "An optional-entry account requires its original Entry formal."
                     match operand.Abi with
                     | BoundaryScalar.Integer _ | BoundaryScalar.Boolean ->
                         if canonical operand.Actual<>Some operand.Adaptation then
@@ -1946,6 +1962,110 @@ module Integrity =
                         for meet in Option.toList operand.Adaptation do
                             yield! adaptationRow "Emission.Boundary.Calls.Arguments.Adaptation" call.Site operand.Actual meet
                     | BoundaryScalar.Entry invocation ->
+                      match operand.OptionalEntry with
+                      | Some optional ->
+                        let part = "Emission.Boundary.Calls.OptionalEntry"
+                        let callable = revision.Emission.Callable
+                        let constructions = callable.AggregateValues.TryFind optional.Construction |> Option.defaultValue []
+                                            |> List.filter (fun row -> row.Occurrence = optional.Construction && row.Operation = CallableAggregateOperation.Construct)
+                        let selected = callable.AggregateValues.TryFind operand.Actual |> Option.defaultValue []
+                        let receiving = boundary.CallbackInvocations.TryFind invocation
+                        let sourceType = revision.Nodes.TryFind operand.Actual |> Option.map _.Type
+                        let nominalOption =
+                            match sourceType with
+                            | Some(TypeIdentity.Application(constructor, [TypeIdentity.Application(entry, [TypeIdentity.Function _])])) ->
+                                constructor = {Declaration = {Module = []; Name = "option"}; Parameters = [TypeParamKind.Type]; NativeKind = None} &&
+                                entry.NativeKind = Some NTUKind.NTUfnptr
+                            | _ -> false
+                        let incidence =
+                            match constructions, receiving, boundary.Imports.TryFind call.Import with
+                            | [construction], Some receiver, Some imported ->
+                                let live =
+                                    match revision.Nodes.TryFind optional.Construction with
+                                    | Some { Kind = SemanticKind.UnionCase(_, caseOrdinal, payload) }
+                                    | Some { Kind = SemanticKind.DUConstruct(_, caseOrdinal, payload, _) } ->
+                                        caseOrdinal = optional.CaseOrdinal && payload = optional.Payload
+                                    | _ -> false
+                                let current =
+                                    selected |> List.exists (fun row ->
+                                        row.Slot = construction.Slot && row.Tag = construction.Tag && row.Alternatives = construction.Alternatives &&
+                                        (operand.Actual = optional.Construction || row.FormationInputs |> List.contains optional.Construction))
+                                let support =
+                                    match callable.AggregateDependencies.TryFind operand.Actual with
+                                    | Some account when account.Occurrence = operand.Actual ->
+                                        let dependencies = account.Sources |> List.map _.Node |> Set.ofList
+                                        Set.isSubset dependencies call.Participants &&
+                                        Set.isSubset receiver.Participants call.Participants
+                                    | _ -> false
+                                let typed =
+                                    match callable.AggregateSlots.TryFind construction.Slot with
+                                    | Some slot ->
+                                        slot.Path = [CallableAggregatePathStep.UnionPayload(1, 0)] &&
+                                        sourceType = Some slot.AggregateType && imported.SourceTypes.TryFind operand.Formal = sourceType
+                                    | _ -> false
+                                live && current && support && typed && nominalOption && construction.Value = optional.Payload &&
+                                (construction.Tag |> Option.exists (fun tag ->
+                                    tag.Constructor = optional.Construction && tag.CaseOrdinal = optional.CaseOrdinal &&
+                                    tag.Payload = optional.Payload && tag.PayloadOrdinal = (optional.Payload |> Option.map (fun _ -> 0)))) &&
+                                receiver.Import = call.Import && receiver.Formal = operand.Formal && receiver.Parameter = ordinal &&
+                                receiver.Extent = BoundaryCallbackExtent.DuringCall && operand.Adaptation.IsNone &&
+                                (match optional.CaseOrdinal, optional.Payload, optional.Formation with
+                                 | 0, None, None -> construction.Alternatives.IsEmpty
+                                 | 1, Some payload, Some formation ->
+                                     match boundary.ClosedEntries.TryFind formation, construction.Alternatives with
+                                     | Some entry, [alternative] ->
+                                         entry.Invocation = invocation && entry.Transport.Contains payload &&
+                                         alternative.Formation = formation && alternative.Carrier = formation &&
+                                         alternative.EnvironmentPlacement.IsNone &&
+                                         optional.Transport.Contains payload && optional.Transport.Contains formation
+                                     | _ -> false
+                                 | _ -> false)
+                            | _ -> false
+                        if not incidence then
+                            yield defect part call.Site "The optional callback differs from its exact current Option construction, tag, payload, closed entry or receiving ordinal."
+                        let required = Set.ofList ([call.Site; call.Import; operand.Actual; operand.Formal; invocation; optional.Construction; optional.Obligation] @ Option.toList optional.Payload @ Option.toList optional.Formation)
+                        if not (Set.isSubset required call.Participants) || not (Set.isSubset optional.Transport call.Participants) ||
+                           not (optional.Transport.Contains operand.Actual) || not (optional.Transport.Contains optional.Construction) then
+                            yield defect (part + ".Participants") call.Site "The optional callback omits its exact source selection, transport, invocation or conversion claim support."
+                        let claimMatches =
+                            let optionalClaims = call.Arguments |> List.choose (fun argument -> argument.OptionalEntry |> Option.map _.Obligation) |> Set.ofList
+                            let accountsCurrent =
+                                call.Arguments |> List.fold (fun state argument ->
+                                    match state, argument.OptionalEntry with
+                                    | None, _ -> None
+                                    | Some (), None -> Some ()
+                                    | Some (), Some _ ->
+                                        match callable.AggregateDependencies.TryFind argument.Actual with
+                                        | Some account when account.Occurrence = argument.Actual && not account.Slots.IsEmpty ->
+                                            let identities = account.Slots |> List.map _.Identity |> Set.ofList
+                                            if identities |> Set.forall (fun identity ->
+                                                account.Participants |> List.exists (fun participant ->
+                                                    participant.Node = identity && participant.Role = ParticipantRole.AggregateSlot)) then
+                                                let sources = account.Sources |> List.map _.Node |> Set.ofList
+                                                if Set.isSubset sources call.Participants then Some () else None
+                                            else None
+                                        | _ -> None) (Some ())
+                            let expectedSupport = accountsCurrent |> Option.map (fun () -> Set.difference call.Participants optionalClaims)
+                            let expectedReasons =
+                                if optional.CaseOrdinal = 0 then
+                                    ["Selected-target optional-entry conversion and the foreign nullable-acceptance premise remain Pending."]
+                                else ["Selected-target optional-entry conversion remains Pending."]
+                            match revision.CurrentClaims.TryFind optional.Obligation with
+                            | Some claim ->
+                                claim.Kind = $"foreign-optional-entry-conversion-{ordinal}" &&
+                                claim.Logic = "" && claim.Statement = "The exact source Option selection requires an admitted target boundary conversion." &&
+                                claim.Body = ObligationBody.Pending expectedReasons &&
+                                (revision.Obligations |> List.filter (fun row -> row.Id = claim.Id)) = [claim] &&
+                                // The live revision carries the complete grouped
+                                // claim sources; analytical F edges stay with Baker.
+                                (match revision.ObligationSources.TryFind optional.Obligation, expectedSupport with
+                                 | Some [group], Some support ->
+                                     group = List.distinct (call.Site :: Set.toList support)
+                                 | _ -> false)
+                            | _ -> false
+                        if not claimMatches then
+                            yield defect (part + ".Obligation") call.Site "The optional callback requires its exact existing Pending per-call conversion claim."
+                      | None ->
                         let entries = boundary.ClosedEntries.Values |> Seq.filter (fun entry -> entry.Invocation = invocation && entry.Transport.Contains operand.Actual) |> Seq.toList
                         match boundary.CallbackInvocations.TryFind invocation, entries with
                         | Some receiving, [entry] when receiving.Import = call.Import && receiving.Formal = operand.Formal && operand.Adaptation.IsNone ->
@@ -2181,8 +2301,11 @@ module Integrity =
                     | None ->
                         match revision.Nodes.TryFind call.Site with
                         | Some {
-                                   Kind = SemanticKind.Application(callee, _)
-                               } when callee = call.Callee -> ()
+                                   Kind = SemanticKind.Application(callee, arguments)
+                                   Children = children
+                               } when callee = call.Callee &&
+                                      arguments = (call.Arguments |> List.map _.Actual) @ call.ErasedUnitArguments &&
+                                      children = callee :: arguments -> ()
                         | _ ->
                             yield
                                 defect

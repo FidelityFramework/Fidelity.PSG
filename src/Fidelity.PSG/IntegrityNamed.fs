@@ -251,6 +251,14 @@ module IntegrityNamed =
         @ [ value.Formal ]
         @ (idsOfBoundaryScalar value.Abi)
         @ (value.Adaptation |> Option.toList |> List.collect (fun v0 -> (idsOfMeet v0)))
+        @ (value.OptionalEntry |> Option.toList |> List.collect (fun v0 -> (idsOfBoundaryOptionalEntry v0)))
+
+    and private idsOfBoundaryOptionalEntry (value: Fidelity.PSG.BoundaryOptionalEntry) : NodeId list =
+        [ value.Construction ]
+        @ (value.Payload |> Option.toList |> List.collect (fun v0 -> [ v0 ]))
+        @ (value.Formation |> Option.toList |> List.collect (fun v0 -> [ v0 ]))
+        @ (value.Transport |> Set.toList |> List.collect (fun v0 -> [ v0 ]))
+        @ [ value.Obligation ]
 
     and private idsOfBoundaryResourceAccess (value: Fidelity.PSG.BoundaryResourceAccess) : NodeId list =
         [ value.Site ]
@@ -1364,6 +1372,7 @@ module IntegrityNamed =
         | Fidelity.PSG.ObligationBody.ForeignResultCoverage(a0) -> (idsOfForeignResultCoverageModel a0)
         | Fidelity.PSG.ObligationBody.ResourceConversion(a0) -> (idsOfResourceConversionModel a0)
         | Fidelity.PSG.ObligationBody.ResourceCleanup(a0) -> (idsOfResourceCleanupModel a0)
+        | Fidelity.PSG.ObligationBody.Pending(_) -> []
 
     and private idsOfObligationInfo (value: Fidelity.PSG.ObligationInfo) : NodeId list =
         (idsOfObligationBody value.Body)

@@ -202,6 +202,58 @@ module internal CallableAggregateIntegrity =
                         match node.Kind with SemanticKind.TupleExpr fields -> List.tryItem ordinal fields | _ -> None)
                 | _ -> None
             | _ -> None
+        let transportedWrite (row: CallableAggregateValue) (slot: CallableAggregateSlot) =
+            let path =
+                match row.Value, List.rev row.FormationInputs with
+                | Some value, stored :: rest when value = stored -> Some(List.rev rest)
+                | None, _ -> Some row.FormationInputs
+                | _ -> None
+            match path with
+            | Some (_ :: _ as inputs) when row.Frontier.IsNone ->
+                let construction = List.last inputs
+                let path = row.Occurrence :: inputs
+                // AliasTargets states the already-owned canonical value, not
+                // the immediate source edge. Only an admitted constructor's
+                // known terminal syntax permits an omitted identity row.
+                let canonical site =
+                    callable.AliasTargets.TryFind site |> Option.orElseWith (fun () ->
+                        if site<>construction then None else
+                        match revision.Nodes.TryFind site |> Option.map _.Kind with
+                        | Some(SemanticKind.RecordExpr _ | SemanticKind.UnionCase _ | SemanticKind.DUConstruct _) -> Some site
+                        | _ -> None)
+                let sameCanonical source target =
+                    match canonical source, canonical target with
+                    | Some left, Some right -> left=right
+                    | _ -> false
+                let edge (source, target) =
+                    match revision.Nodes.TryFind source with
+                    | Some node ->
+                        match node.Kind, node.Children with
+                        | SemanticKind.VarRef(name, Some actual), [] ->
+                            actual=target && sameCanonical source target &&
+                            (revision.SourceReadings.BindingUses.TryFind source |> Option.exists (fun held ->
+                                held.Binding=target && held.Name=name && held.Class=SourceBindingClass.ImmutableValue &&
+                                not held.IsProgramSlotIntent && not held.HasProgramSlotAuthority)) &&
+                            (revision.Nodes.TryFind target |> Option.exists (fun binding ->
+                                match binding.Kind with SemanticKind.Binding(_,false,_,_) -> true | _ -> false))
+                        | SemanticKind.Binding(_, false, _, _), [actual] -> actual=target && sameCanonical source target
+                        | SemanticKind.TypeAnnotation(actual, declared), [child] ->
+                            actual=target && child=actual && declared=slot.AggregateType && canonical source=Some source
+                        | _ -> false
+                    | None -> false
+                let suppliers = callable.AggregateValues.TryFind construction |> Option.defaultValue []
+                                |> List.filter (fun source -> source.Slot=row.Slot && source.Operation=CallableAggregateOperation.Construct)
+                row.Aggregate = construction && canonical construction=Some construction && path.Length = (List.distinct path).Length &&
+                (path |> List.forall (fun site -> sourceType site = Some slot.AggregateType)) &&
+                (path |> List.pairwise |> List.forall edge) &&
+                (match suppliers with
+                 | [source] -> source.Occurrence=construction && source.Aggregate=construction &&
+                               source.Value=row.Value && source.Alternatives=row.Alternatives &&
+                               source.Selector=row.Selector && source.SelectedAlternative=row.SelectedAlternative &&
+                               source.Tag=row.Tag && source.Bytes=row.Bytes && source.Alignment=row.Alignment &&
+                               (source.Tag |> Option.forall (fun tag -> tag.Constructor=construction))
+                 | _ -> false)
+            | _ -> false
         // The producer gives an ordered path, not a bag of candidate origins.
         // Read each stored edge and its exact supplying row; never search for
         // a constructor or recover a formation from an implementation symbol.
@@ -414,6 +466,8 @@ module internal CallableAggregateIntegrity =
                       yield failure "I5" site "A record component carries union tag evidence."
                   match representation row with
                   | Some(Ok held) ->
+                      if row.Operation = CallableAggregateOperation.Transport && not (transportedWrite row slot) then
+                          yield failure "I5" site "The immutable aggregate transport differs from its exact source path or supplying construction."
                       if row.Operation = CallableAggregateOperation.Project then
                           if not (projectSubject row slot held) then
                               yield failure "I5" site "The callable projection differs from its live aggregate subject and slot."

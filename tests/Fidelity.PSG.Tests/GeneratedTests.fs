@@ -36,8 +36,14 @@ let ``every part the generator lists is examined`` () =
 /// The contract types with a field `Participants` that is a set of node identities, with
 /// no role, ordinal or group for an occurrence. A row that states its participants as
 /// `Participant` values leaves this list; no type joins it.
+/// Baseline correction: 7b1a5cb already held the nine Boundary rows below in
+/// Settled.fs:125-174,195-261,363-371. They predate this increment; the new
+/// BoundaryOptionalEntry reuses BoundaryCall support and must stay absent.
 let private untypedParticipantSets =
-    [ "ArrayAllocationConstruction"; "ArrayCopyConstruction"; "BoundaryCall"; "BoundaryImport"
+    [ "ArrayAllocationConstruction"; "ArrayCopyConstruction"; "BoundaryCall"
+      "BoundaryCallbackInvocation"; "BoundaryCallbackRegistration"; "BoundaryClosedEntry"; "BoundaryEntry"
+      "BoundaryImport"; "BoundaryLoading"; "BoundaryResourceAccess"; "BoundaryResourceDeclaration"
+      "BoundaryWritableBufferDeclaration"; "BoundaryWritableBufferUse"
       "CallableEmissionCall"; "CallableEmissionDeclaration"; "CallableProgramInstance"; "HardwareModuleWitness"
       "IntrinsicWriteCall"; "IntrinsicWriteImport"; "IntrinsicWriteProof"; "KernelIngress"
       "KernelModuleWitness"; "KernelTargetPlan"; "MemoryAddressWitness"; "MemoryArrayAccessWitness"
@@ -62,4 +68,6 @@ let ``no contract type adds a participant set without roles`` () =
             FSharpType.GetUnionCases(ty, flags)
             |> Array.filter (fun case -> case.GetFields() |> Array.exists untyped)
             |> Array.map (fun case -> ty.Name + "." + case.Name))
-    Assert.Equal<string list>(untypedParticipantSets, Array.append records cases |> Array.sort |> Array.toList)
+    let actual = Array.append records cases |> Array.sort |> Array.toList
+    Assert.DoesNotContain("BoundaryOptionalEntry", actual)
+    Assert.Equal<string list>(untypedParticipantSets, actual)

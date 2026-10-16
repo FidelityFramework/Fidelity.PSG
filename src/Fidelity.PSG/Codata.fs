@@ -321,7 +321,7 @@ type CallableAggregateTag = {
 }
 
 [<RequireQualifiedAccess>]
-type CallableAggregateOperation = Construct | Project | Assign | Snapshot
+type CallableAggregateOperation = Construct | Project | Assign | Snapshot | Transport
 
 type CallableAggregateValue = {
     Occurrence: NodeId

@@ -455,6 +455,193 @@ let private projectFixture union =
         }
     |> renewCopy
 
+// One immutable whole-union transport, not a constructor or payload projection.
+let private transportFixture present =
+    let held = fixture true false false |> changeRow elideSecond |> zeroComponent true |> renew
+    let prior = held.Emission.Callable.AggregateValues[NodeId 1] |> List.exactlyOne
+    let payload = if present then Some(NodeId 30) else None
+    let tag =
+        { Constructor=NodeId 2; TagRead=None; CaseOrdinal=(if present then 0 else 1)
+          PayloadOrdinal=(if present then Some 0 else None); Payload=payload
+          Participants=[p ParticipantRole.AggregateConstructor 0 2 2] @
+                       (if present then [p ParticipantRole.AggregatePayload 0 2 30] else []) }
+    let componentParts group inputs =
+        [p ParticipantRole.AggregateValue 0 group group; p ParticipantRole.AggregateSource 0 group 2
+         p ParticipantRole.AggregateSlot 0 group 101] @
+        (inputs |> List.mapi (fun ordinal id -> p ParticipantRole.AggregateInput ordinal group (NodeId.value id))) @
+        (if present then [p ParticipantRole.AggregateWrite 0 group 30; p ParticipantRole.CallableCarrier 0 group 30
+                          p ParticipantRole.CallableFormation 0 group 30; p ParticipantRole.CallableContract 0 group 100] else [])
+    let original =
+        { prior with Occurrence=NodeId 2; Aggregate=NodeId 2; Value=payload; Tag=Some tag
+                     Alternatives=(if present then prior.Alternatives else []); Selector=(if present then prior.Selector else None)
+                     SelectedAlternative=(if present then prior.SelectedAlternative else None)
+                     FormationInputs=Option.toList payload; Participants=componentParts 2 (Option.toList payload) }
+    let inputs = [NodeId 3;NodeId 4;NodeId 5;NodeId 2] @ Option.toList payload
+    let transported =
+        { original with Occurrence=NodeId 1; Operation=CallableAggregateOperation.Transport
+                        FormationInputs=inputs; Participants=componentParts 1 inputs }
+    let slot =
+        let slot = held.Emission.Callable.AggregateSlots[NodeId 101]
+        if present then slot else
+        { slot with Contract=Error "No payload is present"
+                    Participants=slot.Participants |> List.filter (fun part -> part.Role<>ParticipantRole.CallableContract) }
+    let c = held.Emission.Callable
+    let implementationName = CallableSymbolName.RootBinding "callback"
+    let declaration : CallableEmissionDeclaration =
+        { Lookup=NodeId 10; Implementation=NodeId 10; Parameters=[]; Result=NodeId 11
+          Context=LambdaContext.RegularClosure; Captures=[]; Name=implementationName; Parent=None
+          Participants=Set.ofList [NodeId 10;NodeId 11] }
+    let template =
+        { c.AggregateDependencies[NodeId 1] with
+            Slots=[slot]
+            Carriers=(if present then c.AggregateDependencies[NodeId 1].Carriers else [])
+            Contracts=(if present then c.AggregateDependencies[NodeId 1].Contracts else [])
+            Symbols=(if present then [NodeId 10,implementationName] else []) }
+    let values = Map.ofList [NodeId 1,[transported];NodeId 2,[original]]
+    let c =
+        { c with
+            AggregateSlots=Map.ofList [NodeId 101,slot]
+            AggregateValues=values
+            Carriers=(if present then c.Carriers else Map.empty)
+            Contracts=(if present then c.Contracts else Map.empty)
+            Declarations=(if present then c.Declarations.Add(NodeId 10,declaration) else c.Declarations)
+            Symbols=(if present then c.Symbols.Add(NodeId 10,implementationName) else c.Symbols)
+            SignatureData=(if present then c.SignatureData.Add(NodeId 10,Set.singleton(NodeId 11)) else c.SignatureData)
+            ClosedData=(if present then c.ClosedData.Add(NodeId 11) else c.ClosedData)
+            AggregateDependencies=Map.ofList [NodeId 1,template] }
+    let numeric = {held.Emission.Numeric with OccurrenceRepresentations=held.Emission.Numeric.OccurrenceRepresentations.Add(NodeId 2,held.Emission.Numeric.OccurrenceRepresentations[NodeId 1])}
+    let nodes =
+        if present then
+            held.Nodes.Add(NodeId 10,{node 10 (SemanticKind.Lambda([],NodeId 11,[],Some "callback",LambdaContext.RegularClosure)) [11] with Type=TypeIdentity.Function(unitType,unitType)})
+                      .Add(NodeId 11,{held.Nodes[NodeId 11] with Parent=Some(NodeId 10)})
+        else held.Nodes
+    let completed =
+        {held with Nodes=nodes.Add(NodeId 1,node 1 (SemanticKind.VarRef("selected",Some(NodeId 3))) [])
+                                      .Add(NodeId 3,node 3 (SemanticKind.Binding("selected",false,false,None)) [4])
+                                      .Add(NodeId 4,node 4 (SemanticKind.VarRef("source",Some(NodeId 5))) [])
+                                      .Add(NodeId 5,node 5 (SemanticKind.Binding("source",false,false,None)) [2])
+                                      .Add(NodeId 2,node 2 (SemanticKind.UnionCase((if present then "Some" else "None"),(if present then 0 else 1),payload)) (payload |> Option.toList |> List.map NodeId.value)) }
+        |> publish c |> covered
+    // Existing source and callable alias rows retain their own authority.
+    // Transport only adds exact component correspondence for this same path.
+    let callable =
+        [1;3;4;5] |> List.fold (fun (current: CallableEmissionProjection) alias ->
+            { current with
+                AliasTargets=current.AliasTargets.Add(NodeId alias,NodeId 2)
+                ValueShapes=current.ValueShapes.Add(NodeId alias,CallableValueShape.Data(NodeId 2)) }) completed.Emission.Callable
+    let numeric =
+        {completed.Emission.Numeric with
+            OccurrenceRepresentations=Map.fold (fun rows id value -> Map.add id value rows) completed.Emission.Numeric.OccurrenceRepresentations numeric.OccurrenceRepresentations}
+    {completed with Emission={completed.Emission with Numeric=numeric}}
+    |> publish callable |> renewCopy
+
+[<Theory>]
+[<InlineData(false)>]
+[<InlineData(true)>]
+let ``I5 immutable Transport preserves exact present and absent supplying components`` present =
+    let held = transportFixture present
+    Assert.Empty(Integrity.check held)
+    let row = held.Emission.Callable.AggregateValues[NodeId 1] |> List.exactlyOne
+    let source = held.Emission.Callable.AggregateValues[NodeId 2] |> List.exactlyOne
+    Assert.Equal(source.Tag,row.Tag)
+    Assert.Equal(source.Value,row.Value)
+    Assert.Equal<CallableAggregateAlternative list>(source.Alternatives,row.Alternatives)
+    Assert.Equal<NodeId list>([NodeId 3;NodeId 4;NodeId 5;NodeId 2] @ (if present then [NodeId 30] else []),row.FormationInputs)
+    Assert.Equal(NodeId 2,held.Emission.Callable.AliasTargets[NodeId 1])
+    Assert.Equal(NodeId 3,held.SourceReadings.BindingUses[NodeId 1].Binding)
+    Assert.Equal(NodeId 5,held.SourceReadings.BindingUses[NodeId 4].Binding)
+    let limits : Binary.Limits =
+        { MaxBytes=4*1024*1024; MaxCollectionLength=10000; MaxDepth=128
+          MaxStringBytes=1024*1024; MaxBigIntegerBytes=4096; MaxValues=1000000 }
+    let copy = Binary.encode limits held |> Result.bind (Binary.decode limits) |> Result.defaultWith (fun error -> failwithf "%A" error)
+    Assert.Empty(Integrity.check copy)
+    Assert.Equal<Revision>(held,copy)
+
+[<Theory>]
+[<InlineData(false)>]
+[<InlineData(true)>]
+let ``Transport cannot disagree with existing source binding and callable alias authority`` aliasTarget =
+    let held = transportFixture false
+    Assert.Empty(Integrity.check held)
+    if aliasTarget then
+        let c = held.Emission.Callable
+        let changed = publish {c with AliasTargets=c.AliasTargets.Add(NodeId 1,NodeId 30)} held
+        // This target is a current body node. Mere row/body coverage cannot
+        // establish agreement with the stored immutable aggregate path.
+        changed |> failure "I5" "The immutable aggregate transport differs from its exact source path or supplying construction."
+    else
+        let source = held.SourceReadings
+        let changed =
+            {held with SourceReadings={source with BindingUses=source.BindingUses.Add(NodeId 1,{source.BindingUses[NodeId 1] with Binding=NodeId 30})}}
+        Assert.Contains(Integrity.check changed,fun violation ->
+            violation.Part="SourceReadings.BindingUses" && violation.Node=Some(NodeId 1) &&
+            violation.Reason="A resolved use contract differs from its live reference occurrence.")
+
+[<Fact>]
+let ``Transport correspondence does not replace existing source alias authority`` () =
+    let held = transportFixture false
+    let c = held.Emission.Callable
+    let without =
+        publish {c with AggregateValues=c.AggregateValues.Remove(NodeId 1)
+                        AggregateDependencies=c.AggregateDependencies.Remove(NodeId 1)} held
+    Assert.Empty(Integrity.check without)
+    Assert.Equal<Map<NodeId,NodeId>>(held.Emission.Callable.AliasTargets,without.Emission.Callable.AliasTargets)
+    Assert.Equal<Map<NodeId, BindingUseContract>>(held.SourceReadings.BindingUses,without.SourceReadings.BindingUses)
+
+[<Theory>]
+[<InlineData(false)>]
+[<InlineData(true)>]
+let ``Transport respects the existing canonical alias stop at a type annotation`` collapsed =
+    let held = transportFixture false
+    let path = [NodeId 3;NodeId 4;NodeId 5;NodeId 6;NodeId 2]
+    let changed =
+        {held with Nodes=held.Nodes.Add(NodeId 5,{held.Nodes[NodeId 5] with Children=[NodeId 6]})
+                                  .Add(NodeId 6,node 6 (SemanticKind.TypeAnnotation(NodeId 2,unitType)) [2])}
+        |> changeRow (fun row ->
+            {row with FormationInputs=path
+                      Participants=(row.Participants |> List.filter (fun p -> p.Role<>ParticipantRole.AggregateInput)) @
+                                   (path |> List.mapi (fun ordinal id -> p ParticipantRole.AggregateInput ordinal 1 (NodeId.value id)))})
+    let source = (covered changed).SourceReadings
+    let c = changed.Emission.Callable
+    let aliases = [1;3;4;5] |> List.fold (fun (rows:Map<NodeId,NodeId>) id -> rows.Add(NodeId id,NodeId 6)) c.AliasTargets
+    let aliases = aliases.Add(NodeId 6,if collapsed then NodeId 2 else NodeId 6)
+    let changed = {changed with SourceReadings=source} |> publish {c with AliasTargets=aliases} |> renewCopy
+    if collapsed then
+        changed |> failure "I5" "The immutable aggregate transport differs from its exact source path or supplying construction."
+    else Assert.Empty(Integrity.check changed)
+
+[<Theory>]
+[<InlineData("mutable")>]
+[<InlineData("changed")>]
+[<InlineData("type")>]
+[<InlineData("sequential")>]
+[<InlineData("eager")>]
+[<InlineData("formal")>]
+[<InlineData("tag")>]
+[<InlineData("payload")>]
+[<InlineData("supplier")>]
+let ``I5 Transport refuses unsupported edges and changed supplying facts`` shape =
+    let held = transportFixture true
+    let changed =
+        match shape with
+        | "mutable" -> {held with Nodes=held.Nodes.Add(NodeId 3,{held.Nodes[NodeId 3] with Kind=SemanticKind.Binding("selected",true,false,None)})}
+        | "changed" -> {held with Nodes=held.Nodes.Add(NodeId 4,{held.Nodes[NodeId 4] with Kind=SemanticKind.VarRef("other",Some(NodeId 30))})}
+        | "type" -> {held with Nodes=held.Nodes.Add(NodeId 3,{held.Nodes[NodeId 3] with Type=boolType})}
+        | "sequential" -> {held with Nodes=held.Nodes.Add(NodeId 3,{held.Nodes[NodeId 3] with Kind=SemanticKind.Sequential [NodeId 4]})}
+        | "eager" -> {held with Nodes=held.Nodes.Add(NodeId 3,{held.Nodes[NodeId 3] with Kind=SemanticKind.EagerExpr(NodeId 4)})}
+        | "formal" -> {held with Nodes=held.Nodes.Add(NodeId 3,{held.Nodes[NodeId 3] with Kind=SemanticKind.PatternBinding "selected"})}
+        | "tag" -> held |> changeRow (fun row -> {row with Tag=row.Tag |> Option.map (fun tag -> {tag with CaseOrdinal=1})})
+        | "payload" -> held |> changeRow (fun row -> {row with Value=Some(NodeId 31)})
+        | _ -> publish {held.Emission.Callable with AggregateValues=held.Emission.Callable.AggregateValues.Remove(NodeId 2)} held
+    changed |> renewCopy |> failure "I5" "The immutable aggregate transport differs from its exact source path or supplying construction."
+
+[<Fact>]
+let ``I6 a dropped Transport row cannot retain its dependency account`` () =
+    let held = transportFixture false
+    let c = held.Emission.Callable
+    publish {c with AggregateValues=c.AggregateValues.Remove(NodeId 1)} held
+    |> failure "I6" "A dependency account has no current aggregate occurrence."
+
 [<Theory>]
 [<InlineData(false)>]
 [<InlineData(true)>]

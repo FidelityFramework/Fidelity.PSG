@@ -1062,6 +1062,9 @@ type ObligationBody =
     | ForeignResultCoverage of ForeignResultCoverageModel
     | ResourceConversion of ResourceConversionModel
     | ResourceCleanup of ResourceCleanupModel
+    /// An admitted unresolved requirement remains in the ledger, with no solver
+    /// term or discharge. Publication and artifact readiness are separate gates.
+    | Pending of reasons: string list
 
 /// The obligation record carried by an Obligation node.
 type ObligationInfo = {
