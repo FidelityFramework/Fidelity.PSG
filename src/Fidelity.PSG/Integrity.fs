@@ -82,6 +82,31 @@ module Integrity =
         literal CallbackAbsenceInputRole.HypothesisVersion "string" [row.Contract.Hypothesis.Version] [] &&
         literal CallbackAbsenceInputRole.HypothesisSource "string" [row.Contract.Hypothesis.Source] []
 
+    /// The stored entry selects a code ABI witness, never another optional
+    /// operand's activation. Sharing is restricted to the complete optional
+    /// during-call use inventory; ordinary and process-exit uses stay exact.
+    let private optionalCodeWitness (revision:Revision) (entry:BoundaryClosedEntry) (receiving:BoundaryCallbackInvocation) =
+        let boundary=revision.Emission.Boundary
+        let optionalOnly =
+            boundary.Calls.Values |> Seq.forall(fun call -> call.Arguments |> List.indexed |> List.forall(fun(ordinal,operand) ->
+                let uses=entry.Transport.Contains operand.Actual || (operand.OptionalEntry |> Option.exists(fun selected->selected.Formation=Some entry.Formation))
+                not uses ||
+                match operand.OptionalEntry,operand.Abi with
+                | Some selected,BoundaryScalar.Entry identity when selected.CaseOrdinal=1 && selected.Payload.IsSome && selected.Formation=Some entry.Formation ->
+                    match boundary.CallbackInvocations.TryFind identity,revision.CurrentClaims.TryFind selected.Obligation with
+                    | Some invocation,Some {Body=ObligationBody.OptionalEntryArgumentConversion model} ->
+                        invocation.Extent=BoundaryCallbackExtent.DuringCall && invocation.Import=call.Import && invocation.Parameter=ordinal &&
+                        model.Call=call.Site && model.Parameter=ordinal && model.Actual=operand.Actual &&
+                        model.Formation=entry.Formation && model.Invocation=identity
+                    | _ -> false
+                | _ -> false))
+        match boundary.CallbackInvocations.TryFind entry.Invocation with
+        | Some witness ->
+            entry.Registrations.IsEmpty && receiving.Extent=BoundaryCallbackExtent.DuringCall && witness.Extent=BoundaryCallbackExtent.DuringCall &&
+            receiving.Signature=witness.Signature && witness.Signature.CallingConvention="CDecl" &&
+            (entry.Invocation=receiving.Identity || optionalOnly)
+        | _ -> false
+
     /// The literals the storage, view and sentinel proofs of string literals name:
     /// the sources of every current claim with one of those bodies. Claim facts
     /// have no executable SemanticNode body in a live publication.
@@ -2087,7 +2112,7 @@ module Integrity =
                                  | 1, Some payload, Some formation ->
                                      match boundary.ClosedEntries.TryFind formation, construction.Alternatives with
                                      | Some entry, [alternative] ->
-                                         entry.Invocation = invocation && entry.Transport.Contains payload &&
+                                         optionalCodeWitness revision entry receiver && entry.Transport.Contains payload &&
                                          alternative.Formation = formation && alternative.Carrier = formation &&
                                          alternative.EnvironmentPlacement.IsNone &&
                                          optional.Transport.Contains payload && optional.Transport.Contains formation
