@@ -5,11 +5,11 @@ module internal BinaryGenerated =
     [<Literal>]
     let Format = 2u
     [<Literal>]
-    let Schema = 36
+    let Schema = 37
     [<Literal>]
-    let Fingerprint = "8AB443151779ECEA969FB67DC23C86E601A44894A002480247DCE05652994731"
+    let Fingerprint = "14C9E027EF9FE3E949D46E68E41BAD9375FFF2EF69DF4D8A4DF2FD0AECB7367D"
     [<Literal>]
-    let NamedTypes = 321
+    let NamedTypes = 324
     [<Literal>]
     let RevisionFields = 17
     [<Literal>]
@@ -4761,6 +4761,11 @@ module internal BinaryGenerated =
                 let! state = (writeList writeString) state a0
                 return leaveWrite state
               }
+            | global.Fidelity.PSG.ObligationBody.``OptionalEntryArgumentConversion``(a0) -> result {
+                let! state = writeTag state 34
+                let! state = write_Fidelity_PSG_OptionalEntryArgumentConversionModel state a0
+                return leaveWrite state
+              }
     }
 
     and write_Fidelity_PSG_ObligationInfo (state: WriteState) (value: global.Fidelity.PSG.ObligationInfo) : Result<WriteState, BinaryError> = result {
@@ -4801,6 +4806,42 @@ module internal BinaryGenerated =
                 return leaveWrite state
               }
             | global.Fidelity.PSG.OccurrencePort.``ModuleDeclaration`` -> result {
+                let! state = writeTag state 1
+                return leaveWrite state
+              }
+    }
+
+    and write_Fidelity_PSG_OptionalEntryArgumentConversionModel (state: WriteState) (value: global.Fidelity.PSG.OptionalEntryArgumentConversionModel) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = write_Fidelity_PSG_NodeId state value.``Call``
+        let! state = writeI32 state value.``Parameter``
+        let! state = write_Fidelity_PSG_NodeId state value.``Actual``
+        let! state = write_Fidelity_PSG_NodeId state value.``Construction``
+        let! state = writeI32 state value.``SourceCase``
+        let! state = write_Fidelity_PSG_NodeId state value.``Payload``
+        let! state = write_Fidelity_PSG_NodeId state value.``Formation``
+        let! state = write_Fidelity_PSG_NodeId state value.``Invocation``
+        let! state = (writeList write_Fidelity_PSG_OptionalEntryPlanArm) state value.``Arms``
+        return leaveWrite state
+    }
+
+    and write_Fidelity_PSG_OptionalEntryPlanArm (state: WriteState) (value: global.Fidelity.PSG.OptionalEntryPlanArm) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = writeI32 state value.``CaseOrdinal``
+        let! state = write_Fidelity_PSG_OptionalEntryPlanChoice state value.``Choice``
+        let! state = (writeOption write_Fidelity_PSG_NodeId) state value.``Formation``
+        return leaveWrite state
+    }
+
+    and write_Fidelity_PSG_OptionalEntryPlanChoice (state: WriteState) (value: global.Fidelity.PSG.OptionalEntryPlanChoice) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        return!
+            match value with
+            | global.Fidelity.PSG.OptionalEntryPlanChoice.``PendingAbsence`` -> result {
+                let! state = writeTag state 0
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.OptionalEntryPlanChoice.``ClosedEntry`` -> result {
                 let! state = writeTag state 1
                 return leaveWrite state
               }
@@ -11544,6 +11585,10 @@ module internal BinaryGenerated =
                 let! a0, state = (readList readString) state
                 return! finishRead (global.Fidelity.PSG.ObligationBody.``Pending``(a0)) state
               }
+            | 34 -> result {
+                let! a0, state = read_Fidelity_PSG_OptionalEntryArgumentConversionModel state
+                return! finishRead (global.Fidelity.PSG.ObligationBody.``OptionalEntryArgumentConversion``(a0)) state
+              }
             | _ -> malformed state "Unknown Fidelity.PSG.ObligationBody case"
     }
 
@@ -11588,6 +11633,42 @@ module internal BinaryGenerated =
                 return! finishRead (global.Fidelity.PSG.OccurrencePort.``ModuleDeclaration``) state
               }
             | _ -> malformed state "Unknown Fidelity.PSG.OccurrencePort case"
+    }
+
+    and read_Fidelity_PSG_OptionalEntryArgumentConversionModel (state: ReadState) : Result<global.Fidelity.PSG.OptionalEntryArgumentConversionModel * ReadState, BinaryError> = result {
+        let! state = enterReadFields 9 state
+        let! a0, state = read_Fidelity_PSG_NodeId state
+        let! a1, state = readI32 state
+        let! a2, state = read_Fidelity_PSG_NodeId state
+        let! a3, state = read_Fidelity_PSG_NodeId state
+        let! a4, state = readI32 state
+        let! a5, state = read_Fidelity_PSG_NodeId state
+        let! a6, state = read_Fidelity_PSG_NodeId state
+        let! a7, state = read_Fidelity_PSG_NodeId state
+        let! a8, state = (readList read_Fidelity_PSG_OptionalEntryPlanArm) state
+        return! finishRead ({ ``Call`` = a0; ``Parameter`` = a1; ``Actual`` = a2; ``Construction`` = a3; ``SourceCase`` = a4; ``Payload`` = a5; ``Formation`` = a6; ``Invocation`` = a7; ``Arms`` = a8 } : global.Fidelity.PSG.OptionalEntryArgumentConversionModel) state
+    }
+
+    and read_Fidelity_PSG_OptionalEntryPlanArm (state: ReadState) : Result<global.Fidelity.PSG.OptionalEntryPlanArm * ReadState, BinaryError> = result {
+        let! state = enterReadFields 3 state
+        let! a0, state = readI32 state
+        let! a1, state = read_Fidelity_PSG_OptionalEntryPlanChoice state
+        let! a2, state = (readOption read_Fidelity_PSG_NodeId) state
+        return! finishRead ({ ``CaseOrdinal`` = a0; ``Choice`` = a1; ``Formation`` = a2 } : global.Fidelity.PSG.OptionalEntryPlanArm) state
+    }
+
+    and read_Fidelity_PSG_OptionalEntryPlanChoice (state: ReadState) : Result<global.Fidelity.PSG.OptionalEntryPlanChoice * ReadState, BinaryError> = result {
+        let! state = enterReadCases 1 state
+        let! tag, state = readTag state
+        return!
+            match tag with
+            | 0 -> result {
+                return! finishRead (global.Fidelity.PSG.OptionalEntryPlanChoice.``PendingAbsence``) state
+              }
+            | 1 -> result {
+                return! finishRead (global.Fidelity.PSG.OptionalEntryPlanChoice.``ClosedEntry``) state
+              }
+            | _ -> malformed state "Unknown Fidelity.PSG.OptionalEntryPlanChoice case"
     }
 
     and read_Fidelity_PSG_OrdinaryCallProjection (state: ReadState) : Result<global.Fidelity.PSG.OrdinaryCallProjection * ReadState, BinaryError> = result {

@@ -4,7 +4,7 @@ open Fidelity.Data.JSON
 module internal JsonGenerated =
     open JsonRuntime
     [<Literal>]
-    let NamedTypes = 308
+    let NamedTypes = 311
     let rec write_BAREWire_Descriptors_CallConv (value: global.BAREWire.Descriptors.CallConv) : JsonValue =
         match value with
         | global.BAREWire.Descriptors.CallConv.``CDecl`` -> union "CDecl" []
@@ -1181,6 +1181,7 @@ module internal JsonGenerated =
         | global.Fidelity.PSG.ObligationBody.``ResourceConversion``(a0) -> union "ResourceConversion" [("Item", write_Fidelity_PSG_ResourceConversionModel a0)]
         | global.Fidelity.PSG.ObligationBody.``ResourceCleanup``(a0) -> union "ResourceCleanup" [("Item", write_Fidelity_PSG_ResourceCleanupModel a0)]
         | global.Fidelity.PSG.ObligationBody.``Pending``(a0) -> union "Pending" [("reasons", (writeList writeString) a0)]
+        | global.Fidelity.PSG.ObligationBody.``OptionalEntryArgumentConversion``(a0) -> union "OptionalEntryArgumentConversion" [("Item", write_Fidelity_PSG_OptionalEntryArgumentConversionModel a0)]
 
     and write_Fidelity_PSG_ObligationInfo (value: global.Fidelity.PSG.ObligationInfo) : JsonValue =
         JsonValue.Object [("Id", writeString value.``Id``); ("Kind", writeString value.``Kind``); ("Logic", writeString value.``Logic``); ("Statement", writeString value.``Statement``); ("Source", writeString value.``Source``); ("Refs", (writeList writeString) value.``Refs``); ("Body", write_Fidelity_PSG_ObligationBody value.``Body``)]
@@ -1192,6 +1193,17 @@ module internal JsonGenerated =
         match value with
         | global.Fidelity.PSG.OccurrencePort.``StructuralChild`` -> union "StructuralChild" []
         | global.Fidelity.PSG.OccurrencePort.``ModuleDeclaration`` -> union "ModuleDeclaration" []
+
+    and write_Fidelity_PSG_OptionalEntryArgumentConversionModel (value: global.Fidelity.PSG.OptionalEntryArgumentConversionModel) : JsonValue =
+        JsonValue.Object [("Call", write_Fidelity_PSG_NodeId value.``Call``); ("Parameter", writeInt32 value.``Parameter``); ("Actual", write_Fidelity_PSG_NodeId value.``Actual``); ("Construction", write_Fidelity_PSG_NodeId value.``Construction``); ("SourceCase", writeInt32 value.``SourceCase``); ("Payload", write_Fidelity_PSG_NodeId value.``Payload``); ("Formation", write_Fidelity_PSG_NodeId value.``Formation``); ("Invocation", write_Fidelity_PSG_NodeId value.``Invocation``); ("Arms", (writeList write_Fidelity_PSG_OptionalEntryPlanArm) value.``Arms``)]
+
+    and write_Fidelity_PSG_OptionalEntryPlanArm (value: global.Fidelity.PSG.OptionalEntryPlanArm) : JsonValue =
+        JsonValue.Object [("CaseOrdinal", writeInt32 value.``CaseOrdinal``); ("Choice", write_Fidelity_PSG_OptionalEntryPlanChoice value.``Choice``); ("Formation", (writeOption write_Fidelity_PSG_NodeId) value.``Formation``)]
+
+    and write_Fidelity_PSG_OptionalEntryPlanChoice (value: global.Fidelity.PSG.OptionalEntryPlanChoice) : JsonValue =
+        match value with
+        | global.Fidelity.PSG.OptionalEntryPlanChoice.``PendingAbsence`` -> union "PendingAbsence" []
+        | global.Fidelity.PSG.OptionalEntryPlanChoice.``ClosedEntry`` -> union "ClosedEntry" []
 
     and write_Fidelity_PSG_OrdinaryCallProjection (value: global.Fidelity.PSG.OrdinaryCallProjection) : JsonValue =
         JsonValue.Object [("Implementation", write_Fidelity_PSG_NodeId value.``Implementation``); ("Actuals", (writeList write_Fidelity_PSG_NodeId) value.``Actuals``); ("Omitted", (writeSet writeInt32) value.``Omitted``); ("Eager", (writeSet writeInt32) value.``Eager``)]

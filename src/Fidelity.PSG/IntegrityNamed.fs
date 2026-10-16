@@ -1373,12 +1373,25 @@ module IntegrityNamed =
         | Fidelity.PSG.ObligationBody.ResourceConversion(a0) -> (idsOfResourceConversionModel a0)
         | Fidelity.PSG.ObligationBody.ResourceCleanup(a0) -> (idsOfResourceCleanupModel a0)
         | Fidelity.PSG.ObligationBody.Pending(_) -> []
+        | Fidelity.PSG.ObligationBody.OptionalEntryArgumentConversion(a0) -> (idsOfOptionalEntryArgumentConversionModel a0)
 
     and private idsOfObligationInfo (value: Fidelity.PSG.ObligationInfo) : NodeId list =
         (idsOfObligationBody value.Body)
 
     and private idsOfOccurrenceBreadcrumb (value: Fidelity.PSG.OccurrenceBreadcrumb) : NodeId list =
         [ value.Parent ]
+
+    and private idsOfOptionalEntryArgumentConversionModel (value: Fidelity.PSG.OptionalEntryArgumentConversionModel) : NodeId list =
+        [ value.Call ]
+        @ [ value.Actual ]
+        @ [ value.Construction ]
+        @ [ value.Payload ]
+        @ [ value.Formation ]
+        @ [ value.Invocation ]
+        @ (value.Arms |> List.collect (fun v0 -> (idsOfOptionalEntryPlanArm v0)))
+
+    and private idsOfOptionalEntryPlanArm (value: Fidelity.PSG.OptionalEntryPlanArm) : NodeId list =
+        (value.Formation |> Option.toList |> List.collect (fun v0 -> [ v0 ]))
 
     and private idsOfOrdinaryCallProjection (value: Fidelity.PSG.OrdinaryCallProjection) : NodeId list =
         [ value.Implementation ]
@@ -2551,11 +2564,13 @@ module IntegrityNamed =
           "Obligations.Body.ForeignResultCoverage", (revision.Obligations |> List.collect (fun row -> (match row.Body with Fidelity.PSG.ObligationBody.ForeignResultCoverage(a0) -> (idsOfForeignResultCoverageModel a0) | _ -> [])))
           "Obligations.Body.ResourceConversion", (revision.Obligations |> List.collect (fun row -> (match row.Body with Fidelity.PSG.ObligationBody.ResourceConversion(a0) -> (idsOfResourceConversionModel a0) | _ -> [])))
           "Obligations.Body.ResourceCleanup", (revision.Obligations |> List.collect (fun row -> (match row.Body with Fidelity.PSG.ObligationBody.ResourceCleanup(a0) -> (idsOfResourceCleanupModel a0) | _ -> [])))
+          "Obligations.Body.OptionalEntryArgumentConversion", (revision.Obligations |> List.collect (fun row -> (match row.Body with Fidelity.PSG.ObligationBody.OptionalEntryArgumentConversion(a0) -> (idsOfOptionalEntryArgumentConversionModel a0) | _ -> [])))
           "CurrentClaims", (revision.CurrentClaims |> Map.toList |> List.collect (fun (key, _) -> [ key ]))
           "CurrentClaims.Body.SnapshotBorrowBound", (revision.CurrentClaims |> Map.toList |> List.collect (fun (_, row) -> (match row.Body with Fidelity.PSG.ObligationBody.SnapshotBorrowBound(a0, a1, a2, a3, a4, a5) -> [ a0 ] @ [ a1 ] @ [ a2 ] @ [ a3 ] | _ -> [])))
           "CurrentClaims.Body.ForeignResultCoverage", (revision.CurrentClaims |> Map.toList |> List.collect (fun (_, row) -> (match row.Body with Fidelity.PSG.ObligationBody.ForeignResultCoverage(a0) -> (idsOfForeignResultCoverageModel a0) | _ -> [])))
           "CurrentClaims.Body.ResourceConversion", (revision.CurrentClaims |> Map.toList |> List.collect (fun (_, row) -> (match row.Body with Fidelity.PSG.ObligationBody.ResourceConversion(a0) -> (idsOfResourceConversionModel a0) | _ -> [])))
           "CurrentClaims.Body.ResourceCleanup", (revision.CurrentClaims |> Map.toList |> List.collect (fun (_, row) -> (match row.Body with Fidelity.PSG.ObligationBody.ResourceCleanup(a0) -> (idsOfResourceCleanupModel a0) | _ -> [])))
+          "CurrentClaims.Body.OptionalEntryArgumentConversion", (revision.CurrentClaims |> Map.toList |> List.collect (fun (_, row) -> (match row.Body with Fidelity.PSG.ObligationBody.OptionalEntryArgumentConversion(a0) -> (idsOfOptionalEntryArgumentConversionModel a0) | _ -> [])))
           "ObligationSources", (revision.ObligationSources |> Map.toList |> List.collect (fun (key, _) -> [ key ]))
           "ObligationSources (values)", (revision.ObligationSources |> Map.toList |> List.collect (fun (_, row) -> (row |> List.collect (fun v1 -> (v1 |> List.collect (fun v2 -> [ v2 ])))))) ]
 
@@ -2594,4 +2609,4 @@ module IntegrityNamed =
 
     /// The number of parts listed. The build compares it with the contract.
     [<Literal>]
-    let Parts = 691
+    let Parts = 693

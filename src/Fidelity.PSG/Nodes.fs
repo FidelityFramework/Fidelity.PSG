@@ -236,6 +236,29 @@ type ResourceConversionModel = {
     Arms: ResourceConversionArm list
 }
 
+/// Finite source selection and native-choice plan. Formations are source
+/// identities, never native addresses. Target realization remains separate.
+[<RequireQualifiedAccess>]
+type OptionalEntryPlanChoice = PendingAbsence | ClosedEntry
+
+type OptionalEntryPlanArm = {
+    CaseOrdinal: int
+    Choice: OptionalEntryPlanChoice
+    Formation: NodeId option
+}
+
+type OptionalEntryArgumentConversionModel = {
+    Call: NodeId
+    Parameter: int
+    Actual: NodeId
+    Construction: NodeId
+    SourceCase: int
+    Payload: NodeId
+    Formation: NodeId
+    Invocation: NodeId
+    Arms: OptionalEntryPlanArm list
+}
+
 /// Observations of the existing evaluation owner's rows, not another flow
 /// producer. Their complete ordered census is a current boundary premise.
 [<RequireQualifiedAccess>]
@@ -662,6 +685,39 @@ module ResourceProof =
          sprintf "(assert (= %s %s))" identity (smtLib projection.Conclusion)
          sprintf "(assert (not %s))" identity]
 
+/// Finite source Option-to-choice correspondence, never a native address law.
+/// The target pathway must independently realize the retained entry identity.
+module OptionalEntryArgumentProof =
+    let project (model: OptionalEntryArgumentConversionModel) : Result<ResourceProof.Projection, string> =
+        let number (value: int) = ResourceProof.Expr.Integer(bigint value)
+        let equal left right = ResourceProof.Expr.Equal(left, right)
+        let boolean value = ResourceProof.Expr.Boolean value
+        let all values = ResourceProof.Expr.And values
+        let sourceCase = ResourceProof.Expr.Variable "optional_entry_case"
+        // This term denotes only an immutable source formation identity.
+        let formation = ResourceProof.Expr.Variable "optional_entry_formation"
+        let identity value = number (NodeId.value value)
+        let selected = model.Arms |> List.map (fun arm ->
+            ResourceProof.Expr.IfThenElse(equal sourceCase (number arm.CaseOrdinal), number 1, number 0))
+        let table = model.Arms |> List.map (fun arm ->
+            match arm.Choice, arm.Formation with
+            | OptionalEntryPlanChoice.PendingAbsence, None -> equal (number arm.CaseOrdinal) (number 0)
+            | OptionalEntryPlanChoice.ClosedEntry, Some entry ->
+                all [equal (number arm.CaseOrdinal) (number 1); equal (identity entry) formation]
+            | _ -> boolean false)
+        Ok {
+            Declarations = ["optional_entry_case", ResourceProof.Sort.Integer; "optional_entry_formation", ResourceProof.Sort.Integer]
+            Premises = all [equal sourceCase (number model.SourceCase); equal formation (identity model.Formation)]
+            Conclusion = all (
+                [equal sourceCase (number 1)
+                 equal (number model.Arms.Length) (number 2)
+                 boolean ((model.Arms |> List.map _.CaseOrdinal |> List.sort) = [0;1])
+                 equal (ResourceProof.Expr.Add selected) (number 1)] @ table)
+            // Only Some is source-feasible in this tranche. Both table arms
+            // remain mandatory in the conclusion; None grants no admission.
+            Alternatives = [equal sourceCase (number 1)]
+        }
+
 /// Arithmetic for a complete local snapshot whose copy and allocation use the
 /// same source count. The producer supplies that incidence; this projection
 /// neither discovers equality nor substitutes a range endpoint for the count.
@@ -1065,6 +1121,8 @@ type ObligationBody =
     /// An admitted unresolved requirement remains in the ledger, with no solver
     /// term or discharge. Publication and artifact readiness are separate gates.
     | Pending of reasons: string list
+    /// Source-plan correspondence only; the target artifact must realize it.
+    | OptionalEntryArgumentConversion of OptionalEntryArgumentConversionModel
 
 /// The obligation record carried by an Obligation node.
 type ObligationInfo = {

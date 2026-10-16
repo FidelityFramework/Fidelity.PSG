@@ -432,7 +432,15 @@ module Integrity =
                 let sources = edges |> List.map _.Sources
                 if revision.ObligationSources.TryFind claim = Some sources then []
                 else [defect "Edges (Constrains)" claim "The ordered constraint sources differ from the current claim's grouped source account."])
-        missing @ inventory @ incidence
+        let optionalOwners =
+            [ for KeyValue(id, claim) in revision.CurrentClaims do
+                  match claim.Body with
+                  | ObligationBody.OptionalEntryArgumentConversion _ ->
+                      let owners = revision.Emission.Boundary.Calls.Values |> Seq.collect (fun call ->
+                          call.Arguments |> List.choose (fun operand -> operand.OptionalEntry |> Option.filter (fun selected -> selected.Obligation=id))) |> Seq.length
+                      if owners<>1 then yield defect "CurrentClaims.OptionalEntry" id "A finite optional-entry source plan requires one exact current per-call operand owner."
+                  | _ -> () ]
+        missing @ inventory @ incidence @ optionalOwners
 
     /// A region names selected body members separately from source-owned proof
     /// supports. The latter are covered by an explicit whole-owner policy and
@@ -2052,9 +2060,21 @@ module Integrity =
                                 else ["Selected-target optional-entry conversion remains Pending."]
                             match revision.CurrentClaims.TryFind optional.Obligation with
                             | Some claim ->
+                                let bodyMatches =
+                                    match claim.Body with
+                                    | ObligationBody.Pending reasons ->
+                                        claim.Logic = "" && claim.Statement = "The exact source Option selection requires an admitted target boundary conversion." && reasons=expectedReasons
+                                    | ObligationBody.OptionalEntryArgumentConversion model ->
+                                        let arms = [{CaseOrdinal=0;Choice=OptionalEntryPlanChoice.PendingAbsence;Formation=None}
+                                                    {CaseOrdinal=1;Choice=OptionalEntryPlanChoice.ClosedEntry;Formation=Some model.Formation}]
+                                        model.Call=call.Site && model.Parameter=ordinal && model.Actual=operand.Actual &&
+                                        model.Construction=optional.Construction && model.SourceCase=1 && optional.CaseOrdinal=1 &&
+                                        optional.Payload=Some model.Payload && optional.Formation=Some model.Formation &&
+                                        model.Invocation=invocation && model.Arms=arms &&
+                                        claim.Logic="QF_LIA" && claim.Statement="The exact source Some selection has complete finite native-choice plan correspondence; target realization remains an artifact obligation."
+                                    | _ -> false
                                 claim.Kind = $"foreign-optional-entry-conversion-{ordinal}" &&
-                                claim.Logic = "" && claim.Statement = "The exact source Option selection requires an admitted target boundary conversion." &&
-                                claim.Body = ObligationBody.Pending expectedReasons &&
+                                bodyMatches &&
                                 (revision.Obligations |> List.filter (fun row -> row.Id = claim.Id)) = [claim] &&
                                 // The live revision carries the complete grouped
                                 // claim sources; analytical F edges stay with Baker.
@@ -2989,6 +3009,14 @@ module Integrity =
                 | "CurrentClaims.Body.ForeignResultCoverage" -> body id || foreignBodyFact id
                 | "Obligations.Body.ResourceConversion" | "CurrentClaims.Body.ResourceConversion" -> resourceBodyRole false id
                 | "Obligations.Body.ResourceCleanup" | "CurrentClaims.Body.ResourceCleanup" -> resourceBodyRole true id
+                | "Obligations.Body.OptionalEntryArgumentConversion"
+                | "CurrentClaims.Body.OptionalEntryArgumentConversion" ->
+                    revision.CurrentClaims.Values |> Seq.exists (fun claim ->
+                        match claim.Body with
+                        | ObligationBody.OptionalEntryArgumentConversion model ->
+                            (List.contains id [model.Call;model.Actual;model.Construction;model.Payload;model.Formation] && body id) ||
+                            (id=model.Invocation && boundary.CallbackInvocations.ContainsKey id)
+                        | _ -> false)
                 | "Obligations.Body"
                 | "CurrentClaims.Body" -> body id
                 | "Emission.Boundary.IntrinsicWriteImports.Scope" -> source.ContextHeaders.ContainsKey id
