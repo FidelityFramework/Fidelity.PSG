@@ -1474,7 +1474,14 @@ module Integrity =
                     (call.Arguments |> List.tryItem row.CountParameter |> Option.exists(fun argument->argument.Actual=row.Count && argument.Formal=declaration.CountFormal && match argument.Abi with BoundaryScalar.Integer _->true | _->false)) &&
                     (boundary.Imports.TryFind call.Import |> Option.exists(fun imported ->
                         let field name=boundaryRecordFields imported.DeclarationFacts imported.Identity |> Option.bind(Map.tryFind name) |> Option.bind imported.DeclarationFacts.TryFind
+                        let profile=
+                            match row.Parameter,row.CountParameter,(imported.Parameters |> List.map snd),imported.Result with
+                            | 0,1,[BoundaryScalar.WritableBytes declaration;BoundaryScalar.Integer(64,false)],(None | Some(BoundaryScalar.Integer(64,true))) -> declaration=row.Declaration
+                            | 1,2,[BoundaryScalar.Integer(32,true);BoundaryScalar.WritableBytes declaration;BoundaryScalar.Integer(64,false)],Some(BoundaryScalar.Integer(64,true)) -> declaration=row.Declaration
+                            | _ -> false
                         imported.Binding=declaration.Declaration && imported.Identity=declaration.Descriptor && resultAccount call imported &&
+                        profile && (call.Arguments |> List.map(fun argument->argument.Formal,argument.Abi))=imported.Parameters &&
+                        (imported.Parameters |> List.map fst)=declaration.Formals &&
                         imported.DeclarationFacts.TryFind row.Declaration=declaration.DeclarationFacts.TryFind row.Declaration &&
                         field "CName" |> Option.exists(fun fact->fact.Form="string" && fact.Text=[imported.Symbol])))
                 | _ -> false
@@ -1920,18 +1927,24 @@ module Integrity =
                         yield defect (part + ".Participants") key "The closed entry omits original code, lifetime, signature or immutable transport support."
                 | _ -> yield defect (part + ".Account") key "The closed entry lacks its exact invocation, original callable declaration or native carrier."
             for KeyValue(_, call) in boundary.Calls do
+                let canonical operand=
+                    let current=revision.Codata.Meets.TryFind call.Site |> Option.defaultValue []
+                                |> List.filter(fun meet->meet.Operand=operand) |> List.distinct
+                    match current with []->Some None | [meet]->Some(Some meet) | _->None
                 match call.Result with
                 | Some(BoundaryScalar.Integer _ | BoundaryScalar.Boolean) ->
-                    let current=revision.Codata.Meets.TryFind call.Site |> Option.defaultValue []
-                                |> List.filter(fun meet->meet.Operand=call.Site) |> List.distinct
-                    let expected=match current with []->Some None | [meet]->Some(Some meet) | _->None
-                    if expected<>Some call.ResultAdaptation then
+                    if canonical call.Site<>Some call.ResultAdaptation then
                         yield defect "Emission.Boundary.Calls.ResultAdaptation" call.Site "The boundary result adaptation differs from its exact current source numeric meet."
                     for meet in Option.toList call.ResultAdaptation do
                         yield! adaptationRow "Emission.Boundary.Calls.ResultAdaptation" call.Site call.Site meet
                 | _ -> ()
                 for operand in call.Arguments do
                     match operand.Abi with
+                    | BoundaryScalar.Integer _ | BoundaryScalar.Boolean ->
+                        if canonical operand.Actual<>Some operand.Adaptation then
+                            yield defect "Emission.Boundary.Calls.Arguments.Adaptation" call.Site "The boundary argument adaptation differs from its exact current source numeric meet."
+                        for meet in Option.toList operand.Adaptation do
+                            yield! adaptationRow "Emission.Boundary.Calls.Arguments.Adaptation" call.Site operand.Actual meet
                     | BoundaryScalar.Entry invocation ->
                         let entries = boundary.ClosedEntries.Values |> Seq.filter (fun entry -> entry.Invocation = invocation && entry.Transport.Contains operand.Actual) |> Seq.toList
                         match boundary.CallbackInvocations.TryFind invocation, entries with
