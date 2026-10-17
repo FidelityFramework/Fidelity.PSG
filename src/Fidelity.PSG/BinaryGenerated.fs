@@ -5,11 +5,11 @@ module internal BinaryGenerated =
     [<Literal>]
     let Format = 2u
     [<Literal>]
-    let Schema = 43
+    let Schema = 44
     [<Literal>]
-    let Fingerprint = "5C21AFD6E751DD30C49F285D70A01B7A6B2775FF9AD1080EDBFC50C5364A25BC"
+    let Fingerprint = "A9958C2758609983616FB1F019402A91857E806C1DA7091D0E07165112F0A470"
     [<Literal>]
-    let NamedTypes = 336
+    let NamedTypes = 339
     [<Literal>]
     let RevisionFields = 17
     [<Literal>]
@@ -1597,6 +1597,7 @@ module internal BinaryGenerated =
         let! state = write_Fidelity_PSG_NodeId state value.``Failure``
         let! state = write_Fidelity_PSG_NodeId state value.``Retirement``
         let! state = writeString state value.``Validator``
+        let! state = (writeOption write_Fidelity_PSG_MemoryCheckedResultLifetime) state value.``Returned``
         return leaveWrite state
     }
 
@@ -3832,6 +3833,55 @@ module internal BinaryGenerated =
         return leaveWrite state
     }
 
+    and write_Fidelity_PSG_MemoryCheckedResultLifetime (state: WriteState) (value: global.Fidelity.PSG.MemoryCheckedResultLifetime) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = write_Fidelity_PSG_NodeId state value.``Application``
+        let! state = write_Fidelity_PSG_NodeId state value.``Callee``
+        let! state = write_Fidelity_PSG_NodeId state value.``Declaration``
+        let! state = write_Fidelity_PSG_NodeId state value.``Implementation``
+        let! state = write_Fidelity_PSG_NodeId state value.``Argument``
+        let! state = write_Fidelity_PSG_NodeId state value.``Formal``
+        let! state = write_Fidelity_PSG_NodeId state value.``Body``
+        let! state = write_Fidelity_PSG_NodeId state value.``Caller``
+        let! state = write_Fidelity_PSG_NodeId state value.``Actual``
+        let! state = write_Fidelity_PSG_NodeId state value.``Elimination``
+        let! state = write_Fidelity_PSG_NodeId state value.``SomeUse``
+        let! state = write_Fidelity_PSG_NodeId state value.``NoneUse``
+        let! state = write_Fidelity_PSG_NodeId state value.``SomeBackingRetirement``
+        let! state = write_Fidelity_PSG_NodeId state value.``SomeCarrierRetirement``
+        let! state = write_Fidelity_PSG_NodeId state value.``NoneCarrierRetirement``
+        let! state = (writeList write_Fidelity_PSG_NodeId) state value.``Uses``
+        let! state = write_Fidelity_PSG_ProjectMemoryPolicy state value.``Policy``
+        let! state = write_Fidelity_PSG_NodeId state value.``Platform``
+        let! state = write_Fidelity_PSG_NodeId state value.``Space``
+        let! state = writeI64 state value.``MaximumLiveBytes``
+        let! state = write_Fidelity_PSG_NodeId state value.``Capacity``
+        return leaveWrite state
+    }
+
+    and write_Fidelity_PSG_MemoryCheckedResultRetirementWitness (state: WriteState) (value: global.Fidelity.PSG.MemoryCheckedResultRetirementWitness) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = write_Fidelity_PSG_NodeId state value.``Site``
+        let! state = write_Fidelity_PSG_NodeId state value.``Value``
+        let! state = write_Fidelity_PSG_MemoryCheckedRetirementTarget state value.``Target``
+        let! state = write_Fidelity_PSG_CheckedStringConstruction state value.``Construction``
+        return leaveWrite state
+    }
+
+    and write_Fidelity_PSG_MemoryCheckedRetirementTarget (state: WriteState) (value: global.Fidelity.PSG.MemoryCheckedRetirementTarget) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        return!
+            match value with
+            | global.Fidelity.PSG.MemoryCheckedRetirementTarget.``Backing`` -> result {
+                let! state = writeTag state 0
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.MemoryCheckedRetirementTarget.``Carrier`` -> result {
+                let! state = writeTag state 1
+                return leaveWrite state
+              }
+    }
+
     and write_Fidelity_PSG_MemoryConstructedValueWitness (state: WriteState) (value: global.Fidelity.PSG.MemoryConstructedValueWitness) : Result<WriteState, BinaryError> = result {
         let! state = enterWrite state
         let! state = write_Fidelity_PSG_NodeId state value.``Site``
@@ -3935,6 +3985,12 @@ module internal BinaryGenerated =
             | global.Fidelity.PSG.MemoryResidence.``ImmutableProgram``(a0) -> result {
                 let! state = writeTag state 2
                 let! state = write_Fidelity_PSG_NodeId state a0
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.MemoryResidence.``Heap``(a0, a1) -> result {
+                let! state = writeTag state 3
+                let! state = write_Fidelity_PSG_NodeId state a0
+                let! state = write_Fidelity_PSG_NodeId state a1
                 return leaveWrite state
               }
     }
@@ -4110,6 +4166,11 @@ module internal BinaryGenerated =
             | global.Fidelity.PSG.MemoryWitnessOperation.``ConstructedValue``(a0) -> result {
                 let! state = writeTag state 9
                 let! state = write_Fidelity_PSG_MemoryConstructedValueWitness state a0
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.MemoryWitnessOperation.``CheckedResultRetirement``(a0) -> result {
+                let! state = writeTag state 10
+                let! state = write_Fidelity_PSG_MemoryCheckedResultRetirementWitness state a0
                 return leaveWrite state
               }
     }
@@ -8973,7 +9034,7 @@ module internal BinaryGenerated =
     }
 
     and read_Fidelity_PSG_CheckedStringConstruction (state: ReadState) : Result<global.Fidelity.PSG.CheckedStringConstruction * ReadState, BinaryError> = result {
-        let! state = enterReadFields 11 state
+        let! state = enterReadFields 12 state
         let! a0, state = read_Fidelity_PSG_NodeId state
         let! a1, state = read_Fidelity_PSG_NodeId state
         let! a2, state = read_Fidelity_PSG_NodeId state
@@ -8985,7 +9046,8 @@ module internal BinaryGenerated =
         let! a8, state = read_Fidelity_PSG_NodeId state
         let! a9, state = read_Fidelity_PSG_NodeId state
         let! a10, state = readString state
-        return! finishRead ({ ``Owner`` = a0; ``Input`` = a1; ``Snapshot`` = a2; ``Length`` = a3; ``Validation`` = a4; ``Decision`` = a5; ``Text`` = a6; ``Success`` = a7; ``Failure`` = a8; ``Retirement`` = a9; ``Validator`` = a10 } : global.Fidelity.PSG.CheckedStringConstruction) state
+        let! a11, state = (readOption read_Fidelity_PSG_MemoryCheckedResultLifetime) state
+        return! finishRead ({ ``Owner`` = a0; ``Input`` = a1; ``Snapshot`` = a2; ``Length`` = a3; ``Validation`` = a4; ``Decision`` = a5; ``Text`` = a6; ``Success`` = a7; ``Failure`` = a8; ``Retirement`` = a9; ``Validator`` = a10; ``Returned`` = a11 } : global.Fidelity.PSG.CheckedStringConstruction) state
     }
 
     and read_Fidelity_PSG_ChildDisposition (state: ReadState) : Result<global.Fidelity.PSG.ChildDisposition * ReadState, BinaryError> = result {
@@ -10957,6 +11019,55 @@ module internal BinaryGenerated =
         return! finishRead ({ ``Buffer`` = a0; ``Index`` = a1; ``IndexCarrier`` = a2; ``ExtentCarrier`` = a3; ``IndexUnsigned`` = a4; ``Length`` = a5; ``Lower`` = a6; ``Upper`` = a7; ``Requirement`` = a8; ``Participants`` = a9 } : global.Fidelity.PSG.MemoryBoundsWitness) state
     }
 
+    and read_Fidelity_PSG_MemoryCheckedResultLifetime (state: ReadState) : Result<global.Fidelity.PSG.MemoryCheckedResultLifetime * ReadState, BinaryError> = result {
+        let! state = enterReadFields 21 state
+        let! a0, state = read_Fidelity_PSG_NodeId state
+        let! a1, state = read_Fidelity_PSG_NodeId state
+        let! a2, state = read_Fidelity_PSG_NodeId state
+        let! a3, state = read_Fidelity_PSG_NodeId state
+        let! a4, state = read_Fidelity_PSG_NodeId state
+        let! a5, state = read_Fidelity_PSG_NodeId state
+        let! a6, state = read_Fidelity_PSG_NodeId state
+        let! a7, state = read_Fidelity_PSG_NodeId state
+        let! a8, state = read_Fidelity_PSG_NodeId state
+        let! a9, state = read_Fidelity_PSG_NodeId state
+        let! a10, state = read_Fidelity_PSG_NodeId state
+        let! a11, state = read_Fidelity_PSG_NodeId state
+        let! a12, state = read_Fidelity_PSG_NodeId state
+        let! a13, state = read_Fidelity_PSG_NodeId state
+        let! a14, state = read_Fidelity_PSG_NodeId state
+        let! a15, state = (readList read_Fidelity_PSG_NodeId) state
+        let! a16, state = read_Fidelity_PSG_ProjectMemoryPolicy state
+        let! a17, state = read_Fidelity_PSG_NodeId state
+        let! a18, state = read_Fidelity_PSG_NodeId state
+        let! a19, state = readI64 state
+        let! a20, state = read_Fidelity_PSG_NodeId state
+        return! finishRead ({ ``Application`` = a0; ``Callee`` = a1; ``Declaration`` = a2; ``Implementation`` = a3; ``Argument`` = a4; ``Formal`` = a5; ``Body`` = a6; ``Caller`` = a7; ``Actual`` = a8; ``Elimination`` = a9; ``SomeUse`` = a10; ``NoneUse`` = a11; ``SomeBackingRetirement`` = a12; ``SomeCarrierRetirement`` = a13; ``NoneCarrierRetirement`` = a14; ``Uses`` = a15; ``Policy`` = a16; ``Platform`` = a17; ``Space`` = a18; ``MaximumLiveBytes`` = a19; ``Capacity`` = a20 } : global.Fidelity.PSG.MemoryCheckedResultLifetime) state
+    }
+
+    and read_Fidelity_PSG_MemoryCheckedResultRetirementWitness (state: ReadState) : Result<global.Fidelity.PSG.MemoryCheckedResultRetirementWitness * ReadState, BinaryError> = result {
+        let! state = enterReadFields 4 state
+        let! a0, state = read_Fidelity_PSG_NodeId state
+        let! a1, state = read_Fidelity_PSG_NodeId state
+        let! a2, state = read_Fidelity_PSG_MemoryCheckedRetirementTarget state
+        let! a3, state = read_Fidelity_PSG_CheckedStringConstruction state
+        return! finishRead ({ ``Site`` = a0; ``Value`` = a1; ``Target`` = a2; ``Construction`` = a3 } : global.Fidelity.PSG.MemoryCheckedResultRetirementWitness) state
+    }
+
+    and read_Fidelity_PSG_MemoryCheckedRetirementTarget (state: ReadState) : Result<global.Fidelity.PSG.MemoryCheckedRetirementTarget * ReadState, BinaryError> = result {
+        let! state = enterReadCases 1 state
+        let! tag, state = readTag state
+        return!
+            match tag with
+            | 0 -> result {
+                return! finishRead (global.Fidelity.PSG.MemoryCheckedRetirementTarget.``Backing``) state
+              }
+            | 1 -> result {
+                return! finishRead (global.Fidelity.PSG.MemoryCheckedRetirementTarget.``Carrier``) state
+              }
+            | _ -> malformed state "Unknown Fidelity.PSG.MemoryCheckedRetirementTarget case"
+    }
+
     and read_Fidelity_PSG_MemoryConstructedValueWitness (state: ReadState) : Result<global.Fidelity.PSG.MemoryConstructedValueWitness * ReadState, BinaryError> = result {
         let! state = enterReadFields 9 state
         let! a0, state = read_Fidelity_PSG_NodeId state
@@ -11057,6 +11168,11 @@ module internal BinaryGenerated =
             | 2 -> result {
                 let! a0, state = read_Fidelity_PSG_NodeId state
                 return! finishRead (global.Fidelity.PSG.MemoryResidence.``ImmutableProgram``(a0)) state
+              }
+            | 3 -> result {
+                let! a0, state = read_Fidelity_PSG_NodeId state
+                let! a1, state = read_Fidelity_PSG_NodeId state
+                return! finishRead (global.Fidelity.PSG.MemoryResidence.``Heap``(a0, a1)) state
               }
             | _ -> malformed state "Unknown Fidelity.PSG.MemoryResidence case"
     }
@@ -11215,6 +11331,10 @@ module internal BinaryGenerated =
             | 9 -> result {
                 let! a0, state = read_Fidelity_PSG_MemoryConstructedValueWitness state
                 return! finishRead (global.Fidelity.PSG.MemoryWitnessOperation.``ConstructedValue``(a0)) state
+              }
+            | 10 -> result {
+                let! a0, state = read_Fidelity_PSG_MemoryCheckedResultRetirementWitness state
+                return! finishRead (global.Fidelity.PSG.MemoryWitnessOperation.``CheckedResultRetirement``(a0)) state
               }
             | _ -> malformed state "Unknown Fidelity.PSG.MemoryWitnessOperation case"
     }

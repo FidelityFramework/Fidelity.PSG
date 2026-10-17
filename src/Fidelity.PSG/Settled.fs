@@ -485,7 +485,13 @@ type MemoryArrayAccessWitness = {
 }
 
 [<RequireQualifiedAccess>]
-type MemoryResidence = Stack of scope: NodeId * space: NodeId | Program of ProgramStorageIdentity | ImmutableProgram of space: NodeId
+type MemoryResidence =
+    | Stack of scope: NodeId * space: NodeId
+    | Program of ProgramStorageIdentity
+    | ImmutableProgram of space: NodeId
+    /// The exact application's independently owned instance. The matching
+    /// checked-result lifetime supplies policy, capacity and retirement.
+    | Heap of application: NodeId * space: NodeId
 
 type MemoryArrayLiteralWitness = {
     Site: NodeId; Elements: (NodeId * Meet option) list; Element: SettledSlot
@@ -520,6 +526,33 @@ type MemoryAddressWitness = { Site: NodeId; Place: MemoryPlace; Element: Settled
 [<RequireQualifiedAccess>]
 type MemoryStringViewDirection = FromBytes | ToBytes
 
+/// Source-authored return and retirement incidence for one checked-text call.
+/// Capacity is a logical live-byte budget, not allocator availability or a
+/// bound on physical alignment padding. Runtime allocation remains trusted.
+type MemoryCheckedResultLifetime = {
+    Application: NodeId
+    Callee: NodeId
+    Declaration: NodeId
+    Implementation: NodeId
+    Argument: NodeId
+    Formal: NodeId
+    Body: NodeId
+    Caller: NodeId
+    Actual: NodeId
+    Elimination: NodeId
+    SomeUse: NodeId
+    NoneUse: NodeId
+    SomeBackingRetirement: NodeId
+    SomeCarrierRetirement: NodeId
+    NoneCarrierRetirement: NodeId
+    Uses: NodeId list
+    Policy: ProjectMemoryPolicy
+    Platform: NodeId
+    Space: NodeId
+    MaximumLiveBytes: int64
+    Capacity: NodeId
+}
+
 /// Baker's exact snapshot, validator and native value-option outcome incidence.
 /// UTF-8 validity supplies no element bounds or allocation permission.
 type CheckedStringConstruction = {
@@ -528,6 +561,7 @@ type CheckedStringConstruction = {
     Validation: NodeId; Decision: NodeId; Text: NodeId
     Success: NodeId; Failure: NodeId; Retirement: NodeId
     Validator: string
+    Returned: MemoryCheckedResultLifetime option
 }
 
 type MemoryUtf8ValidationWitness = {
@@ -544,6 +578,18 @@ type MemorySnapshotRetirementWitness = {
     Site: NodeId
     Construction: CheckedStringConstruction
     Allocation: MemoryArrayAllocationWitness
+}
+
+[<RequireQualifiedAccess>]
+type MemoryCheckedRetirementTarget = Backing | Carrier
+
+/// Value names the caller's actual payload or returned carrier, never a callee
+/// allocation SSA. Baker owns the cleanup occurrence and its order.
+type MemoryCheckedResultRetirementWitness = {
+    Site: NodeId
+    Value: NodeId
+    Target: MemoryCheckedRetirementTarget
+    Construction: CheckedStringConstruction
 }
 
 /// One exact constructed instance with source-authorized local stack storage.
@@ -588,6 +634,7 @@ type MemoryWitnessOperation =
     | Utf8Validation of MemoryUtf8ValidationWitness
     | SnapshotRetirement of MemorySnapshotRetirementWitness
     | ConstructedValue of MemoryConstructedValueWitness
+    | CheckedResultRetirement of MemoryCheckedResultRetirementWitness
 
 type PinConstraint = { PortName: string; PackagePin: string; IOStandard: string; Direction: string }
 

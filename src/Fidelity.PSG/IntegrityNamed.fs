@@ -619,6 +619,7 @@ module IntegrityNamed =
         @ [ value.Success ]
         @ [ value.Failure ]
         @ [ value.Retirement ]
+        @ (value.Returned |> Option.toList |> List.collect (fun v0 -> (idsOfMemoryCheckedResultLifetime v0)))
 
     and private idsOfChildDisposition (value: Fidelity.PSG.ChildDisposition) : NodeId list =
         (idsOfChildTraversal value.Traversal)
@@ -1185,6 +1186,32 @@ module IntegrityNamed =
         @ (idsOfRequirementWitness value.Requirement)
         @ (value.Participants |> Set.toList |> List.collect (fun v0 -> [ v0 ]))
 
+    and private idsOfMemoryCheckedResultLifetime (value: Fidelity.PSG.MemoryCheckedResultLifetime) : NodeId list =
+        [ value.Application ]
+        @ [ value.Callee ]
+        @ [ value.Declaration ]
+        @ [ value.Implementation ]
+        @ [ value.Argument ]
+        @ [ value.Formal ]
+        @ [ value.Body ]
+        @ [ value.Caller ]
+        @ [ value.Actual ]
+        @ [ value.Elimination ]
+        @ [ value.SomeUse ]
+        @ [ value.NoneUse ]
+        @ [ value.SomeBackingRetirement ]
+        @ [ value.SomeCarrierRetirement ]
+        @ [ value.NoneCarrierRetirement ]
+        @ (value.Uses |> List.collect (fun v0 -> [ v0 ]))
+        @ [ value.Platform ]
+        @ [ value.Space ]
+        @ [ value.Capacity ]
+
+    and private idsOfMemoryCheckedResultRetirementWitness (value: Fidelity.PSG.MemoryCheckedResultRetirementWitness) : NodeId list =
+        [ value.Site ]
+        @ [ value.Value ]
+        @ (idsOfCheckedStringConstruction value.Construction)
+
     and private idsOfMemoryConstructedValueWitness (value: Fidelity.PSG.MemoryConstructedValueWitness) : NodeId list =
         [ value.Site ]
         @ [ value.Owner ]
@@ -1235,6 +1262,7 @@ module IntegrityNamed =
         | Fidelity.PSG.MemoryResidence.Stack(a0, a1) -> [ a0 ] @ [ a1 ]
         | Fidelity.PSG.MemoryResidence.Program(a0) -> (idsOfProgramStorageIdentity a0)
         | Fidelity.PSG.MemoryResidence.ImmutableProgram(a0) -> [ a0 ]
+        | Fidelity.PSG.MemoryResidence.Heap(a0, a1) -> [ a0 ] @ [ a1 ]
 
     and private idsOfMemorySnapshotRetirementWitness (value: Fidelity.PSG.MemorySnapshotRetirementWitness) : NodeId list =
         [ value.Site ]
@@ -1291,6 +1319,7 @@ module IntegrityNamed =
         | Fidelity.PSG.MemoryWitnessOperation.Utf8Validation(a0) -> (idsOfMemoryUtf8ValidationWitness a0)
         | Fidelity.PSG.MemoryWitnessOperation.SnapshotRetirement(a0) -> (idsOfMemorySnapshotRetirementWitness a0)
         | Fidelity.PSG.MemoryWitnessOperation.ConstructedValue(a0) -> (idsOfMemoryConstructedValueWitness a0)
+        | Fidelity.PSG.MemoryWitnessOperation.CheckedResultRetirement(a0) -> (idsOfMemoryCheckedResultRetirementWitness a0)
 
     and private idsOfMemoryWitnessProjection (value: Fidelity.PSG.MemoryWitnessProjection) : NodeId list =
         (value.Operations |> Map.toList |> List.collect (fun (k0, h0) -> [ k0 ] @ (idsOfMemoryWitnessOperation h0)))

@@ -684,6 +684,7 @@ module Integrity =
                   yield! body (part + ".Operand") id ]
         let residence part = function
             | MemoryResidence.Stack(scope, _) -> body (part + ".Scope") scope
+            | MemoryResidence.Heap(application, _) -> body (part + ".Application") application
             | MemoryResidence.ImmutableProgram _ -> []
             | MemoryResidence.Program identity ->
                 if revision.Emission.Storage.ProgramStorage.Entries.ContainsKey identity then []
@@ -709,6 +710,133 @@ module Integrity =
         let representation part site expected =
             if revision.Emission.Numeric.OccurrenceRepresentations.TryFind site = Some(Ok expected) then []
             else [missingRow part "Emission.Numeric.OccurrenceRepresentations with the exact physical carrier" site]
+        let checkedResidence (construction: CheckedStringConstruction) = function
+            | MemoryResidence.Stack _ -> construction.Returned.IsNone
+            | MemoryResidence.Heap(application, space) ->
+                construction.Returned |> Option.exists (fun row -> row.Application=application && row.Space=space)
+            | _ -> false
+        let returnedString part (construction: CheckedStringConstruction) (row: MemoryCheckedResultLifetime) =
+            let node id = revision.Nodes.TryFind id
+            let kind id = node id |> Option.map _.Kind
+            let sameActual id =
+                List.contains id row.Uses &&
+                revision.Emission.Callable.AliasTargets.TryFind id=Some row.Application
+            // Match lowering publishes this exact annotation operand. Check
+            // that stored relation; do not extend the callable alias map or
+            // search for another origin in this passive contract reader.
+            let annotatedActual unionType id =
+                List.contains id row.Uses &&
+                match node id with
+                | Some {Kind=SemanticKind.TypeAnnotation(actual,declared);Children=[operand];Type=held} ->
+                    actual=row.Actual && operand=actual && declared=unionType && held=unionType
+                | _ -> false
+            let savedResult original (cleanup: NodeId list) sequence =
+                let payloadPrefix binding =
+                    match node binding,kind row.SomeUse with
+                    | Some {Kind=SemanticKind.Binding(_,false,false,_);Children=[projection]},Some(SemanticKind.Application(_, [payload])) ->
+                        match kind projection,kind payload with
+                        | Some(SemanticKind.DUEliminate(actual,1,"ValueSome",_)),Some(SemanticKind.VarRef(_,Some definition)) ->
+                            actual=row.Actual && definition=binding
+                        | _ -> false
+                    | _ -> false
+                let held =
+                    match kind sequence with
+                    | Some(SemanticKind.Sequential [binding;inner]) when cleanup.Length=2 && payloadPrefix binding -> inner
+                    | _ -> sequence
+                match kind held with
+                | Some(SemanticKind.Sequential items) when items.Length=cleanup.Length+2 ->
+                    let saved, result = List.head items, List.last items
+                    let ordered = items |> List.skip 1 |> List.take cleanup.Length
+                    match node saved, kind result with
+                    | Some {Kind=SemanticKind.Binding(_,false,false,_);Children=[value]}, Some(SemanticKind.VarRef(_,Some binding)) ->
+                        value=original && binding=saved && ordered=cleanup
+                    | _ -> false
+                | _ -> false
+            let intrinsic site value name =
+                match kind site with
+                | Some(SemanticKind.Application(callee,[actual])) when actual=value ->
+                    match kind callee with
+                    | Some(SemanticKind.Intrinsic info) -> info.Module=IntrinsicModule.String && info.Operation=name
+                    | _ -> false
+                | _ -> false
+            [ for id in [row.Application;row.Callee;row.Declaration;row.Implementation;row.Argument;row.Formal;row.Body
+                         row.Caller;row.Actual;row.Elimination;row.SomeUse;row.NoneUse;row.SomeBackingRetirement
+                         row.SomeCarrierRetirement;row.NoneCarrierRetirement] @ row.Uses do
+                  yield! body part id
+              if row.Policy.Model<>"Standard" || System.String.IsNullOrWhiteSpace row.Policy.ProjectPath ||
+                 row.Policy.SourceVersion.Length<>64 || row.MaximumLiveBytes<=0L || row.Uses.IsEmpty ||
+                 row.Uses.Length<>(row.Uses |> List.distinct |> List.length) then
+                  yield defect part construction.Owner "Returned checked text lacks its captured policy, positive logical budget or exact use inventory."
+              match kind row.Application,kind row.Callee,node row.Declaration,kind row.Implementation,kind row.Caller with
+              | Some(SemanticKind.Application(callee,[argument])),Some(SemanticKind.VarRef(_,Some declaration)),
+                Some {Kind=SemanticKind.Binding(_,false,false,_);Children=[implementation]},
+                Some(SemanticKind.Lambda([(_,_,formal)],returned,[],_,_)),Some(SemanticKind.Lambda _)
+                  when callee=row.Callee && argument=row.Argument && declaration=row.Declaration && implementation=row.Implementation &&
+                       formal=row.Formal && returned=row.Body && row.Body=construction.Owner -> ()
+              | _ -> yield defect part construction.Owner "Returned checked text changed its exact helper application, declaration, formal or returned construction."
+              match kind row.SomeUse with
+              | Some(SemanticKind.Application(callee,[_])) ->
+                  match kind callee with
+                  | Some(SemanticKind.Intrinsic info) when info.Module=IntrinsicModule.String && info.Operation="length" -> ()
+                  | _ -> yield defect part row.SomeUse "The returned checked-text consumer is not its exact source String.length operation."
+              | _ -> yield defect part row.SomeUse "The returned checked-text consumer lost its source application."
+              match kind row.Elimination with
+              | Some(SemanticKind.CaseElimination(actual,[some;fallback])) when actual=row.Actual && sameActual actual &&
+                  some.Guard.IsNone && fallback.Guard.IsNone ->
+                  match some.Pattern,fallback.Pattern with
+                  | Pattern.Union("ValueSome",1,Some Pattern.Wildcard,unionType),Pattern.Wildcard
+                      when revision.Emission.Numeric.SourceTypes.TryFind construction.Success=Some unionType ->
+                      if not(savedResult row.SomeUse [row.SomeBackingRetirement;row.SomeCarrierRetirement] some.Body) then
+                          yield defect part construction.Owner "Returned checked text lost scalar-before-cleanup ordering on its exact Some arm."
+                      match kind fallback.Body with
+                      | Some(SemanticKind.Sequential [check;noneCase]) ->
+                          match revision.Emission.Storage.Requirements.TryFind check,kind noneCase with
+                          | Some held,Some(SemanticKind.CaseElimination(noneActual,[none]))
+                              when (sameActual noneActual || annotatedActual unionType noneActual) && none.Guard.IsNone ->
+                              yield! requirement (part+".NoneRequirement") held
+                              if held.Site<>check || held.Frontier<>fallback.Body || held.Continuation<>noneCase ||
+                                 held.PatternTest<>Some held.Condition || revision.Emission.Storage.PatternRequirements.TryFind noneCase<>Some check then
+                                  yield defect part noneCase "The None arm lost its exact existing pattern requirement and continuation."
+                              match none.Pattern,kind held.Condition with
+                              | Pattern.Union("ValueNone",0,None,noneType),Some(SemanticKind.CaseElimination(testActual,[matched;otherwise]))
+                                  when noneType=unionType && testActual=noneActual && matched.Guard.IsNone && otherwise.Guard.IsNone ->
+                                  match matched.Pattern,otherwise.Pattern,kind matched.Body,kind otherwise.Body with
+                                  | Pattern.Union("ValueNone",0,None,testType),Pattern.Wildcard,
+                                    Some(SemanticKind.Literal(NativeLiteral.Bool true)),Some(SemanticKind.Literal(NativeLiteral.Bool false)) when testType=unionType -> ()
+                                  | _ -> yield defect part noneCase "The None requirement does not test its exact native case and boolean alternatives."
+                                  if not(savedResult row.NoneUse [row.NoneCarrierRetirement] none.Body) then
+                                      yield defect part noneCase "Returned checked text lost scalar-before-cleanup ordering on its exact None arm."
+                              | _ -> yield defect part noneCase "Returned checked text changed its exact None case or pattern requirement."
+                          | _ -> yield defect part construction.Owner "Returned checked text lacks its exact None elimination and current requirement."
+                      | _ -> yield defect part construction.Owner "Returned checked text changed its exact guarded None continuation."
+                  | _ -> yield defect part construction.Owner "Returned checked text changed the native case selected for caller cleanup."
+              | _ -> yield defect part construction.Owner "Returned checked text lacks its exact two-arm caller elimination."
+              for site,target in [row.SomeBackingRetirement,MemoryCheckedRetirementTarget.Backing
+                                  row.SomeCarrierRetirement,MemoryCheckedRetirementTarget.Carrier
+                                  row.NoneCarrierRetirement,MemoryCheckedRetirementTarget.Carrier] do
+                  match memory.Operations.TryFind site with
+                  | Some(MemoryWitnessOperation.CheckedResultRetirement cleanup) when cleanup.Site=site && cleanup.Target=target && cleanup.Construction=construction ->
+                      let expected = if target=MemoryCheckedRetirementTarget.Backing then "retireCheckedBacking" else "retireCheckedCarrier"
+                      if not(intrinsic site cleanup.Value expected) || (target=MemoryCheckedRetirementTarget.Carrier && cleanup.Value<>row.Actual) then
+                          yield defect part site "Returned checked-text cleanup names a different actual caller value or operation."
+                  | _ -> yield missingRow part "exact source-authored caller cleanup" site
+              match memory.Operations.TryFind construction.Validation with
+              | Some(MemoryWitnessOperation.Utf8Validation validation) when validation.Allocation.MinimumCount>0I &&
+                  validation.Allocation.Residence=MemoryResidence.Heap(row.Application,row.Space) ->
+                  let capacities =
+                      validation.Allocation.Participants
+                      |> Set.toList
+                      |> List.choose (fun id ->
+                          match revision.CurrentClaims.TryFind id with
+                          | Some {Body=ObligationBody.CapacityFits(_,capacity)} -> Some capacity
+                          | _ -> None)
+                      |> List.distinct
+                  match capacities,revision.CurrentClaims.TryFind row.Capacity,revision.ObligationSources.TryFind row.Capacity with
+                  | [capacity],Some {Body=ObligationBody.CapacityFits(bytes,available)},Some support
+                      when bytes=row.MaximumLiveBytes && available=capacity &&
+                           [row.Application;row.Platform;row.Space] |> List.forall (fun id -> support |> List.exists (List.contains id)) -> ()
+                  | _ -> yield defect part construction.Owner "Returned checked text lost its current combined live-byte capacity claim."
+              | _ -> yield defect part construction.Owner "Returned checked text requires its exact positive-size heap snapshot; empty returned snapshots are not admitted." ]
         let checkedString part (row:CheckedStringConstruction) =
             let kind id = revision.Nodes.TryFind id |> Option.map _.Kind
             let operation id name =
@@ -734,7 +862,7 @@ module Integrity =
                   match memory.Operations.TryFind site with
                   | Some(MemoryWitnessOperation.ConstructedValue storage) when storage.Site=site && storage.Owner=row.Owner && storage.Construction=row &&
                       revision.Emission.Numeric.SourceTypes.TryFind site=Some storage.SourceType &&
-                      (match storage.Residence with MemoryResidence.Stack _ -> true | _ -> false) -> ()
+                      checkedResidence row storage.Residence -> ()
                   | _ -> yield missingRow part "exact source-authorized checked native-case storage" site
               match memory.Operations.TryFind row.Text with
               | Some(MemoryWitnessOperation.StringView view) when view.Checked=Some row && view.Owner=row.Owner && view.Source=row.Snapshot -> ()
@@ -742,7 +870,8 @@ module Integrity =
               match memory.Operations.TryFind row.Validation,memory.Operations.TryFind row.Retirement with
               | Some(MemoryWitnessOperation.Utf8Validation validation),Some(MemoryWitnessOperation.SnapshotRetirement retirement)
                   when validation.Construction=row && retirement.Construction=row && validation.Allocation=retirement.Allocation -> ()
-              | _ -> yield missingRow part "exact current validator and retirement operations" row.Owner ]
+              | _ -> yield missingRow part "exact current validator and retirement operations" row.Owner
+              for returned in Option.toList row.Returned do yield! returnedString (part+".Returned") row returned ]
         [ for KeyValue(key, operation) in memory.Operations do
               let site =
                   match operation with
@@ -756,6 +885,7 @@ module Integrity =
                   | MemoryWitnessOperation.Utf8Validation row -> row.Site
                   | MemoryWitnessOperation.SnapshotRetirement row -> row.Site
                   | MemoryWitnessOperation.ConstructedValue row -> row.Site
+                  | MemoryWitnessOperation.CheckedResultRetirement row -> row.Site
               if key <> site then yield defect "Emission.Memory.Operations.Site" key "A memory operation is filed under a different site."
               yield! body "Emission.Memory.Operations.Site" site
               match operation with
@@ -769,12 +899,23 @@ module Integrity =
                   yield! scalarRow revision "Emission.Memory.Operations.ArrayExtent.Result" row.Site row.Result
               | MemoryWitnessOperation.ArrayAccess row -> yield! access "Emission.Memory.Operations.ArrayAccess" row
               | MemoryWitnessOperation.ArrayLiteral row ->
+                  if (match row.Residence with MemoryResidence.Heap _ -> true | _ -> false) then
+                      yield defect "Emission.Memory.Operations.ArrayLiteral.Residence" row.Site "Heap residence requires the exact checked-result snapshot account, not an array literal."
                   for element, adaptation in row.Elements do
                       yield! body "Emission.Memory.Operations.ArrayLiteral.Elements" element
                       for adaptation in Option.toList adaptation do
                           yield! adaptationRow "Emission.Memory.Operations.ArrayLiteral.Adaptation" row.Site element adaptation
                   yield! residence "Emission.Memory.Operations.ArrayLiteral.Residence" row.Residence
               | MemoryWitnessOperation.ArrayAllocation row ->
+                  match row.Residence with
+                  | MemoryResidence.Heap(application,space) ->
+                      let held = memory.Operations.Values |> Seq.exists (function
+                          | MemoryWitnessOperation.Utf8Validation validation when validation.Allocation=row ->
+                              validation.Construction.Returned |> Option.exists (fun returned -> returned.Application=application && returned.Space=space)
+                          | _ -> false)
+                      if not held then
+                          yield missingRow "Emission.Memory.Operations.ArrayAllocation.Residence" "exact checked-result heap snapshot account" row.Site
+                  | _ -> ()
                   yield! body "Emission.Memory.Operations.ArrayAllocation.Count" row.Count
                   yield! scalarRow revision "Emission.Memory.Operations.ArrayAllocation.CountCarrier" row.Count row.CountCarrier
                   yield! requirement "Emission.Memory.Operations.ArrayAllocation.Requirement" row.Requirement
@@ -870,16 +1011,19 @@ module Integrity =
                           (support |> List.forall(fun source -> rows |> List.exists(List.contains source))) -> true
                       | _ -> false
                   match revision.Emission.Numeric.Layouts.TryFind row.SourceType,row.Residence with
-                  | Some(SettledLayout.Union(_,_,Some bytes,Some alignment)),MemoryResidence.Stack(scope,space) when bytes>0 && alignment>0 ->
-                      match revision.Nodes.TryFind scope with
-                      | Some {Kind=SemanticKind.Lambda _} -> ()
-                      | _ -> yield defect part row.Site "The constructed instance's stack lifetime has no exact activation scope."
+                  | Some(SettledLayout.Union(_,_,Some bytes,Some alignment)),
+                    (MemoryResidence.Stack(scope,space) | MemoryResidence.Heap(scope,space)) when bytes>0 && alignment>0 ->
+                      match row.Residence,revision.Nodes.TryFind scope with
+                      | MemoryResidence.Stack _,Some {Kind=SemanticKind.Lambda _} -> ()
+                      | MemoryResidence.Heap _,Some {Kind=SemanticKind.Application _} when checkedResidence row.Construction row.Residence -> ()
+                      | _ -> yield defect part row.Site "The constructed instance lacks its exact source activation or checked return instance."
                       let support=[row.Site;row.Platform;scope;space]
                       if not(claim row.Layout (ObligationBody.ContinuationLayout([0,bytes,alignment],bytes,alignment)) support) then
                           yield defect part row.Site "The constructed instance lost its exact current layout proof supported by this site."
                       let capacityClaims site residence proofs =
                           match residence with
-                          | MemoryResidence.Stack(activation,declaredSpace) when declaredSpace=space ->
+                          | MemoryResidence.Stack(activation,declaredSpace)
+                          | MemoryResidence.Heap(activation,declaredSpace) when declaredSpace=space ->
                               revision.CurrentClaims |> Map.toList |> List.choose(fun (id,info) ->
                                   match info.Body,revision.ObligationSources.TryFind id with
                                   | ObligationBody.CapacityFits(_,capacity),Some rows when proofs |> Set.contains id ->
@@ -906,7 +1050,7 @@ module Integrity =
                           if sameSpaceCapacities<>Set.singleton capacity then
                               yield defect part row.Site "The same-space source allocation capacity claims disagree."
                       | _ -> yield defect part row.Site "The constructed instance lacks its exact same-residence snapshot capacity claim."
-                  | _ -> yield defect part row.Site "The constructed instance lacks its exact settled union layout and source stack residence."
+                  | _ -> yield defect part row.Site "The constructed instance lacks its exact settled union layout and source residence."
                   match revision.Nodes.TryFind row.Site with
                   | Some {Kind=SemanticKind.DUConstruct _} -> ()
                   | _ -> yield defect part row.Site "The constructed-value storage site is not its exact native construction."
@@ -916,8 +1060,26 @@ module Integrity =
                   yield! residence part row.Allocation.Residence
                   if row.Site<>row.Construction.Retirement ||
                      memory.Operations.TryFind row.Allocation.Site<>Some(MemoryWitnessOperation.ArrayAllocation row.Allocation) ||
-                     (match row.Allocation.Residence with MemoryResidence.Stack _ -> false | _ -> true) then
-                      yield defect part row.Site "The unsuccessful snapshot discard lacks its exact existing stack-scope allocation authority."
+                     not(checkedResidence row.Construction row.Allocation.Residence) then
+                      yield defect part row.Site "The unsuccessful snapshot discard lacks its exact source allocation and retirement authority."
+              | MemoryWitnessOperation.CheckedResultRetirement row ->
+                  let part="Emission.Memory.Operations.CheckedResultRetirement"
+                  yield! body (part+".Value") row.Value
+                  yield! checkedString part row.Construction
+                  match row.Construction.Returned with
+                  | Some returned ->
+                      let expected =
+                          match row.Target with
+                          | MemoryCheckedRetirementTarget.Backing ->
+                              row.Site=returned.SomeBackingRetirement &&
+                              (match revision.Nodes.TryFind returned.SomeUse with
+                               | Some {Kind=SemanticKind.Application(_, [payload])} -> payload=row.Value
+                               | _ -> false)
+                          | MemoryCheckedRetirementTarget.Carrier ->
+                              (row.Site=returned.SomeCarrierRetirement || row.Site=returned.NoneCarrierRetirement) && row.Value=returned.Actual
+                      if not expected then
+                          yield defect part row.Site "The cleanup changed its exact caller payload/carrier role or occurrence."
+                  | None -> yield defect part row.Site "Caller cleanup lacks a source-authored checked-result lifetime."
           for KeyValue(key, row) in memory.ArrayCopies do
               if key <> row.Site then yield defect "Emission.Memory.ArrayCopies.Site" key "An array copy is filed under a different site."
               for id in [row.Site; row.Source; row.SourceOffset; row.Destination; row.DestinationOffset; row.Count] @ Option.toList row.Loop do
