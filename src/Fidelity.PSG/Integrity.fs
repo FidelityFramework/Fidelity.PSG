@@ -1850,11 +1850,16 @@ module Integrity =
             let call=boundary.Calls.TryFind site
             let storage=memory.Operations.TryFind row.Allocation |> Option.bind(function MemoryWitnessOperation.ArrayAllocation value->Some value | _->None)
             let count=revision.Emission.Numeric.Values.TryFind row.Count
+            let relational=call |> Option.bind(fun call->boundary.Imports.TryFind call.Import)
+                                |> Option.exists(fun imported->imported.Result=Some(BoundaryScalar.Integer(64,true)))
+            let resultCount=count |> Option.bind(fun value->
+                match value.Range with
+                | ValueRange.Bounded(lo,hi) when lo=hi && lo>0I -> Some lo
+                | _ -> None)
             let resultAccount (call:BoundaryCall) (imported:BoundaryImport) =
-                match call.Result,imported.Result with
-                | None,None -> call.ResultAdaptation.IsNone
-                | Some(BoundaryScalar.Integer(64,true)),Some(BoundaryScalar.Integer(64,true)) ->
-                    count |> Option.exists(fun value->value.Range=ValueRange.Bounded(3I,3I)) &&
+                match call.Result,imported.Result,resultCount with
+                | None,None,_ -> call.ResultAdaptation.IsNone
+                | Some(BoundaryScalar.Integer(64,true)),Some(BoundaryScalar.Integer(64,true)),Some resultCount ->
                     (revision.Emission.Numeric.ForeignResultUses |> List.filter(fun account->
                         account.Application.Call=site && account.Application.Declaration=imported.Binding)
                      |> function
@@ -1873,7 +1878,7 @@ module Integrity =
                                                | ObligationBody.ForeignResultCoverage model ->
                                                    info.Kind="foreign-result-coverage" && model.Application=application && model.Role=role &&
                                                    model.Abi=Some imported.Identity && model.AbiRange=ValueRange.Bounded(-(1I<<<63),(1I<<<63)-1I) &&
-                                                   model.ResultRange=ValueRange.Bounded(-1I,3I) && row.Participants.Contains citizen
+                                                   model.ResultRange=ValueRange.Bounded(-1I,resultCount) && row.Participants.Contains citizen
                                                | _ -> false
                                            | _ -> false))
                             let support=match account.Participants with
@@ -1917,7 +1922,12 @@ module Integrity =
             let layout = storage |> Option.exists(fun storage ->
                 allocation Set.empty row.Buffer=Some row.Allocation && storage.Site=row.Allocation && storage.ElementBytes=1 &&
                 (match storage.Element with SettledSlot.Integer(8,Some _)->true | _->false) &&
-                storage.MinimumCount=4I && storage.MaximumCount=4I && storage.Construction.Count.Actual=row.Capacity &&
+                (if relational then
+                     storage.MinimumCount>0I && storage.MaximumCount=storage.MinimumCount &&
+                     (revision.Emission.Numeric.Values.TryFind row.Capacity
+                      |> Option.exists(fun value->value.Range=ValueRange.Bounded(storage.MinimumCount,storage.MinimumCount)))
+                 else storage.MinimumCount=4I && storage.MaximumCount=4I) &&
+                storage.Construction.Count.Actual=row.Capacity &&
                 revision.Emission.Numeric.Elements.TryFind row.Buffer=Some storage.Element)
             let format =
                 match call,storage with
@@ -1935,16 +1945,23 @@ module Integrity =
                 match count,storage with
                 | Some count,Some storage ->
                     match count.Range with
-                    | ValueRange.Bounded(lo,hi) when lo=hi && lo>=0I && hi<=4I ->
+                    | ValueRange.Bounded(lo,hi) when lo=hi &&
+                        (if relational then lo>0I && hi<=storage.MinimumCount else lo>=0I && hi<=4I) ->
                         true,claim row.CountCoverage "count" (ObligationBody.IntegerRepresentationCoverage(lo,hi,0I,storage.MinimumCount)) &&
                              claim row.StorageCoverage "storage" (ObligationBody.IntegerRepresentationCoverage(0I,255I,0I,255I))
                     | _ -> false,false
                 | _ -> false,false
             let support = [row.Call;row.Declaration;row.Buffer;row.Count;row.Allocation;row.Capacity;row.ByteFormat;row.CountCoverage;row.StorageCoverage]
                           |> List.forall row.Participants.Contains
+            let storageReason=
+                if relational then "The relational writable use lacks its original fixed positive initialized byte capacity, selected byte declaration or exact live immutable alias lineage."
+                else "The writable use lacks its original finite four-byte allocation, selected byte declaration or exact live immutable alias lineage."
+            let boundsReason=
+                if relational then "The relational writable count is not an exact positive singleton within its initialized byte capacity."
+                else "The actual writable count is not a constant nonnegative byte count within the original four-byte capacity."
             [if not account then yield defect "Emission.Boundary.WritableBufferUses.Account" site "The writable use differs from its exact direct call, current result account, import, declaration or native ordinals."
-             if not layout || not format then yield defect "Emission.Boundary.WritableBufferUses.Storage" site "The writable use lacks its original finite four-byte allocation, selected byte declaration or exact live immutable alias lineage."
-             if not bounds then yield defect "Emission.Boundary.WritableBufferUses.Bounds" site "The actual writable count is not a constant nonnegative byte count within the original four-byte capacity."
+             if not layout || not format then yield defect "Emission.Boundary.WritableBufferUses.Storage" site storageReason
+             if not bounds then yield defect "Emission.Boundary.WritableBufferUses.Bounds" site boundsReason
              if not claims then yield defect "Emission.Boundary.WritableBufferUses.Claims" site "The writable use lacks its exact current required count/storage proof citizens and source hypothesis."
              if not support then yield defect "Emission.Boundary.WritableBufferUses.Participants" site "The writable use lost its current source, byte format or proof support."]
 
