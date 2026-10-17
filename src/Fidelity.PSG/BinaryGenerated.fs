@@ -5,11 +5,11 @@ module internal BinaryGenerated =
     [<Literal>]
     let Format = 2u
     [<Literal>]
-    let Schema = 44
+    let Schema = 45
     [<Literal>]
-    let Fingerprint = "A9958C2758609983616FB1F019402A91857E806C1DA7091D0E07165112F0A470"
+    let Fingerprint = "7C0BEA78037DA7A487D58A72617031BA9E01A0A56ED6FE3AC4AED3D0B406A29A"
     [<Literal>]
-    let NamedTypes = 339
+    let NamedTypes = 341
     [<Literal>]
     let RevisionFields = 17
     [<Literal>]
@@ -3880,6 +3880,26 @@ module internal BinaryGenerated =
                 let! state = writeTag state 1
                 return leaveWrite state
               }
+            | global.Fidelity.PSG.MemoryCheckedRetirementTarget.``EmptyBacking`` -> result {
+                let! state = writeTag state 2
+                return leaveWrite state
+              }
+    }
+
+    and write_Fidelity_PSG_MemoryCheckedSnapshotStorage (state: WriteState) (value: global.Fidelity.PSG.MemoryCheckedSnapshotStorage) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        return!
+            match value with
+            | global.Fidelity.PSG.MemoryCheckedSnapshotStorage.``Allocated``(a0) -> result {
+                let! state = writeTag state 0
+                let! state = write_Fidelity_PSG_MemoryArrayAllocationWitness state a0
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.MemoryCheckedSnapshotStorage.``Empty``(a0) -> result {
+                let! state = writeTag state 1
+                let! state = write_Fidelity_PSG_MemoryEmptySnapshotWitness state a0
+                return leaveWrite state
+              }
     }
 
     and write_Fidelity_PSG_MemoryConstructedValueWitness (state: WriteState) (value: global.Fidelity.PSG.MemoryConstructedValueWitness) : Result<WriteState, BinaryError> = result {
@@ -3911,6 +3931,17 @@ module internal BinaryGenerated =
         let! state = (writeSet write_Fidelity_PSG_NodeId) state value.``Required``
         let! state = (writeList (fun state (v1_0, v1_1) -> enterWrite state |> Result.bind (fun state -> write_Fidelity_PSG_NodeId state v1_0 |> Result.bind (fun state -> write_Fidelity_PSG_MemoryWitnessOperation state v1_1 |> Result.bind (fun state -> Ok(leaveWrite state)))))) state value.``Operations``
         let! state = (writeMap write_Fidelity_PSG_NodeId writeString) state value.``Unresolved``
+        return leaveWrite state
+    }
+
+    and write_Fidelity_PSG_MemoryEmptySnapshotWitness (state: WriteState) (value: global.Fidelity.PSG.MemoryEmptySnapshotWitness) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = write_Fidelity_PSG_NodeId state value.``Site``
+        let! state = write_Fidelity_PSG_NodeId state value.``Snapshot``
+        let! state = write_Fidelity_PSG_NodeId state value.``Owner``
+        let! state = write_Fidelity_PSG_NodeId state value.``Count``
+        let! state = write_Fidelity_PSG_TypeIdentity state value.``SourceType``
+        let! state = write_Fidelity_PSG_NodeId state value.``Declaration``
         return leaveWrite state
     }
 
@@ -3999,7 +4030,7 @@ module internal BinaryGenerated =
         let! state = enterWrite state
         let! state = write_Fidelity_PSG_NodeId state value.``Site``
         let! state = write_Fidelity_PSG_CheckedStringConstruction state value.``Construction``
-        let! state = write_Fidelity_PSG_MemoryArrayAllocationWitness state value.``Allocation``
+        let! state = write_Fidelity_PSG_MemoryCheckedSnapshotStorage state value.``Storage``
         return leaveWrite state
     }
 
@@ -4109,7 +4140,7 @@ module internal BinaryGenerated =
         let! state = write_Fidelity_PSG_NodeId state value.``Site``
         let! state = write_Fidelity_PSG_CheckedStringConstruction state value.``Construction``
         let! state = write_Fidelity_PSG_MemoryArrayCopyWitness state value.``Copy``
-        let! state = write_Fidelity_PSG_MemoryArrayAllocationWitness state value.``Allocation``
+        let! state = write_Fidelity_PSG_MemoryCheckedSnapshotStorage state value.``Storage``
         let! state = write_Fidelity_PSG_ValueRepresentation state value.``SourceCarrier``
         return leaveWrite state
     }
@@ -4171,6 +4202,11 @@ module internal BinaryGenerated =
             | global.Fidelity.PSG.MemoryWitnessOperation.``CheckedResultRetirement``(a0) -> result {
                 let! state = writeTag state 10
                 let! state = write_Fidelity_PSG_MemoryCheckedResultRetirementWitness state a0
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.MemoryWitnessOperation.``EmptySnapshot``(a0) -> result {
+                let! state = writeTag state 11
+                let! state = write_Fidelity_PSG_MemoryEmptySnapshotWitness state a0
                 return leaveWrite state
               }
     }
@@ -11065,7 +11101,26 @@ module internal BinaryGenerated =
             | 1 -> result {
                 return! finishRead (global.Fidelity.PSG.MemoryCheckedRetirementTarget.``Carrier``) state
               }
+            | 2 -> result {
+                return! finishRead (global.Fidelity.PSG.MemoryCheckedRetirementTarget.``EmptyBacking``) state
+              }
             | _ -> malformed state "Unknown Fidelity.PSG.MemoryCheckedRetirementTarget case"
+    }
+
+    and read_Fidelity_PSG_MemoryCheckedSnapshotStorage (state: ReadState) : Result<global.Fidelity.PSG.MemoryCheckedSnapshotStorage * ReadState, BinaryError> = result {
+        let! state = enterReadCases 2 state
+        let! tag, state = readTag state
+        return!
+            match tag with
+            | 0 -> result {
+                let! a0, state = read_Fidelity_PSG_MemoryArrayAllocationWitness state
+                return! finishRead (global.Fidelity.PSG.MemoryCheckedSnapshotStorage.``Allocated``(a0)) state
+              }
+            | 1 -> result {
+                let! a0, state = read_Fidelity_PSG_MemoryEmptySnapshotWitness state
+                return! finishRead (global.Fidelity.PSG.MemoryCheckedSnapshotStorage.``Empty``(a0)) state
+              }
+            | _ -> malformed state "Unknown Fidelity.PSG.MemoryCheckedSnapshotStorage case"
     }
 
     and read_Fidelity_PSG_MemoryConstructedValueWitness (state: ReadState) : Result<global.Fidelity.PSG.MemoryConstructedValueWitness * ReadState, BinaryError> = result {
@@ -11098,6 +11153,17 @@ module internal BinaryGenerated =
         let! a11, state = (readList (fun state -> enterReadFields 2 state |> Result.bind (fun state -> read_Fidelity_PSG_NodeId state |> Result.bind (fun (v1_0, state) -> read_Fidelity_PSG_MemoryWitnessOperation state |> Result.bind (fun (v1_1, state) -> finishRead (v1_0, v1_1) state))))) state
         let! a12, state = (readMap read_Fidelity_PSG_NodeId readString) state
         return! finishRead ({ ``Premises`` = a0; ``Platform`` = a1; ``Meets`` = a2; ``Guards`` = a3; ``Requirements`` = a4; ``StringRelations`` = a5; ``AllocationConstructions`` = a6; ``CopyConstructions`` = a7; ``ArrayCopies`` = a8; ``Proofs`` = a9; ``Required`` = a10; ``Operations`` = a11; ``Unresolved`` = a12 } : global.Fidelity.PSG.MemoryDomain) state
+    }
+
+    and read_Fidelity_PSG_MemoryEmptySnapshotWitness (state: ReadState) : Result<global.Fidelity.PSG.MemoryEmptySnapshotWitness * ReadState, BinaryError> = result {
+        let! state = enterReadFields 6 state
+        let! a0, state = read_Fidelity_PSG_NodeId state
+        let! a1, state = read_Fidelity_PSG_NodeId state
+        let! a2, state = read_Fidelity_PSG_NodeId state
+        let! a3, state = read_Fidelity_PSG_NodeId state
+        let! a4, state = read_Fidelity_PSG_TypeIdentity state
+        let! a5, state = read_Fidelity_PSG_NodeId state
+        return! finishRead ({ ``Site`` = a0; ``Snapshot`` = a1; ``Owner`` = a2; ``Count`` = a3; ``SourceType`` = a4; ``Declaration`` = a5 } : global.Fidelity.PSG.MemoryEmptySnapshotWitness) state
     }
 
     and read_Fidelity_PSG_MemoryExtentWitness (state: ReadState) : Result<global.Fidelity.PSG.MemoryExtentWitness * ReadState, BinaryError> = result {
@@ -11181,8 +11247,8 @@ module internal BinaryGenerated =
         let! state = enterReadFields 3 state
         let! a0, state = read_Fidelity_PSG_NodeId state
         let! a1, state = read_Fidelity_PSG_CheckedStringConstruction state
-        let! a2, state = read_Fidelity_PSG_MemoryArrayAllocationWitness state
-        return! finishRead ({ ``Site`` = a0; ``Construction`` = a1; ``Allocation`` = a2 } : global.Fidelity.PSG.MemorySnapshotRetirementWitness) state
+        let! a2, state = read_Fidelity_PSG_MemoryCheckedSnapshotStorage state
+        return! finishRead ({ ``Site`` = a0; ``Construction`` = a1; ``Storage`` = a2 } : global.Fidelity.PSG.MemorySnapshotRetirementWitness) state
     }
 
     and read_Fidelity_PSG_MemoryStringPremise (state: ReadState) : Result<global.Fidelity.PSG.MemoryStringPremise * ReadState, BinaryError> = result {
@@ -11282,9 +11348,9 @@ module internal BinaryGenerated =
         let! a0, state = read_Fidelity_PSG_NodeId state
         let! a1, state = read_Fidelity_PSG_CheckedStringConstruction state
         let! a2, state = read_Fidelity_PSG_MemoryArrayCopyWitness state
-        let! a3, state = read_Fidelity_PSG_MemoryArrayAllocationWitness state
+        let! a3, state = read_Fidelity_PSG_MemoryCheckedSnapshotStorage state
         let! a4, state = read_Fidelity_PSG_ValueRepresentation state
-        return! finishRead ({ ``Site`` = a0; ``Construction`` = a1; ``Copy`` = a2; ``Allocation`` = a3; ``SourceCarrier`` = a4 } : global.Fidelity.PSG.MemoryUtf8ValidationWitness) state
+        return! finishRead ({ ``Site`` = a0; ``Construction`` = a1; ``Copy`` = a2; ``Storage`` = a3; ``SourceCarrier`` = a4 } : global.Fidelity.PSG.MemoryUtf8ValidationWitness) state
     }
 
     and read_Fidelity_PSG_MemoryWitnessOperation (state: ReadState) : Result<global.Fidelity.PSG.MemoryWitnessOperation * ReadState, BinaryError> = result {
@@ -11335,6 +11401,10 @@ module internal BinaryGenerated =
             | 10 -> result {
                 let! a0, state = read_Fidelity_PSG_MemoryCheckedResultRetirementWitness state
                 return! finishRead (global.Fidelity.PSG.MemoryWitnessOperation.``CheckedResultRetirement``(a0)) state
+              }
+            | 11 -> result {
+                let! a0, state = read_Fidelity_PSG_MemoryEmptySnapshotWitness state
+                return! finishRead (global.Fidelity.PSG.MemoryWitnessOperation.``EmptySnapshot``(a0)) state
               }
             | _ -> malformed state "Unknown Fidelity.PSG.MemoryWitnessOperation case"
     }

@@ -715,6 +715,40 @@ module Integrity =
             | MemoryResidence.Heap(application, space) ->
                 construction.Returned |> Option.exists (fun row -> row.Application=application && row.Space=space)
             | _ -> false
+        let storageSite = function
+            | MemoryCheckedSnapshotStorage.Allocated row -> row.Site
+            | MemoryCheckedSnapshotStorage.Empty row -> row.Site
+        let storageCurrent construction = function
+            | MemoryCheckedSnapshotStorage.Allocated row ->
+                memory.Operations.TryFind row.Site=Some(MemoryWitnessOperation.ArrayAllocation row)
+                && checkedResidence construction row.Residence
+            | MemoryCheckedSnapshotStorage.Empty row ->
+                memory.Operations.TryFind row.Site=Some(MemoryWitnessOperation.EmptySnapshot row)
+                && row.Owner=construction.Owner && row.Snapshot=construction.Snapshot
+                && construction.Returned.IsSome
+        let capacityValues (proofs: Set<NodeId>) =
+            proofs |> Set.toList |> List.choose(fun id ->
+                match revision.CurrentClaims.TryFind id with
+                | Some {Body=ObligationBody.CapacityFits(_,capacity)} -> Some capacity
+                | _ -> None) |> List.distinct
+        let emptySnapshot part (row: MemoryEmptySnapshotWitness) =
+            [ for id in [row.Site;row.Snapshot;row.Owner;row.Count] do
+                  yield! body (part+".Operand") id
+              if revision.Emission.Numeric.SourceTypes.TryFind row.Site<>Some row.SourceType then
+                  yield defect part row.Site "The empty snapshot lost its exact current producer type."
+              match memory.ArrayCopies.TryFind row.Snapshot,
+                    revision.Emission.Numeric.Values.TryFind row.Count with
+              | Some copy,Some count when copy.Allocation=Some row.Site && copy.CountOperand.Reference=row.Count &&
+                                         count.Range=ValueRange.Bounded(0I,0I) && copy.CountCarrier.Range=ValueRange.Bounded(0I,0I) &&
+                                         copy.Read.IsNone && copy.Write.IsNone -> ()
+              | _ -> yield defect part row.Site "The empty snapshot lacks its exact zero-count private copy and producer incidence."
+              let current = memory.Operations.Values |> Seq.exists(function
+                  | MemoryWitnessOperation.StringView view when view.Declaration=row.Declaration ->
+                      view.Checked |> Option.exists(fun construction ->
+                          construction.Owner=row.Owner && construction.Snapshot=row.Snapshot && construction.Returned.IsSome)
+                  | _ -> false)
+              if not current then
+                  yield defect part row.Site "The empty snapshot lacks its exact checked owner and octet declaration." ]
         let returnedString part (construction: CheckedStringConstruction) (row: MemoryCheckedResultLifetime) =
             let node id = revision.Nodes.TryFind id
             let kind id = node id |> Option.map _.Kind
@@ -811,32 +845,41 @@ module Integrity =
                       | _ -> yield defect part construction.Owner "Returned checked text changed its exact guarded None continuation."
                   | _ -> yield defect part construction.Owner "Returned checked text changed the native case selected for caller cleanup."
               | _ -> yield defect part construction.Owner "Returned checked text lacks its exact two-arm caller elimination."
-              for site,target in [row.SomeBackingRetirement,MemoryCheckedRetirementTarget.Backing
+              let backingTarget =
+                  match memory.Operations.TryFind construction.Validation with
+                  | Some(MemoryWitnessOperation.Utf8Validation {Storage=MemoryCheckedSnapshotStorage.Empty _}) -> MemoryCheckedRetirementTarget.EmptyBacking
+                  | _ -> MemoryCheckedRetirementTarget.Backing
+              for site,target in [row.SomeBackingRetirement,backingTarget
                                   row.SomeCarrierRetirement,MemoryCheckedRetirementTarget.Carrier
                                   row.NoneCarrierRetirement,MemoryCheckedRetirementTarget.Carrier] do
                   match memory.Operations.TryFind site with
                   | Some(MemoryWitnessOperation.CheckedResultRetirement cleanup) when cleanup.Site=site && cleanup.Target=target && cleanup.Construction=construction ->
-                      let expected = if target=MemoryCheckedRetirementTarget.Backing then "retireCheckedBacking" else "retireCheckedCarrier"
+                      let expected = if target=MemoryCheckedRetirementTarget.Carrier then "retireCheckedCarrier" else "retireCheckedBacking"
                       if not(intrinsic site cleanup.Value expected) || (target=MemoryCheckedRetirementTarget.Carrier && cleanup.Value<>row.Actual) then
                           yield defect part site "Returned checked-text cleanup names a different actual caller value or operation."
                   | _ -> yield missingRow part "exact source-authored caller cleanup" site
               match memory.Operations.TryFind construction.Validation with
-              | Some(MemoryWitnessOperation.Utf8Validation validation) when validation.Allocation.MinimumCount>0I &&
-                  validation.Allocation.Residence=MemoryResidence.Heap(row.Application,row.Space) ->
+              | Some(MemoryWitnessOperation.Utf8Validation validation) when storageCurrent construction validation.Storage ->
                   let capacities =
-                      validation.Allocation.Participants
-                      |> Set.toList
-                      |> List.choose (fun id ->
-                          match revision.CurrentClaims.TryFind id with
-                          | Some {Body=ObligationBody.CapacityFits(_,capacity)} -> Some capacity
-                          | _ -> None)
-                      |> List.distinct
+                      match validation.Storage with
+                      | MemoryCheckedSnapshotStorage.Allocated allocation when allocation.MinimumCount>0I &&
+                          allocation.Residence=MemoryResidence.Heap(row.Application,row.Space) -> capacityValues allocation.Participants
+                      | MemoryCheckedSnapshotStorage.Empty _ ->
+                          [construction.Success;construction.Failure] |> List.collect(fun site ->
+                              match memory.Operations.TryFind site with
+                              | Some(MemoryWitnessOperation.ConstructedValue value) when value.Residence=MemoryResidence.Heap(row.Application,row.Space) ->
+                                  match revision.Emission.Numeric.Layouts.TryFind value.SourceType with
+                                  | Some(SettledLayout.Union(_,_,Some bytes,_)) when int64 bytes=row.MaximumLiveBytes ->
+                                      capacityValues (Set.singleton value.Capacity)
+                                  | _ -> []
+                              | _ -> []) |> List.distinct
+                      | _ -> []
                   match capacities,revision.CurrentClaims.TryFind row.Capacity,revision.ObligationSources.TryFind row.Capacity with
                   | [capacity],Some {Body=ObligationBody.CapacityFits(bytes,available)},Some support
                       when bytes=row.MaximumLiveBytes && available=capacity &&
                            [row.Application;row.Platform;row.Space] |> List.forall (fun id -> support |> List.exists (List.contains id)) -> ()
                   | _ -> yield defect part construction.Owner "Returned checked text lost its current combined live-byte capacity claim."
-              | _ -> yield defect part construction.Owner "Returned checked text requires its exact positive-size heap snapshot; empty returned snapshots are not admitted." ]
+              | _ -> yield defect part construction.Owner "Returned checked text requires its exact allocated or affirmative empty snapshot." ]
         let checkedString part (row:CheckedStringConstruction) =
             let kind id = revision.Nodes.TryFind id |> Option.map _.Kind
             let operation id name =
@@ -869,7 +912,7 @@ module Integrity =
               | _ -> yield missingRow part "exact current checked string view" row.Text
               match memory.Operations.TryFind row.Validation,memory.Operations.TryFind row.Retirement with
               | Some(MemoryWitnessOperation.Utf8Validation validation),Some(MemoryWitnessOperation.SnapshotRetirement retirement)
-                  when validation.Construction=row && retirement.Construction=row && validation.Allocation=retirement.Allocation -> ()
+                  when validation.Construction=row && retirement.Construction=row && validation.Storage=retirement.Storage -> ()
               | _ -> yield missingRow part "exact current validator and retirement operations" row.Owner
               for returned in Option.toList row.Returned do yield! returnedString (part+".Returned") row returned ]
         [ for KeyValue(key, operation) in memory.Operations do
@@ -886,6 +929,7 @@ module Integrity =
                   | MemoryWitnessOperation.SnapshotRetirement row -> row.Site
                   | MemoryWitnessOperation.ConstructedValue row -> row.Site
                   | MemoryWitnessOperation.CheckedResultRetirement row -> row.Site
+                  | MemoryWitnessOperation.EmptySnapshot row -> row.Site
               if key <> site then yield defect "Emission.Memory.Operations.Site" key "A memory operation is filed under a different site."
               yield! body "Emission.Memory.Operations.Site" site
               match operation with
@@ -910,7 +954,7 @@ module Integrity =
                   match row.Residence with
                   | MemoryResidence.Heap(application,space) ->
                       let held = memory.Operations.Values |> Seq.exists (function
-                          | MemoryWitnessOperation.Utf8Validation validation when validation.Allocation=row ->
+                          | MemoryWitnessOperation.Utf8Validation validation when validation.Storage=MemoryCheckedSnapshotStorage.Allocated row ->
                               validation.Construction.Returned |> Option.exists (fun returned -> returned.Application=application && returned.Space=space)
                           | _ -> false)
                       if not held then
@@ -990,9 +1034,8 @@ module Integrity =
                   yield! checkedString part row.Construction
                   yield! representation (part+".SourceCarrier") row.Construction.Snapshot row.SourceCarrier
                   if row.Site<>row.Construction.Validation || memory.ArrayCopies.TryFind row.Construction.Snapshot<>Some row.Copy ||
-                     row.Copy.Allocation<>Some row.Allocation.Site ||
-                     memory.Operations.TryFind row.Allocation.Site<>Some(MemoryWitnessOperation.ArrayAllocation row.Allocation) then
-                      yield defect part row.Site "The UTF-8 scan lost its exact private copy and source-authorized allocation."
+                     row.Copy.Allocation<>Some(storageSite row.Storage) || not(storageCurrent row.Construction row.Storage) then
+                      yield defect part row.Site "The UTF-8 scan lost its exact private copy and source-authorized snapshot storage."
                   if row.Copy.Source<>row.Construction.Input || row.Copy.Count<>row.Construction.Length then
                       yield defect part row.Site "The UTF-8 copy source/count differs from its exact construction input/length."
               | MemoryWitnessOperation.ConstructedValue row ->
@@ -1034,8 +1077,13 @@ module Integrity =
                       // the omitted platform AST remains source-owned.
                       let snapshotCapacities=
                           match memory.Operations.TryFind row.Construction.Validation with
-                          | Some(MemoryWitnessOperation.Utf8Validation validation) when validation.Construction=row.Construction && validation.Allocation.Residence=row.Residence ->
-                              capacityClaims validation.Allocation.Site validation.Allocation.Residence validation.Allocation.Participants |> List.distinct
+                          | Some(MemoryWitnessOperation.Utf8Validation validation) when validation.Construction=row.Construction ->
+                              match validation.Storage with
+                              | MemoryCheckedSnapshotStorage.Allocated allocation when allocation.Residence=row.Residence ->
+                                  capacityClaims allocation.Site allocation.Residence allocation.Participants |> List.distinct
+                              | MemoryCheckedSnapshotStorage.Empty empty when storageCurrent row.Construction validation.Storage ->
+                                  capacityClaims row.Site row.Residence (Set.singleton row.Capacity) |> List.distinct
+                              | _ -> []
                           | _ -> []
                       let sameSpaceCapacities=
                           memory.Operations.Values |> Seq.collect(function
@@ -1057,11 +1105,14 @@ module Integrity =
               | MemoryWitnessOperation.SnapshotRetirement row ->
                   let part="Emission.Memory.Operations.SnapshotRetirement"
                   yield! checkedString part row.Construction
-                  yield! residence part row.Allocation.Residence
+                  match row.Storage with
+                  | MemoryCheckedSnapshotStorage.Allocated allocation -> yield! residence part allocation.Residence
+                  | MemoryCheckedSnapshotStorage.Empty empty -> yield! emptySnapshot part empty
                   if row.Site<>row.Construction.Retirement ||
-                     memory.Operations.TryFind row.Allocation.Site<>Some(MemoryWitnessOperation.ArrayAllocation row.Allocation) ||
-                     not(checkedResidence row.Construction row.Allocation.Residence) then
-                      yield defect part row.Site "The unsuccessful snapshot discard lacks its exact source allocation and retirement authority."
+                     not(storageCurrent row.Construction row.Storage) then
+                      yield defect part row.Site "The unsuccessful snapshot discard lacks its exact source storage and retirement authority."
+              | MemoryWitnessOperation.EmptySnapshot row ->
+                  yield! emptySnapshot "Emission.Memory.Operations.EmptySnapshot" row
               | MemoryWitnessOperation.CheckedResultRetirement row ->
                   let part="Emission.Memory.Operations.CheckedResultRetirement"
                   yield! body (part+".Value") row.Value
@@ -1070,8 +1121,13 @@ module Integrity =
                   | Some returned ->
                       let expected =
                           match row.Target with
-                          | MemoryCheckedRetirementTarget.Backing ->
+                          | MemoryCheckedRetirementTarget.Backing
+                          | MemoryCheckedRetirementTarget.EmptyBacking ->
                               row.Site=returned.SomeBackingRetirement &&
+                              (match memory.Operations.TryFind row.Construction.Validation,row.Target with
+                               | Some(MemoryWitnessOperation.Utf8Validation {Storage=MemoryCheckedSnapshotStorage.Empty _}),MemoryCheckedRetirementTarget.EmptyBacking -> true
+                               | Some(MemoryWitnessOperation.Utf8Validation {Storage=MemoryCheckedSnapshotStorage.Allocated _}),MemoryCheckedRetirementTarget.Backing -> true
+                               | _ -> false) &&
                               (match revision.Nodes.TryFind returned.SomeUse with
                                | Some {Kind=SemanticKind.Application(_, [payload])} -> payload=row.Value
                                | _ -> false)
@@ -1088,6 +1144,7 @@ module Integrity =
               for allocation in Option.toList row.Allocation do
                   match memory.Operations.TryFind allocation with
                   | Some(MemoryWitnessOperation.ArrayAllocation row) when row.Site = allocation -> ()
+                  | Some(MemoryWitnessOperation.EmptySnapshot empty) when empty.Site=allocation && empty.Snapshot=row.Site -> ()
                   | _ -> yield missingRow "Emission.Memory.ArrayCopies.Allocation" "Emission.Memory.Operations (array allocation)" allocation
               for row in Option.toList row.Read do yield! copyAccess "Emission.Memory.ArrayCopies.Read" row
               for row in Option.toList row.Write do yield! copyAccess "Emission.Memory.ArrayCopies.Write" row
