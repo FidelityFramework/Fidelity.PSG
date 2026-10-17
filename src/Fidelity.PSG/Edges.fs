@@ -136,6 +136,7 @@ type MemoryProof = {
 [<RequireQualifiedAccess>]
 type MemoryStringPremise =
     | Snapshot
+    | Checked of CheckedStringConstruction
     | ToBytesSnapshot
     | Copy
     | Storage of lower: bigint * upper: bigint * representation: string
@@ -333,6 +334,8 @@ type EdgeRole =
     | StringByteRange of lower: bigint * upper: bigint
     /// [original input; fresh copy] -> conversion; copy preserves string immutability.
     | StringByteSnapshot
+    /// Exact private-copy/validator/native-outcome/retirement incidence.
+    | StringCheckedConstruction of CheckedStringConstruction
     /// [immutable string; internal byte view; fresh copy] -> public array conversion.
     | StringToBytesSnapshot
     /// Complete storage range establishes ASCII text.

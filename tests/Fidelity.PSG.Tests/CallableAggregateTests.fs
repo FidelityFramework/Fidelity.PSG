@@ -44,7 +44,7 @@ let private renewWithSlots slotIds revision =
     let symbols = implementations |> List.choose (fun id -> c.Symbols.TryFind id |> Option.map (fun symbol -> id, symbol))
     let account : CallableAggregateDependencyAccount =
         { Occurrence = NodeId 1; Slots = slots; Values = values; Carriers = carriers; Contracts = contracts
-          Flows = []; Joins = []; Participants = participants; Sources = sources; Claims = claims; Symbols = symbols; Inactivity = [] }
+          Flows = []; Joins = []; Participants = participants; Sources = sources; Claims = claims; Symbols = symbols; Inactivity = []; MemoryPolicy = None }
     publish { c with AggregateDependencies = Map.ofList [NodeId 1, account] } revision
 
 let private renew revision = renewWithSlots [101] revision
@@ -155,7 +155,7 @@ let private fixture union captured native =
         { Occurrence = NodeId 1; Aggregate = NodeId 1; Slot = NodeId 101; Alternatives = alternatives
           Selector = Some {Lower = 0; UpperExclusive = 2; Storage = Some(NodeId 6); Slot = Some(SettledSlot.Integer(8, None)); ByteOffset = Some 0}
           FormationInputs = [NodeId 30; NodeId 31]; Value = Some(NodeId 30); SelectedAlternative = Some 0
-          Operation = CallableAggregateOperation.Construct; Frontier = None; Tag = tag
+          Operation = CallableAggregateOperation.Construct; Frontier = None; Tag = tag; ResultRetirement = None
           Bytes = (if captured then 48 else 1)
           Alignment = (if captured then 8 else 1)
           Participants = participants }

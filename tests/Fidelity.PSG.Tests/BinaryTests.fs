@@ -114,7 +114,7 @@ let ``absence conversion binary retains exact promise content and source plan`` 
         {Form = "record"; Text = ["current"; "λ"]; Numbers = [-1I; 2I]; References = [NodeId 73]
          Children = [NodeId 80; NodeId 81]; Parent = Some(NodeId 70); SourceType = Build.unitType}] }
   let model : OptionalEntryAbsenceArgumentConversionModel =
-    { Call = NodeId 100; Parameter = 2; Actual = NodeId 101; Construction = NodeId 102; SourceCase = 0; Absence = account.Quote
+    { Call = NodeId 100; Parameter = 2; Actual = NodeId 101; Construction = NodeId 102; SourceCase = 0; Absence = account.Quote; ResultRetirement = None
       Arms = [{CaseOrdinal = 0; Choice = OptionalEntryAbsencePlanChoice.AbsentEntry}
               {CaseOrdinal = 1; Choice = OptionalEntryAbsencePlanChoice.RequiresClosedEntry}] }
   let body = ObligationBody.OptionalEntryAbsenceArgumentConversion model

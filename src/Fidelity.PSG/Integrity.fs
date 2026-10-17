@@ -709,6 +709,40 @@ module Integrity =
         let representation part site expected =
             if revision.Emission.Numeric.OccurrenceRepresentations.TryFind site = Some(Ok expected) then []
             else [missingRow part "Emission.Numeric.OccurrenceRepresentations with the exact physical carrier" site]
+        let checkedString part (row:CheckedStringConstruction) =
+            let kind id = revision.Nodes.TryFind id |> Option.map _.Kind
+            let operation id name =
+                match kind id with
+                | Some(SemanticKind.Application(fn,[actual])) when actual=row.Snapshot ->
+                    match kind fn with
+                    | Some(SemanticKind.Intrinsic info) -> info.Module=IntrinsicModule.String && info.Operation=name
+                    | _ -> false
+                | _ -> false
+            [ for id in [row.Owner;row.Input;row.Snapshot;row.Length;row.Validation;row.Decision;row.Text;row.Success;row.Failure;row.Retirement] do
+                  yield! body part id
+              if row.Validator<>"RFC3629-v1" || not(operation row.Validation "validateUtf8") ||
+                 not(operation row.Text "fromBytes") || not(operation row.Retirement "retireSnapshot") then
+                  yield defect part row.Owner "The checked text validator/view/retirement does not name the exact private snapshot and validator contract."
+              match kind row.Success,kind row.Failure,kind row.Decision with
+              | Some(SemanticKind.DUConstruct("ValueSome",1,Some text,None)),Some(SemanticKind.DUConstruct("ValueNone",0,None,None)),
+                Some(SemanticKind.IfThenElse(guard,success,Some failed)) when text=row.Text && guard=row.Validation && success=row.Success ->
+                  match kind failed with
+                  | Some(SemanticKind.Sequential [retirement;failure]) when retirement=row.Retirement && failure=row.Failure -> ()
+                  | _ -> yield defect part row.Owner "The checked text failure branch lost its exact discard-before-ValueNone relation."
+              | _ -> yield defect part row.Owner "The checked text native cases are not selected by their exact validation outcome."
+              for site in [row.Success;row.Failure] do
+                  match memory.Operations.TryFind site with
+                  | Some(MemoryWitnessOperation.ConstructedValue storage) when storage.Site=site && storage.Owner=row.Owner && storage.Construction=row &&
+                      revision.Emission.Numeric.SourceTypes.TryFind site=Some storage.SourceType &&
+                      (match storage.Residence with MemoryResidence.Stack _ -> true | _ -> false) -> ()
+                  | _ -> yield missingRow part "exact source-authorized checked native-case storage" site
+              match memory.Operations.TryFind row.Text with
+              | Some(MemoryWitnessOperation.StringView view) when view.Checked=Some row && view.Owner=row.Owner && view.Source=row.Snapshot -> ()
+              | _ -> yield missingRow part "exact current checked string view" row.Text
+              match memory.Operations.TryFind row.Validation,memory.Operations.TryFind row.Retirement with
+              | Some(MemoryWitnessOperation.Utf8Validation validation),Some(MemoryWitnessOperation.SnapshotRetirement retirement)
+                  when validation.Construction=row && retirement.Construction=row && validation.Allocation=retirement.Allocation -> ()
+              | _ -> yield missingRow part "exact current validator and retirement operations" row.Owner ]
         [ for KeyValue(key, operation) in memory.Operations do
               let site =
                   match operation with
@@ -719,6 +753,9 @@ module Integrity =
                   | MemoryWitnessOperation.ArrayAllocation row -> row.Site
                   | MemoryWitnessOperation.Address row -> row.Site
                   | MemoryWitnessOperation.StringView row -> row.Site
+                  | MemoryWitnessOperation.Utf8Validation row -> row.Site
+                  | MemoryWitnessOperation.SnapshotRetirement row -> row.Site
+                  | MemoryWitnessOperation.ConstructedValue row -> row.Site
               if key <> site then yield defect "Emission.Memory.Operations.Site" key "A memory operation is filed under a different site."
               yield! body "Emission.Memory.Operations.Site" site
               match operation with
@@ -794,6 +831,10 @@ module Integrity =
                   yield! representation "Emission.Memory.Operations.StringView.SourceCarrier" row.Source row.SourceCarrier
                   yield! representation "Emission.Memory.Operations.StringView.ResultCarrier" row.Site row.ResultCarrier
                   yield! scalarRow revision "Emission.Memory.Operations.StringView.Extent" row.Extent.Site row.Extent
+                  for construction in Option.toList row.Checked do
+                      yield! checkedString "Emission.Memory.Operations.StringView.Checked" construction
+                      if construction.Text<>row.Site || construction.Owner<>row.Owner || construction.Snapshot<>row.Snapshot || row.Direction<>MemoryStringViewDirection.FromBytes then
+                          yield defect "Emission.Memory.Operations.StringView.Checked" row.Site "The validated success view identifies a different checked snapshot or native outcome."
                   match memory.ArrayCopies.TryFind row.Snapshot with
                   | Some copy when copy.Site = row.Snapshot && copy.CountCarrier = row.Extent ->
                       match row.Direction with
@@ -803,6 +844,80 @@ module Integrity =
                           yield defect "Emission.Memory.Operations.StringView.Snapshot" row.Site "The snapshot copy reads a different internal string view."
                       | _ -> ()
                   | _ -> yield missingRow "Emission.Memory.Operations.StringView.Snapshot" "Emission.Memory.ArrayCopies with the exact snapshot and count carrier" row.Snapshot
+              | MemoryWitnessOperation.Utf8Validation row ->
+                  let part="Emission.Memory.Operations.Utf8Validation"
+                  yield! checkedString part row.Construction
+                  yield! representation (part+".SourceCarrier") row.Construction.Snapshot row.SourceCarrier
+                  if row.Site<>row.Construction.Validation || memory.ArrayCopies.TryFind row.Construction.Snapshot<>Some row.Copy ||
+                     row.Copy.Allocation<>Some row.Allocation.Site ||
+                     memory.Operations.TryFind row.Allocation.Site<>Some(MemoryWitnessOperation.ArrayAllocation row.Allocation) then
+                      yield defect part row.Site "The UTF-8 scan lost its exact private copy and source-authorized allocation."
+                  if row.Copy.Source<>row.Construction.Input || row.Copy.Count<>row.Construction.Length then
+                      yield defect part row.Site "The UTF-8 copy source/count differs from its exact construction input/length."
+              | MemoryWitnessOperation.ConstructedValue row ->
+                  let part="Emission.Memory.Operations.ConstructedValue"
+                  yield! body (part+".Owner") row.Owner
+                  yield! residence part row.Residence
+                  for useId in row.Uses do yield! body (part+".Uses") useId
+                  if not(row.Uses.Contains row.Site) || row.Owner<>row.Construction.Owner ||
+                     (row.Site<>row.Construction.Success && row.Site<>row.Construction.Failure) ||
+                     revision.Emission.Numeric.SourceTypes.TryFind row.Site<>Some row.SourceType then
+                      yield defect part row.Site "The constructed instance lost its exact source type, owner or complete held use support."
+                  yield! checkedString part row.Construction
+                  let claim id expected support =
+                      match revision.CurrentClaims.TryFind id,revision.ObligationSources.TryFind id with
+                      | Some info,Some rows when info.Body=expected &&
+                          (support |> List.forall(fun source -> rows |> List.exists(List.contains source))) -> true
+                      | _ -> false
+                  match revision.Emission.Numeric.Layouts.TryFind row.SourceType,row.Residence with
+                  | Some(SettledLayout.Union(_,_,Some bytes,Some alignment)),MemoryResidence.Stack(scope,space) when bytes>0 && alignment>0 ->
+                      match revision.Nodes.TryFind scope with
+                      | Some {Kind=SemanticKind.Lambda _} -> ()
+                      | _ -> yield defect part row.Site "The constructed instance's stack lifetime has no exact activation scope."
+                      let support=[row.Site;row.Platform;scope;space]
+                      if not(claim row.Layout (ObligationBody.ContinuationLayout([0,bytes,alignment],bytes,alignment)) support) then
+                          yield defect part row.Site "The constructed instance lost its exact current layout proof supported by this site."
+                      let capacityClaims site residence proofs =
+                          match residence with
+                          | MemoryResidence.Stack(activation,declaredSpace) when declaredSpace=space ->
+                              revision.CurrentClaims |> Map.toList |> List.choose(fun (id,info) ->
+                                  match info.Body,revision.ObligationSources.TryFind id with
+                                  | ObligationBody.CapacityFits(_,capacity),Some rows when proofs |> Set.contains id ->
+                                      if [site;activation;declaredSpace] |> List.forall(fun source -> rows |> List.exists(List.contains source)) then Some capacity else None
+                                  | _ -> None)
+                          | _ -> []
+                      // Reuse the exact snapshot's authored allocation claim;
+                      // the omitted platform AST remains source-owned.
+                      let snapshotCapacities=
+                          match memory.Operations.TryFind row.Construction.Validation with
+                          | Some(MemoryWitnessOperation.Utf8Validation validation) when validation.Construction=row.Construction && validation.Allocation.Residence=row.Residence ->
+                              capacityClaims validation.Allocation.Site validation.Allocation.Residence validation.Allocation.Participants |> List.distinct
+                          | _ -> []
+                      let sameSpaceCapacities=
+                          memory.Operations.Values |> Seq.collect(function
+                              | MemoryWitnessOperation.ArrayAllocation allocation -> capacityClaims allocation.Site allocation.Residence allocation.Participants
+                              | MemoryWitnessOperation.ArrayLiteral allocation -> capacityClaims allocation.Site allocation.Residence allocation.Participants
+                              | MemoryWitnessOperation.ConstructedValue value -> capacityClaims value.Site value.Residence (Set.singleton value.Capacity)
+                              | _ -> []) |> Set.ofSeq
+                      match snapshotCapacities with
+                      | [capacity] ->
+                          if not(claim row.Capacity (ObligationBody.CapacityFits(int64 bytes,capacity)) support) then
+                              yield defect part row.Site "The constructed instance lost its exact declared-space capacity proof supported by this site."
+                          if sameSpaceCapacities<>Set.singleton capacity then
+                              yield defect part row.Site "The same-space source allocation capacity claims disagree."
+                      | _ -> yield defect part row.Site "The constructed instance lacks its exact same-residence snapshot capacity claim."
+                  | _ -> yield defect part row.Site "The constructed instance lacks its exact settled union layout and source stack residence."
+                  match revision.Nodes.TryFind row.Site with
+                  | Some {Kind=SemanticKind.DUConstruct _} -> ()
+                  | _ -> yield defect part row.Site "The constructed-value storage site is not its exact native construction."
+              | MemoryWitnessOperation.SnapshotRetirement row ->
+                  let part="Emission.Memory.Operations.SnapshotRetirement"
+                  yield! checkedString part row.Construction
+                  yield! residence part row.Allocation.Residence
+                  if row.Site<>row.Construction.Retirement ||
+                     memory.Operations.TryFind row.Allocation.Site<>Some(MemoryWitnessOperation.ArrayAllocation row.Allocation) ||
+                     (match row.Allocation.Residence with MemoryResidence.Stack _ -> false | _ -> true) then
+                      yield defect part row.Site "The unsuccessful snapshot discard lacks its exact existing stack-scope allocation authority."
           for KeyValue(key, row) in memory.ArrayCopies do
               if key <> row.Site then yield defect "Emission.Memory.ArrayCopies.Site" key "An array copy is filed under a different site."
               for id in [row.Site; row.Source; row.SourceOffset; row.Destination; row.DestinationOffset; row.Count] @ Option.toList row.Loop do

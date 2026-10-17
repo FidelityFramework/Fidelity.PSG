@@ -608,6 +608,18 @@ module IntegrityNamed =
         @ (value.Guard |> Option.toList |> List.collect (fun v0 -> [ v0 ]))
         @ [ value.Body ]
 
+    and private idsOfCheckedStringConstruction (value: Fidelity.PSG.CheckedStringConstruction) : NodeId list =
+        [ value.Owner ]
+        @ [ value.Input ]
+        @ [ value.Snapshot ]
+        @ [ value.Length ]
+        @ [ value.Validation ]
+        @ [ value.Decision ]
+        @ [ value.Text ]
+        @ [ value.Success ]
+        @ [ value.Failure ]
+        @ [ value.Retirement ]
+
     and private idsOfChildDisposition (value: Fidelity.PSG.ChildDisposition) : NodeId list =
         (idsOfChildTraversal value.Traversal)
 
@@ -745,6 +757,7 @@ module IntegrityNamed =
         | Fidelity.PSG.EdgeRole.StringByteRead -> []
         | Fidelity.PSG.EdgeRole.StringByteRange(_, _) -> []
         | Fidelity.PSG.EdgeRole.StringByteSnapshot -> []
+        | Fidelity.PSG.EdgeRole.StringCheckedConstruction(a0) -> (idsOfCheckedStringConstruction a0)
         | Fidelity.PSG.EdgeRole.StringToBytesSnapshot -> []
         | Fidelity.PSG.EdgeRole.StringAscii -> []
         | Fidelity.PSG.EdgeRole.StringUtf8Constant(_) -> []
@@ -1172,6 +1185,16 @@ module IntegrityNamed =
         @ (idsOfRequirementWitness value.Requirement)
         @ (value.Participants |> Set.toList |> List.collect (fun v0 -> [ v0 ]))
 
+    and private idsOfMemoryConstructedValueWitness (value: Fidelity.PSG.MemoryConstructedValueWitness) : NodeId list =
+        [ value.Site ]
+        @ [ value.Owner ]
+        @ (idsOfMemoryResidence value.Residence)
+        @ (value.Uses |> Set.toList |> List.collect (fun v0 -> [ v0 ]))
+        @ (idsOfCheckedStringConstruction value.Construction)
+        @ [ value.Platform ]
+        @ [ value.Layout ]
+        @ [ value.Capacity ]
+
     and private idsOfMemoryDomain (value: Fidelity.PSG.MemoryDomain) : NodeId list =
         (value.Premises |> Map.toList |> List.collect (fun (k0, h0) -> [ k0 ] @ (idsOfBoundarySourcePremise h0)))
         @ (value.Meets |> Map.toList |> List.collect (fun (k0, h0) -> [ k0 ] @ (h0 |> List.collect (fun v1 -> (idsOfMeet v1)))))
@@ -1213,9 +1236,15 @@ module IntegrityNamed =
         | Fidelity.PSG.MemoryResidence.Program(a0) -> (idsOfProgramStorageIdentity a0)
         | Fidelity.PSG.MemoryResidence.ImmutableProgram(a0) -> [ a0 ]
 
+    and private idsOfMemorySnapshotRetirementWitness (value: Fidelity.PSG.MemorySnapshotRetirementWitness) : NodeId list =
+        [ value.Site ]
+        @ (idsOfCheckedStringConstruction value.Construction)
+        @ (idsOfMemoryArrayAllocationWitness value.Allocation)
+
     and private idsOfMemoryStringPremise (value: Fidelity.PSG.MemoryStringPremise) : NodeId list =
         match value with
         | Fidelity.PSG.MemoryStringPremise.Snapshot -> []
+        | Fidelity.PSG.MemoryStringPremise.Checked(a0) -> (idsOfCheckedStringConstruction a0)
         | Fidelity.PSG.MemoryStringPremise.ToBytesSnapshot -> []
         | Fidelity.PSG.MemoryStringPremise.Copy -> []
         | Fidelity.PSG.MemoryStringPremise.Storage(_, _, _) -> []
@@ -1236,11 +1265,19 @@ module IntegrityNamed =
         @ [ value.Source ]
         @ [ value.Owner ]
         @ [ value.Snapshot ]
+        @ (value.Checked |> Option.toList |> List.collect (fun v0 -> (idsOfCheckedStringConstruction v0)))
         @ (idsOfValueRepresentation value.SourceCarrier)
         @ (idsOfValueRepresentation value.ResultCarrier)
         @ [ value.Declaration ]
         @ (idsOfScalarCarrier value.Extent)
         @ (value.Participants |> Set.toList |> List.collect (fun v0 -> [ v0 ]))
+
+    and private idsOfMemoryUtf8ValidationWitness (value: Fidelity.PSG.MemoryUtf8ValidationWitness) : NodeId list =
+        [ value.Site ]
+        @ (idsOfCheckedStringConstruction value.Construction)
+        @ (idsOfMemoryArrayCopyWitness value.Copy)
+        @ (idsOfMemoryArrayAllocationWitness value.Allocation)
+        @ (idsOfValueRepresentation value.SourceCarrier)
 
     and private idsOfMemoryWitnessOperation (value: Fidelity.PSG.MemoryWitnessOperation) : NodeId list =
         match value with
@@ -1251,6 +1288,9 @@ module IntegrityNamed =
         | Fidelity.PSG.MemoryWitnessOperation.ArrayAllocation(a0) -> (idsOfMemoryArrayAllocationWitness a0)
         | Fidelity.PSG.MemoryWitnessOperation.Address(a0) -> (idsOfMemoryAddressWitness a0)
         | Fidelity.PSG.MemoryWitnessOperation.StringView(a0) -> (idsOfMemoryStringViewWitness a0)
+        | Fidelity.PSG.MemoryWitnessOperation.Utf8Validation(a0) -> (idsOfMemoryUtf8ValidationWitness a0)
+        | Fidelity.PSG.MemoryWitnessOperation.SnapshotRetirement(a0) -> (idsOfMemorySnapshotRetirementWitness a0)
+        | Fidelity.PSG.MemoryWitnessOperation.ConstructedValue(a0) -> (idsOfMemoryConstructedValueWitness a0)
 
     and private idsOfMemoryWitnessProjection (value: Fidelity.PSG.MemoryWitnessProjection) : NodeId list =
         (value.Operations |> Map.toList |> List.collect (fun (k0, h0) -> [ k0 ] @ (idsOfMemoryWitnessOperation h0)))

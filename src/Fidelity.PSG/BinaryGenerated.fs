@@ -5,11 +5,11 @@ module internal BinaryGenerated =
     [<Literal>]
     let Format = 2u
     [<Literal>]
-    let Schema = 40
+    let Schema = 43
     [<Literal>]
-    let Fingerprint = "652E3397C3A073A8B648BF77D904A3D6A5ED2D148CA00E70DFF5B225DB682DDA"
+    let Fingerprint = "5C21AFD6E751DD30C49F285D70A01B7A6B2775FF9AD1080EDBFC50C5364A25BC"
     [<Literal>]
-    let NamedTypes = 332
+    let NamedTypes = 336
     [<Literal>]
     let RevisionFields = 17
     [<Literal>]
@@ -1584,6 +1584,22 @@ module internal BinaryGenerated =
         return leaveWrite state
     }
 
+    and write_Fidelity_PSG_CheckedStringConstruction (state: WriteState) (value: global.Fidelity.PSG.CheckedStringConstruction) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = write_Fidelity_PSG_NodeId state value.``Owner``
+        let! state = write_Fidelity_PSG_NodeId state value.``Input``
+        let! state = write_Fidelity_PSG_NodeId state value.``Snapshot``
+        let! state = write_Fidelity_PSG_NodeId state value.``Length``
+        let! state = write_Fidelity_PSG_NodeId state value.``Validation``
+        let! state = write_Fidelity_PSG_NodeId state value.``Decision``
+        let! state = write_Fidelity_PSG_NodeId state value.``Text``
+        let! state = write_Fidelity_PSG_NodeId state value.``Success``
+        let! state = write_Fidelity_PSG_NodeId state value.``Failure``
+        let! state = write_Fidelity_PSG_NodeId state value.``Retirement``
+        let! state = writeString state value.``Validator``
+        return leaveWrite state
+    }
+
     and write_Fidelity_PSG_ChildDisposition (state: WriteState) (value: global.Fidelity.PSG.ChildDisposition) : Result<WriteState, BinaryError> = result {
         let! state = enterWrite state
         let! state = writeI32 state value.``Ordinal``
@@ -2143,565 +2159,570 @@ module internal BinaryGenerated =
                 let! state = writeTag state 46
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``StringToBytesSnapshot`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``StringCheckedConstruction``(a0) -> result {
                 let! state = writeTag state 47
+                let! state = write_Fidelity_PSG_CheckedStringConstruction state a0
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``StringAscii`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``StringToBytesSnapshot`` -> result {
                 let! state = writeTag state 48
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``StringUtf8Constant``(a0) -> result {
+            | global.Fidelity.PSG.EdgeRole.``StringAscii`` -> result {
                 let! state = writeTag state 49
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.EdgeRole.``StringUtf8Constant``(a0) -> result {
+                let! state = writeTag state 50
                 let! state = (writeList writeU8) state a0
                 return leaveWrite state
               }
             | global.Fidelity.PSG.EdgeRole.``LoopInduction``(a0, a1) -> result {
-                let! state = writeTag state 50
+                let! state = writeTag state 51
                 let! state = writeBool state a0
                 let! state = writeBool state a1
                 return leaveWrite state
               }
             | global.Fidelity.PSG.EdgeRole.``LoopAccumulation`` -> result {
-                let! state = writeTag state 51
-                return leaveWrite state
-              }
-            | global.Fidelity.PSG.EdgeRole.``SequencePullBound`` -> result {
                 let! state = writeTag state 52
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``SequencePullComposition``(a0, a1) -> result {
+            | global.Fidelity.PSG.EdgeRole.``SequencePullBound`` -> result {
                 let! state = writeTag state 53
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.EdgeRole.``SequencePullComposition``(a0, a1) -> result {
+                let! state = writeTag state 54
                 let! state = writeI32 state a0
                 let! state = writeBigInteger state a1
                 return leaveWrite state
               }
             | global.Fidelity.PSG.EdgeRole.``SequenceAccumulation`` -> result {
-                let! state = writeTag state 54
+                let! state = writeTag state 55
                 return leaveWrite state
               }
             | global.Fidelity.PSG.EdgeRole.``LoopRangePending``(a0) -> result {
-                let! state = writeTag state 55
+                let! state = writeTag state 56
                 let! state = write_Fidelity_PSG_LoopRangeResidual state a0
                 return leaveWrite state
               }
             | global.Fidelity.PSG.EdgeRole.``Callee`` -> result {
-                let! state = writeTag state 56
-                return leaveWrite state
-              }
-            | global.Fidelity.PSG.EdgeRole.``Argument`` -> result {
                 let! state = writeTag state 57
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``Parameter`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``Argument`` -> result {
                 let! state = writeTag state 58
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``Body`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``Parameter`` -> result {
                 let! state = writeTag state 59
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``Scrutinee`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``Body`` -> result {
                 let! state = writeTag state 60
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``CaseBinding`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``Scrutinee`` -> result {
                 let! state = writeTag state 61
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``CaseGuard`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``CaseBinding`` -> result {
                 let! state = writeTag state 62
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``CaseBody`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``CaseGuard`` -> result {
                 let! state = writeTag state 63
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``Guard`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``CaseBody`` -> result {
                 let! state = writeTag state 64
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``ThenBranch`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``Guard`` -> result {
                 let! state = writeTag state 65
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``ElseBranch`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``ThenBranch`` -> result {
                 let! state = writeTag state 66
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``LoopStart`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``ElseBranch`` -> result {
                 let! state = writeTag state 67
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``LoopFinish`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``LoopStart`` -> result {
                 let! state = writeTag state 68
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``Collection`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``LoopFinish`` -> result {
                 let! state = writeTag state 69
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``Handler`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``Collection`` -> result {
                 let! state = writeTag state 70
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``Cleanup`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``Handler`` -> result {
                 let! state = writeTag state 71
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``Element`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``Cleanup`` -> result {
                 let! state = writeTag state 72
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``FieldValue`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``Element`` -> result {
                 let! state = writeTag state 73
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``CopyFrom`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``FieldValue`` -> result {
                 let! state = writeTag state 74
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``Payload`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``CopyFrom`` -> result {
                 let! state = writeTag state 75
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``ArenaHint`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``Payload`` -> result {
                 let! state = writeTag state 76
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``AssignTarget`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``ArenaHint`` -> result {
                 let! state = writeTag state 77
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``AssignValue`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``AssignTarget`` -> result {
                 let! state = writeTag state 78
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``Subject`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``AssignValue`` -> result {
                 let! state = writeTag state 79
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``Index`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``Subject`` -> result {
                 let! state = writeTag state 80
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``Member`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``Index`` -> result {
                 let! state = writeTag state 81
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``Operand`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``Member`` -> result {
                 let! state = writeTag state 82
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``InterpolationPart`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``Operand`` -> result {
                 let! state = writeTag state 83
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``Attached`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``InterpolationPart`` -> result {
                 let! state = writeTag state 84
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``Definition`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``Attached`` -> result {
                 let! state = writeTag state 85
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``TypeDefinition`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``Definition`` -> result {
                 let! state = writeTag state 86
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``IntrinsicImplementation`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``TypeDefinition`` -> result {
                 let! state = writeTag state 87
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``Symbol`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``IntrinsicImplementation`` -> result {
                 let! state = writeTag state 88
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``EnrichedWith`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``Symbol`` -> result {
                 let! state = writeTag state 89
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``ProgramInitialization`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``EnrichedWith`` -> result {
                 let! state = writeTag state 90
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``ProgramInitializationPending``(a0) -> result {
+            | global.Fidelity.PSG.EdgeRole.``ProgramInitialization`` -> result {
                 let! state = writeTag state 91
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.EdgeRole.``ProgramInitializationPending``(a0) -> result {
+                let! state = writeTag state 92
                 let! state = writeString state a0
                 return leaveWrite state
               }
             | global.Fidelity.PSG.EdgeRole.``ProgramInitializer`` -> result {
-                let! state = writeTag state 92
-                return leaveWrite state
-              }
-            | global.Fidelity.PSG.EdgeRole.``ProgramUnitActivation`` -> result {
                 let! state = writeTag state 93
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``ProgramEntryCall`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``ProgramUnitActivation`` -> result {
                 let! state = writeTag state 94
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``ProgramValueIntent`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``ProgramEntryCall`` -> result {
                 let! state = writeTag state 95
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``ProgramValue`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``ProgramValueIntent`` -> result {
                 let! state = writeTag state 96
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``ProgramActivationCall`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``ProgramValue`` -> result {
                 let! state = writeTag state 97
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``ProgramActivationCoverage`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``ProgramActivationCall`` -> result {
                 let! state = writeTag state 98
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``SequenceInputBorrow`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``ProgramActivationCoverage`` -> result {
                 let! state = writeTag state 99
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``CallableInvocationBorrow`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``SequenceInputBorrow`` -> result {
                 let! state = writeTag state 100
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``BranchOccurrence`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``CallableInvocationBorrow`` -> result {
                 let! state = writeTag state 101
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``CaptureOrigin`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``BranchOccurrence`` -> result {
                 let! state = writeTag state 102
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``EnvironmentCapture``(a0) -> result {
+            | global.Fidelity.PSG.EdgeRole.``CaptureOrigin`` -> result {
                 let! state = writeTag state 103
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.EdgeRole.``EnvironmentCapture``(a0) -> result {
+                let! state = writeTag state 104
                 let! state = writeBool state a0
                 return leaveWrite state
               }
             | global.Fidelity.PSG.EdgeRole.``EnvironmentInitializer`` -> result {
-                let! state = writeTag state 104
-                return leaveWrite state
-              }
-            | global.Fidelity.PSG.EdgeRole.``EnvironmentFormal`` -> result {
                 let! state = writeTag state 105
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``LazyInstance`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``EnvironmentFormal`` -> result {
                 let! state = writeTag state 106
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``LazyCapture``(a0) -> result {
+            | global.Fidelity.PSG.EdgeRole.``LazyInstance`` -> result {
                 let! state = writeTag state 107
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.EdgeRole.``LazyCapture``(a0) -> result {
+                let! state = writeTag state 108
                 let! state = writeBool state a0
                 return leaveWrite state
               }
             | global.Fidelity.PSG.EdgeRole.``LazyMemoization`` -> result {
-                let! state = writeTag state 108
-                return leaveWrite state
-              }
-            | global.Fidelity.PSG.EdgeRole.``LazyResultDestination`` -> result {
                 let! state = writeTag state 109
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``LazyResultCall`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``LazyResultDestination`` -> result {
                 let! state = writeTag state 110
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``LazyResidence`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``LazyResultCall`` -> result {
                 let! state = writeTag state 111
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``LazyLayout`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``LazyResidence`` -> result {
                 let! state = writeTag state 112
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``EnvironmentResidence`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``LazyLayout`` -> result {
                 let! state = writeTag state 113
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``EnvironmentReservation``(a0) -> result {
+            | global.Fidelity.PSG.EdgeRole.``EnvironmentResidence`` -> result {
                 let! state = writeTag state 114
-                let! state = (writeList write_Fidelity_PSG_Participant) state a0
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``ProgramInitializationOrder``(a0) -> result {
+            | global.Fidelity.PSG.EdgeRole.``EnvironmentReservation``(a0) -> result {
                 let! state = writeTag state 115
                 let! state = (writeList write_Fidelity_PSG_Participant) state a0
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``ProgramInitializationOrderHistory``(a0) -> result {
+            | global.Fidelity.PSG.EdgeRole.``ProgramInitializationOrder``(a0) -> result {
                 let! state = writeTag state 116
                 let! state = (writeList write_Fidelity_PSG_Participant) state a0
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``EnvironmentResultDestination`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``ProgramInitializationOrderHistory``(a0) -> result {
                 let! state = writeTag state 117
+                let! state = (writeList write_Fidelity_PSG_Participant) state a0
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``EnvironmentResultCall`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``EnvironmentResultDestination`` -> result {
                 let! state = writeTag state 118
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``SequenceCaptureFormation`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``EnvironmentResultCall`` -> result {
                 let! state = writeTag state 119
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``SequenceCaptureInitializer``(a0) -> result {
+            | global.Fidelity.PSG.EdgeRole.``SequenceCaptureFormation`` -> result {
                 let! state = writeTag state 120
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.EdgeRole.``SequenceCaptureInitializer``(a0) -> result {
+                let! state = writeTag state 121
                 let! state = writeBool state a0
                 return leaveWrite state
               }
             | global.Fidelity.PSG.EdgeRole.``SequenceEnvironmentBorrow`` -> result {
-                let! state = writeTag state 121
-                return leaveWrite state
-              }
-            | global.Fidelity.PSG.EdgeRole.``SequenceResultCapture`` -> result {
                 let! state = writeTag state 122
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``Delimiter`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``SequenceResultCapture`` -> result {
                 let! state = writeTag state 123
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``DelegationOrigin`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``Delimiter`` -> result {
                 let! state = writeTag state 124
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``IteratorCurrentAdmitted`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``DelegationOrigin`` -> result {
                 let! state = writeTag state 125
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``SequenceElementAdmission`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``IteratorCurrentAdmitted`` -> result {
                 let! state = writeTag state 126
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``SequenceElementOwner`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``SequenceElementAdmission`` -> result {
                 let! state = writeTag state 127
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``SequenceElementPayload`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``SequenceElementOwner`` -> result {
                 let! state = writeTag state 128
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``SequenceElementUnknown`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``SequenceElementPayload`` -> result {
                 let! state = writeTag state 129
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``SequencePullBody`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``SequenceElementUnknown`` -> result {
                 let! state = writeTag state 130
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``SequenceInitialize`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``SequencePullBody`` -> result {
                 let! state = writeTag state 131
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``SequenceFamilyLayout`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``SequenceInitialize`` -> result {
                 let! state = writeTag state 132
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``SequenceFamilyCurrent`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``SequenceFamilyLayout`` -> result {
                 let! state = writeTag state 133
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``SequenceTemplateCopy`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``SequenceFamilyCurrent`` -> result {
                 let! state = writeTag state 134
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``SequenceEffectUnknown`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``SequenceTemplateCopy`` -> result {
                 let! state = writeTag state 135
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``SuspensionCut``(a0) -> result {
+            | global.Fidelity.PSG.EdgeRole.``SequenceEffectUnknown`` -> result {
                 let! state = writeTag state 136
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.EdgeRole.``SuspensionCut``(a0) -> result {
+                let! state = writeTag state 137
                 let! state = writeI32 state a0
                 return leaveWrite state
               }
             | global.Fidelity.PSG.EdgeRole.``SuspensionLiveAcross`` -> result {
-                let! state = writeTag state 137
+                let! state = writeTag state 138
                 return leaveWrite state
               }
             | global.Fidelity.PSG.EdgeRole.``SuspensionResume``(a0) -> result {
-                let! state = writeTag state 138
-                let! state = writeI32 state a0
-                return leaveWrite state
-              }
-            | global.Fidelity.PSG.EdgeRole.``SuspensionResumeAction``(a0) -> result {
                 let! state = writeTag state 139
                 let! state = writeI32 state a0
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``SuspensionCompleted`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``SuspensionResumeAction``(a0) -> result {
                 let! state = writeTag state 140
+                let! state = writeI32 state a0
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.EdgeRole.``SuspensionCompleted`` -> result {
+                let! state = writeTag state 141
                 return leaveWrite state
               }
             | global.Fidelity.PSG.EdgeRole.``EvaluationOperand``(a0) -> result {
-                let! state = writeTag state 141
+                let! state = writeTag state 142
                 let! state = write_Fidelity_PSG_EvaluationAccess state a0
                 return leaveWrite state
               }
             | global.Fidelity.PSG.EdgeRole.``EvaluationFlow``(a0, a1, a2) -> result {
-                let! state = writeTag state 142
+                let! state = writeTag state 143
                 let! state = write_Fidelity_PSG_EvaluationPort state a0
                 let! state = write_Fidelity_PSG_EvaluationPort state a1
                 let! state = write_Fidelity_PSG_EvaluationTransfer state a2
                 return leaveWrite state
               }
             | global.Fidelity.PSG.EdgeRole.``EvaluationCapture`` -> result {
-                let! state = writeTag state 143
-                return leaveWrite state
-              }
-            | global.Fidelity.PSG.EdgeRole.``EvaluationRoot`` -> result {
                 let! state = writeTag state 144
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``EvaluationPending``(a0) -> result {
+            | global.Fidelity.PSG.EdgeRole.``EvaluationRoot`` -> result {
                 let! state = writeTag state 145
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.EdgeRole.``EvaluationPending``(a0) -> result {
+                let! state = writeTag state 146
                 let! state = write_Fidelity_PSG_EvaluationResidual state a0
                 return leaveWrite state
               }
             | global.Fidelity.PSG.EdgeRole.``ContinuationCase``(a0) -> result {
-                let! state = writeTag state 146
+                let! state = writeTag state 147
                 let! state = writeI32 state a0
                 return leaveWrite state
               }
             | global.Fidelity.PSG.EdgeRole.``MatchRequirement`` -> result {
-                let! state = writeTag state 147
-                return leaveWrite state
-              }
-            | global.Fidelity.PSG.EdgeRole.``ContinuationDefault`` -> result {
                 let! state = writeTag state 148
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``FrameSlot`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``ContinuationDefault`` -> result {
                 let! state = writeTag state 149
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``ContinuationValue`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``FrameSlot`` -> result {
                 let! state = writeTag state 150
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``ContinuationSlotAccess`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``ContinuationValue`` -> result {
                 let! state = writeTag state 151
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``ContinuationRegion`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``ContinuationSlotAccess`` -> result {
                 let! state = writeTag state 152
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``ContinuationBorrow`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``ContinuationRegion`` -> result {
                 let! state = writeTag state 153
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``AggregateCopy`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``ContinuationBorrow`` -> result {
                 let! state = writeTag state 154
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``AggregateSnapshot`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``AggregateCopy`` -> result {
                 let! state = writeTag state 155
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``SequenceTemplateBorrow`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``AggregateSnapshot`` -> result {
                 let! state = writeTag state 156
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``SequenceProgramBorrow`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``SequenceTemplateBorrow`` -> result {
                 let! state = writeTag state 157
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``SequenceSlotBorrow`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``SequenceProgramBorrow`` -> result {
                 let! state = writeTag state 158
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``Resides`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``SequenceSlotBorrow`` -> result {
                 let! state = writeTag state 159
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``Constrains`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``Resides`` -> result {
                 let! state = writeTag state 160
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``CallableReferenceOrigin`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``Constrains`` -> result {
                 let! state = writeTag state 161
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``CaptureReferenceOrigin`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``CallableReferenceOrigin`` -> result {
                 let! state = writeTag state 162
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``LoopLinearRecurrence`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``CaptureReferenceOrigin`` -> result {
                 let! state = writeTag state 163
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``EnvironmentInvocation`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``LoopLinearRecurrence`` -> result {
                 let! state = writeTag state 164
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``SequenceProgramStorage`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``EnvironmentInvocation`` -> result {
                 let! state = writeTag state 165
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``SchemeSpecialization`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``SequenceProgramStorage`` -> result {
                 let! state = writeTag state 166
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``LazyEffectRange`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``SchemeSpecialization`` -> result {
                 let! state = writeTag state 167
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``OrdinaryUnusedFormal`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``LazyEffectRange`` -> result {
                 let! state = writeTag state 168
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``OrdinaryUnusedActual`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``OrdinaryUnusedFormal`` -> result {
                 let! state = writeTag state 169
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``OrdinaryUnusedBindingInitializer`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``OrdinaryUnusedActual`` -> result {
                 let! state = writeTag state 170
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``OrdinaryInactiveImplementation`` -> result {
+            | global.Fidelity.PSG.EdgeRole.``OrdinaryUnusedBindingInitializer`` -> result {
                 let! state = writeTag state 171
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.EdgeRole.``OrdinaryBindingDemand``(a0) -> result {
+            | global.Fidelity.PSG.EdgeRole.``OrdinaryInactiveImplementation`` -> result {
                 let! state = writeTag state 172
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.EdgeRole.``OrdinaryBindingDemand``(a0) -> result {
+                let! state = writeTag state 173
                 let! state = write_Fidelity_PSG_BindingDemandEvidence state a0
                 return leaveWrite state
               }
             | global.Fidelity.PSG.EdgeRole.``OrdinaryBindingDemandPending``(a0, a1) -> result {
-                let! state = writeTag state 173
+                let! state = writeTag state 174
                 let! state = writeString state a0
                 let! state = write_Fidelity_PSG_BindingDemandEvidence state a1
                 return leaveWrite state
               }
             | global.Fidelity.PSG.EdgeRole.``OrdinaryBindingDemandHistory``(a0) -> result {
-                let! state = writeTag state 174
+                let! state = writeTag state 175
                 let! state = write_Fidelity_PSG_BindingDemandEvidence state a0
                 return leaveWrite state
               }
             | global.Fidelity.PSG.EdgeRole.``FiniteCellRange`` -> result {
-                let! state = writeTag state 175
+                let! state = writeTag state 176
                 return leaveWrite state
               }
             | global.Fidelity.PSG.EdgeRole.``BoundaryEntry``(a0) -> result {
-                let! state = writeTag state 176
+                let! state = writeTag state 177
                 let! state = write_Fidelity_PSG_BoundaryEntry state a0
                 return leaveWrite state
               }
             | global.Fidelity.PSG.EdgeRole.``BoundaryCallbackInvocation``(a0) -> result {
-                let! state = writeTag state 177
+                let! state = writeTag state 178
                 let! state = write_Fidelity_PSG_BoundaryCallbackInvocation state a0
                 return leaveWrite state
               }
             | global.Fidelity.PSG.EdgeRole.``BoundaryClosedEntry``(a0) -> result {
-                let! state = writeTag state 178
+                let! state = writeTag state 179
                 let! state = write_Fidelity_PSG_BoundaryClosedEntry state a0
                 return leaveWrite state
               }
             | global.Fidelity.PSG.EdgeRole.``BoundaryCallbackAbsence``(a0) -> result {
-                let! state = writeTag state 179
+                let! state = writeTag state 180
                 let! state = write_Fidelity_PSG_BoundaryCallbackAbsence state a0
                 return leaveWrite state
               }
@@ -3811,6 +3832,20 @@ module internal BinaryGenerated =
         return leaveWrite state
     }
 
+    and write_Fidelity_PSG_MemoryConstructedValueWitness (state: WriteState) (value: global.Fidelity.PSG.MemoryConstructedValueWitness) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = write_Fidelity_PSG_NodeId state value.``Site``
+        let! state = write_Fidelity_PSG_NodeId state value.``Owner``
+        let! state = write_Fidelity_PSG_TypeIdentity state value.``SourceType``
+        let! state = write_Fidelity_PSG_MemoryResidence state value.``Residence``
+        let! state = (writeSet write_Fidelity_PSG_NodeId) state value.``Uses``
+        let! state = write_Fidelity_PSG_CheckedStringConstruction state value.``Construction``
+        let! state = write_Fidelity_PSG_NodeId state value.``Platform``
+        let! state = write_Fidelity_PSG_NodeId state value.``Layout``
+        let! state = write_Fidelity_PSG_NodeId state value.``Capacity``
+        return leaveWrite state
+    }
+
     and write_Fidelity_PSG_MemoryDomain (state: WriteState) (value: global.Fidelity.PSG.MemoryDomain) : Result<WriteState, BinaryError> = result {
         let! state = enterWrite state
         let! state = (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_BoundarySourcePremise) state value.``Premises``
@@ -3904,6 +3939,14 @@ module internal BinaryGenerated =
               }
     }
 
+    and write_Fidelity_PSG_MemorySnapshotRetirementWitness (state: WriteState) (value: global.Fidelity.PSG.MemorySnapshotRetirementWitness) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = write_Fidelity_PSG_NodeId state value.``Site``
+        let! state = write_Fidelity_PSG_CheckedStringConstruction state value.``Construction``
+        let! state = write_Fidelity_PSG_MemoryArrayAllocationWitness state value.``Allocation``
+        return leaveWrite state
+    }
+
     and write_Fidelity_PSG_MemoryStringPremise (state: WriteState) (value: global.Fidelity.PSG.MemoryStringPremise) : Result<WriteState, BinaryError> = result {
         let! state = enterWrite state
         return!
@@ -3912,47 +3955,52 @@ module internal BinaryGenerated =
                 let! state = writeTag state 0
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.MemoryStringPremise.``ToBytesSnapshot`` -> result {
+            | global.Fidelity.PSG.MemoryStringPremise.``Checked``(a0) -> result {
                 let! state = writeTag state 1
+                let! state = write_Fidelity_PSG_CheckedStringConstruction state a0
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.MemoryStringPremise.``Copy`` -> result {
+            | global.Fidelity.PSG.MemoryStringPremise.``ToBytesSnapshot`` -> result {
                 let! state = writeTag state 2
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.MemoryStringPremise.``Storage``(a0, a1, a2) -> result {
+            | global.Fidelity.PSG.MemoryStringPremise.``Copy`` -> result {
                 let! state = writeTag state 3
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.MemoryStringPremise.``Storage``(a0, a1, a2) -> result {
+                let! state = writeTag state 4
                 let! state = writeBigInteger state a0
                 let! state = writeBigInteger state a1
                 let! state = writeString state a2
                 return leaveWrite state
               }
             | global.Fidelity.PSG.MemoryStringPremise.``Read`` -> result {
-                let! state = writeTag state 4
+                let! state = writeTag state 5
                 return leaveWrite state
               }
             | global.Fidelity.PSG.MemoryStringPremise.``ReadRange``(a0, a1) -> result {
-                let! state = writeTag state 5
+                let! state = writeTag state 6
                 let! state = writeBigInteger state a0
                 let! state = writeBigInteger state a1
                 return leaveWrite state
               }
             | global.Fidelity.PSG.MemoryStringPremise.``Ascii`` -> result {
-                let! state = writeTag state 6
+                let! state = writeTag state 7
                 return leaveWrite state
               }
             | global.Fidelity.PSG.MemoryStringPremise.``Utf8Constant``(a0) -> result {
-                let! state = writeTag state 7
+                let! state = writeTag state 8
                 let! state = (writeList writeU8) state a0
                 return leaveWrite state
               }
             | global.Fidelity.PSG.MemoryStringPremise.``ByteView``(a0) -> result {
-                let! state = writeTag state 8
+                let! state = writeTag state 9
                 let! state = write_Fidelity_PSG_BoundaryByteView state a0
                 return leaveWrite state
               }
             | global.Fidelity.PSG.MemoryStringPremise.``Extent``(a0) -> result {
-                let! state = writeTag state 9
+                let! state = writeTag state 10
                 let! state = write_Fidelity_PSG_BoundaryStringExtent state a0
                 return leaveWrite state
               }
@@ -3989,6 +4037,7 @@ module internal BinaryGenerated =
         let! state = write_Fidelity_PSG_NodeId state value.``Owner``
         let! state = write_Fidelity_PSG_NodeId state value.``Snapshot``
         let! state = write_Fidelity_PSG_MemoryStringViewDirection state value.``Direction``
+        let! state = (writeOption write_Fidelity_PSG_CheckedStringConstruction) state value.``Checked``
         let! state = write_Fidelity_PSG_ValueRepresentation state value.``SourceCarrier``
         let! state = write_Fidelity_PSG_ValueRepresentation state value.``ResultCarrier``
         let! state = write_Fidelity_PSG_SettledSlot state value.``Element``
@@ -3996,6 +4045,16 @@ module internal BinaryGenerated =
         let! state = write_Fidelity_PSG_NodeId state value.``Declaration``
         let! state = write_Fidelity_PSG_ScalarCarrier state value.``Extent``
         let! state = (writeSet write_Fidelity_PSG_NodeId) state value.``Participants``
+        return leaveWrite state
+    }
+
+    and write_Fidelity_PSG_MemoryUtf8ValidationWitness (state: WriteState) (value: global.Fidelity.PSG.MemoryUtf8ValidationWitness) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = write_Fidelity_PSG_NodeId state value.``Site``
+        let! state = write_Fidelity_PSG_CheckedStringConstruction state value.``Construction``
+        let! state = write_Fidelity_PSG_MemoryArrayCopyWitness state value.``Copy``
+        let! state = write_Fidelity_PSG_MemoryArrayAllocationWitness state value.``Allocation``
+        let! state = write_Fidelity_PSG_ValueRepresentation state value.``SourceCarrier``
         return leaveWrite state
     }
 
@@ -4036,6 +4095,21 @@ module internal BinaryGenerated =
             | global.Fidelity.PSG.MemoryWitnessOperation.``StringView``(a0) -> result {
                 let! state = writeTag state 6
                 let! state = write_Fidelity_PSG_MemoryStringViewWitness state a0
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.MemoryWitnessOperation.``Utf8Validation``(a0) -> result {
+                let! state = writeTag state 7
+                let! state = write_Fidelity_PSG_MemoryUtf8ValidationWitness state a0
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.MemoryWitnessOperation.``SnapshotRetirement``(a0) -> result {
+                let! state = writeTag state 8
+                let! state = write_Fidelity_PSG_MemorySnapshotRetirementWitness state a0
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.MemoryWitnessOperation.``ConstructedValue``(a0) -> result {
+                let! state = writeTag state 9
+                let! state = write_Fidelity_PSG_MemoryConstructedValueWitness state a0
                 return leaveWrite state
               }
     }
@@ -8898,6 +8972,22 @@ module internal BinaryGenerated =
         return! finishRead ({ ``Session`` = a0; ``Ordinal`` = a1 } : global.Fidelity.PSG.CheckedRevisionId) state
     }
 
+    and read_Fidelity_PSG_CheckedStringConstruction (state: ReadState) : Result<global.Fidelity.PSG.CheckedStringConstruction * ReadState, BinaryError> = result {
+        let! state = enterReadFields 11 state
+        let! a0, state = read_Fidelity_PSG_NodeId state
+        let! a1, state = read_Fidelity_PSG_NodeId state
+        let! a2, state = read_Fidelity_PSG_NodeId state
+        let! a3, state = read_Fidelity_PSG_NodeId state
+        let! a4, state = read_Fidelity_PSG_NodeId state
+        let! a5, state = read_Fidelity_PSG_NodeId state
+        let! a6, state = read_Fidelity_PSG_NodeId state
+        let! a7, state = read_Fidelity_PSG_NodeId state
+        let! a8, state = read_Fidelity_PSG_NodeId state
+        let! a9, state = read_Fidelity_PSG_NodeId state
+        let! a10, state = readString state
+        return! finishRead ({ ``Owner`` = a0; ``Input`` = a1; ``Snapshot`` = a2; ``Length`` = a3; ``Validation`` = a4; ``Decision`` = a5; ``Text`` = a6; ``Success`` = a7; ``Failure`` = a8; ``Retirement`` = a9; ``Validator`` = a10 } : global.Fidelity.PSG.CheckedStringConstruction) state
+    }
+
     and read_Fidelity_PSG_ChildDisposition (state: ReadState) : Result<global.Fidelity.PSG.ChildDisposition * ReadState, BinaryError> = result {
         let! state = enterReadFields 2 state
         let! a0, state = readI32 state
@@ -9396,431 +9486,435 @@ module internal BinaryGenerated =
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``StringByteSnapshot``) state
               }
             | 47 -> result {
-                return! finishRead (global.Fidelity.PSG.EdgeRole.``StringToBytesSnapshot``) state
+                let! a0, state = read_Fidelity_PSG_CheckedStringConstruction state
+                return! finishRead (global.Fidelity.PSG.EdgeRole.``StringCheckedConstruction``(a0)) state
               }
             | 48 -> result {
-                return! finishRead (global.Fidelity.PSG.EdgeRole.``StringAscii``) state
+                return! finishRead (global.Fidelity.PSG.EdgeRole.``StringToBytesSnapshot``) state
               }
             | 49 -> result {
+                return! finishRead (global.Fidelity.PSG.EdgeRole.``StringAscii``) state
+              }
+            | 50 -> result {
                 let! a0, state = (readList readU8) state
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``StringUtf8Constant``(a0)) state
               }
-            | 50 -> result {
+            | 51 -> result {
                 let! a0, state = readBool state
                 let! a1, state = readBool state
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``LoopInduction``(a0, a1)) state
               }
-            | 51 -> result {
+            | 52 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``LoopAccumulation``) state
               }
-            | 52 -> result {
+            | 53 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``SequencePullBound``) state
               }
-            | 53 -> result {
+            | 54 -> result {
                 let! a0, state = readI32 state
                 let! a1, state = readBigInteger state
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``SequencePullComposition``(a0, a1)) state
               }
-            | 54 -> result {
+            | 55 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``SequenceAccumulation``) state
               }
-            | 55 -> result {
+            | 56 -> result {
                 let! a0, state = read_Fidelity_PSG_LoopRangeResidual state
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``LoopRangePending``(a0)) state
               }
-            | 56 -> result {
+            | 57 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``Callee``) state
               }
-            | 57 -> result {
+            | 58 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``Argument``) state
               }
-            | 58 -> result {
+            | 59 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``Parameter``) state
               }
-            | 59 -> result {
+            | 60 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``Body``) state
               }
-            | 60 -> result {
+            | 61 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``Scrutinee``) state
               }
-            | 61 -> result {
+            | 62 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``CaseBinding``) state
               }
-            | 62 -> result {
+            | 63 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``CaseGuard``) state
               }
-            | 63 -> result {
+            | 64 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``CaseBody``) state
               }
-            | 64 -> result {
+            | 65 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``Guard``) state
               }
-            | 65 -> result {
+            | 66 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``ThenBranch``) state
               }
-            | 66 -> result {
+            | 67 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``ElseBranch``) state
               }
-            | 67 -> result {
+            | 68 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``LoopStart``) state
               }
-            | 68 -> result {
+            | 69 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``LoopFinish``) state
               }
-            | 69 -> result {
+            | 70 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``Collection``) state
               }
-            | 70 -> result {
+            | 71 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``Handler``) state
               }
-            | 71 -> result {
+            | 72 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``Cleanup``) state
               }
-            | 72 -> result {
+            | 73 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``Element``) state
               }
-            | 73 -> result {
+            | 74 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``FieldValue``) state
               }
-            | 74 -> result {
+            | 75 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``CopyFrom``) state
               }
-            | 75 -> result {
+            | 76 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``Payload``) state
               }
-            | 76 -> result {
+            | 77 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``ArenaHint``) state
               }
-            | 77 -> result {
+            | 78 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``AssignTarget``) state
               }
-            | 78 -> result {
+            | 79 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``AssignValue``) state
               }
-            | 79 -> result {
+            | 80 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``Subject``) state
               }
-            | 80 -> result {
+            | 81 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``Index``) state
               }
-            | 81 -> result {
+            | 82 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``Member``) state
               }
-            | 82 -> result {
+            | 83 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``Operand``) state
               }
-            | 83 -> result {
+            | 84 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``InterpolationPart``) state
               }
-            | 84 -> result {
+            | 85 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``Attached``) state
               }
-            | 85 -> result {
+            | 86 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``Definition``) state
               }
-            | 86 -> result {
+            | 87 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``TypeDefinition``) state
               }
-            | 87 -> result {
+            | 88 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``IntrinsicImplementation``) state
               }
-            | 88 -> result {
+            | 89 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``Symbol``) state
               }
-            | 89 -> result {
+            | 90 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``EnrichedWith``) state
               }
-            | 90 -> result {
+            | 91 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``ProgramInitialization``) state
               }
-            | 91 -> result {
+            | 92 -> result {
                 let! a0, state = readString state
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``ProgramInitializationPending``(a0)) state
               }
-            | 92 -> result {
+            | 93 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``ProgramInitializer``) state
               }
-            | 93 -> result {
+            | 94 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``ProgramUnitActivation``) state
               }
-            | 94 -> result {
+            | 95 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``ProgramEntryCall``) state
               }
-            | 95 -> result {
+            | 96 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``ProgramValueIntent``) state
               }
-            | 96 -> result {
+            | 97 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``ProgramValue``) state
               }
-            | 97 -> result {
+            | 98 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``ProgramActivationCall``) state
               }
-            | 98 -> result {
+            | 99 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``ProgramActivationCoverage``) state
               }
-            | 99 -> result {
+            | 100 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``SequenceInputBorrow``) state
               }
-            | 100 -> result {
+            | 101 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``CallableInvocationBorrow``) state
               }
-            | 101 -> result {
+            | 102 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``BranchOccurrence``) state
               }
-            | 102 -> result {
+            | 103 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``CaptureOrigin``) state
               }
-            | 103 -> result {
+            | 104 -> result {
                 let! a0, state = readBool state
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``EnvironmentCapture``(a0)) state
               }
-            | 104 -> result {
+            | 105 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``EnvironmentInitializer``) state
               }
-            | 105 -> result {
+            | 106 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``EnvironmentFormal``) state
               }
-            | 106 -> result {
+            | 107 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``LazyInstance``) state
               }
-            | 107 -> result {
+            | 108 -> result {
                 let! a0, state = readBool state
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``LazyCapture``(a0)) state
               }
-            | 108 -> result {
+            | 109 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``LazyMemoization``) state
               }
-            | 109 -> result {
+            | 110 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``LazyResultDestination``) state
               }
-            | 110 -> result {
+            | 111 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``LazyResultCall``) state
               }
-            | 111 -> result {
+            | 112 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``LazyResidence``) state
               }
-            | 112 -> result {
+            | 113 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``LazyLayout``) state
               }
-            | 113 -> result {
-                return! finishRead (global.Fidelity.PSG.EdgeRole.``EnvironmentResidence``) state
-              }
             | 114 -> result {
-                let! a0, state = (readList read_Fidelity_PSG_Participant) state
-                return! finishRead (global.Fidelity.PSG.EdgeRole.``EnvironmentReservation``(a0)) state
+                return! finishRead (global.Fidelity.PSG.EdgeRole.``EnvironmentResidence``) state
               }
             | 115 -> result {
                 let! a0, state = (readList read_Fidelity_PSG_Participant) state
-                return! finishRead (global.Fidelity.PSG.EdgeRole.``ProgramInitializationOrder``(a0)) state
+                return! finishRead (global.Fidelity.PSG.EdgeRole.``EnvironmentReservation``(a0)) state
               }
             | 116 -> result {
                 let! a0, state = (readList read_Fidelity_PSG_Participant) state
-                return! finishRead (global.Fidelity.PSG.EdgeRole.``ProgramInitializationOrderHistory``(a0)) state
+                return! finishRead (global.Fidelity.PSG.EdgeRole.``ProgramInitializationOrder``(a0)) state
               }
             | 117 -> result {
-                return! finishRead (global.Fidelity.PSG.EdgeRole.``EnvironmentResultDestination``) state
+                let! a0, state = (readList read_Fidelity_PSG_Participant) state
+                return! finishRead (global.Fidelity.PSG.EdgeRole.``ProgramInitializationOrderHistory``(a0)) state
               }
             | 118 -> result {
-                return! finishRead (global.Fidelity.PSG.EdgeRole.``EnvironmentResultCall``) state
+                return! finishRead (global.Fidelity.PSG.EdgeRole.``EnvironmentResultDestination``) state
               }
             | 119 -> result {
-                return! finishRead (global.Fidelity.PSG.EdgeRole.``SequenceCaptureFormation``) state
+                return! finishRead (global.Fidelity.PSG.EdgeRole.``EnvironmentResultCall``) state
               }
             | 120 -> result {
+                return! finishRead (global.Fidelity.PSG.EdgeRole.``SequenceCaptureFormation``) state
+              }
+            | 121 -> result {
                 let! a0, state = readBool state
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``SequenceCaptureInitializer``(a0)) state
               }
-            | 121 -> result {
+            | 122 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``SequenceEnvironmentBorrow``) state
               }
-            | 122 -> result {
+            | 123 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``SequenceResultCapture``) state
               }
-            | 123 -> result {
+            | 124 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``Delimiter``) state
               }
-            | 124 -> result {
+            | 125 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``DelegationOrigin``) state
               }
-            | 125 -> result {
+            | 126 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``IteratorCurrentAdmitted``) state
               }
-            | 126 -> result {
+            | 127 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``SequenceElementAdmission``) state
               }
-            | 127 -> result {
+            | 128 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``SequenceElementOwner``) state
               }
-            | 128 -> result {
+            | 129 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``SequenceElementPayload``) state
               }
-            | 129 -> result {
+            | 130 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``SequenceElementUnknown``) state
               }
-            | 130 -> result {
+            | 131 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``SequencePullBody``) state
               }
-            | 131 -> result {
+            | 132 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``SequenceInitialize``) state
               }
-            | 132 -> result {
+            | 133 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``SequenceFamilyLayout``) state
               }
-            | 133 -> result {
+            | 134 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``SequenceFamilyCurrent``) state
               }
-            | 134 -> result {
+            | 135 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``SequenceTemplateCopy``) state
               }
-            | 135 -> result {
+            | 136 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``SequenceEffectUnknown``) state
               }
-            | 136 -> result {
+            | 137 -> result {
                 let! a0, state = readI32 state
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``SuspensionCut``(a0)) state
               }
-            | 137 -> result {
-                return! finishRead (global.Fidelity.PSG.EdgeRole.``SuspensionLiveAcross``) state
-              }
             | 138 -> result {
-                let! a0, state = readI32 state
-                return! finishRead (global.Fidelity.PSG.EdgeRole.``SuspensionResume``(a0)) state
+                return! finishRead (global.Fidelity.PSG.EdgeRole.``SuspensionLiveAcross``) state
               }
             | 139 -> result {
                 let! a0, state = readI32 state
-                return! finishRead (global.Fidelity.PSG.EdgeRole.``SuspensionResumeAction``(a0)) state
+                return! finishRead (global.Fidelity.PSG.EdgeRole.``SuspensionResume``(a0)) state
               }
             | 140 -> result {
-                return! finishRead (global.Fidelity.PSG.EdgeRole.``SuspensionCompleted``) state
+                let! a0, state = readI32 state
+                return! finishRead (global.Fidelity.PSG.EdgeRole.``SuspensionResumeAction``(a0)) state
               }
             | 141 -> result {
+                return! finishRead (global.Fidelity.PSG.EdgeRole.``SuspensionCompleted``) state
+              }
+            | 142 -> result {
                 let! a0, state = read_Fidelity_PSG_EvaluationAccess state
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``EvaluationOperand``(a0)) state
               }
-            | 142 -> result {
+            | 143 -> result {
                 let! a0, state = read_Fidelity_PSG_EvaluationPort state
                 let! a1, state = read_Fidelity_PSG_EvaluationPort state
                 let! a2, state = read_Fidelity_PSG_EvaluationTransfer state
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``EvaluationFlow``(a0, a1, a2)) state
               }
-            | 143 -> result {
+            | 144 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``EvaluationCapture``) state
               }
-            | 144 -> result {
+            | 145 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``EvaluationRoot``) state
               }
-            | 145 -> result {
+            | 146 -> result {
                 let! a0, state = read_Fidelity_PSG_EvaluationResidual state
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``EvaluationPending``(a0)) state
               }
-            | 146 -> result {
+            | 147 -> result {
                 let! a0, state = readI32 state
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``ContinuationCase``(a0)) state
               }
-            | 147 -> result {
+            | 148 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``MatchRequirement``) state
               }
-            | 148 -> result {
+            | 149 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``ContinuationDefault``) state
               }
-            | 149 -> result {
+            | 150 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``FrameSlot``) state
               }
-            | 150 -> result {
+            | 151 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``ContinuationValue``) state
               }
-            | 151 -> result {
+            | 152 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``ContinuationSlotAccess``) state
               }
-            | 152 -> result {
+            | 153 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``ContinuationRegion``) state
               }
-            | 153 -> result {
+            | 154 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``ContinuationBorrow``) state
               }
-            | 154 -> result {
+            | 155 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``AggregateCopy``) state
               }
-            | 155 -> result {
+            | 156 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``AggregateSnapshot``) state
               }
-            | 156 -> result {
+            | 157 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``SequenceTemplateBorrow``) state
               }
-            | 157 -> result {
+            | 158 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``SequenceProgramBorrow``) state
               }
-            | 158 -> result {
+            | 159 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``SequenceSlotBorrow``) state
               }
-            | 159 -> result {
+            | 160 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``Resides``) state
               }
-            | 160 -> result {
+            | 161 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``Constrains``) state
               }
-            | 161 -> result {
+            | 162 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``CallableReferenceOrigin``) state
               }
-            | 162 -> result {
+            | 163 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``CaptureReferenceOrigin``) state
               }
-            | 163 -> result {
+            | 164 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``LoopLinearRecurrence``) state
               }
-            | 164 -> result {
+            | 165 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``EnvironmentInvocation``) state
               }
-            | 165 -> result {
+            | 166 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``SequenceProgramStorage``) state
               }
-            | 166 -> result {
+            | 167 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``SchemeSpecialization``) state
               }
-            | 167 -> result {
+            | 168 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``LazyEffectRange``) state
               }
-            | 168 -> result {
+            | 169 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``OrdinaryUnusedFormal``) state
               }
-            | 169 -> result {
+            | 170 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``OrdinaryUnusedActual``) state
               }
-            | 170 -> result {
+            | 171 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``OrdinaryUnusedBindingInitializer``) state
               }
-            | 171 -> result {
+            | 172 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``OrdinaryInactiveImplementation``) state
               }
-            | 172 -> result {
+            | 173 -> result {
                 let! a0, state = read_Fidelity_PSG_BindingDemandEvidence state
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``OrdinaryBindingDemand``(a0)) state
               }
-            | 173 -> result {
+            | 174 -> result {
                 let! a0, state = readString state
                 let! a1, state = read_Fidelity_PSG_BindingDemandEvidence state
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``OrdinaryBindingDemandPending``(a0, a1)) state
               }
-            | 174 -> result {
+            | 175 -> result {
                 let! a0, state = read_Fidelity_PSG_BindingDemandEvidence state
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``OrdinaryBindingDemandHistory``(a0)) state
               }
-            | 175 -> result {
+            | 176 -> result {
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``FiniteCellRange``) state
               }
-            | 176 -> result {
+            | 177 -> result {
                 let! a0, state = read_Fidelity_PSG_BoundaryEntry state
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``BoundaryEntry``(a0)) state
               }
-            | 177 -> result {
+            | 178 -> result {
                 let! a0, state = read_Fidelity_PSG_BoundaryCallbackInvocation state
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``BoundaryCallbackInvocation``(a0)) state
               }
-            | 178 -> result {
+            | 179 -> result {
                 let! a0, state = read_Fidelity_PSG_BoundaryClosedEntry state
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``BoundaryClosedEntry``(a0)) state
               }
-            | 179 -> result {
+            | 180 -> result {
                 let! a0, state = read_Fidelity_PSG_BoundaryCallbackAbsence state
                 return! finishRead (global.Fidelity.PSG.EdgeRole.``BoundaryCallbackAbsence``(a0)) state
               }
@@ -10863,6 +10957,20 @@ module internal BinaryGenerated =
         return! finishRead ({ ``Buffer`` = a0; ``Index`` = a1; ``IndexCarrier`` = a2; ``ExtentCarrier`` = a3; ``IndexUnsigned`` = a4; ``Length`` = a5; ``Lower`` = a6; ``Upper`` = a7; ``Requirement`` = a8; ``Participants`` = a9 } : global.Fidelity.PSG.MemoryBoundsWitness) state
     }
 
+    and read_Fidelity_PSG_MemoryConstructedValueWitness (state: ReadState) : Result<global.Fidelity.PSG.MemoryConstructedValueWitness * ReadState, BinaryError> = result {
+        let! state = enterReadFields 9 state
+        let! a0, state = read_Fidelity_PSG_NodeId state
+        let! a1, state = read_Fidelity_PSG_NodeId state
+        let! a2, state = read_Fidelity_PSG_TypeIdentity state
+        let! a3, state = read_Fidelity_PSG_MemoryResidence state
+        let! a4, state = (readSet read_Fidelity_PSG_NodeId) state
+        let! a5, state = read_Fidelity_PSG_CheckedStringConstruction state
+        let! a6, state = read_Fidelity_PSG_NodeId state
+        let! a7, state = read_Fidelity_PSG_NodeId state
+        let! a8, state = read_Fidelity_PSG_NodeId state
+        return! finishRead ({ ``Site`` = a0; ``Owner`` = a1; ``SourceType`` = a2; ``Residence`` = a3; ``Uses`` = a4; ``Construction`` = a5; ``Platform`` = a6; ``Layout`` = a7; ``Capacity`` = a8 } : global.Fidelity.PSG.MemoryConstructedValueWitness) state
+    }
+
     and read_Fidelity_PSG_MemoryDomain (state: ReadState) : Result<global.Fidelity.PSG.MemoryDomain * ReadState, BinaryError> = result {
         let! state = enterReadFields 13 state
         let! a0, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_BoundarySourcePremise) state
@@ -10953,6 +11061,14 @@ module internal BinaryGenerated =
             | _ -> malformed state "Unknown Fidelity.PSG.MemoryResidence case"
     }
 
+    and read_Fidelity_PSG_MemorySnapshotRetirementWitness (state: ReadState) : Result<global.Fidelity.PSG.MemorySnapshotRetirementWitness * ReadState, BinaryError> = result {
+        let! state = enterReadFields 3 state
+        let! a0, state = read_Fidelity_PSG_NodeId state
+        let! a1, state = read_Fidelity_PSG_CheckedStringConstruction state
+        let! a2, state = read_Fidelity_PSG_MemoryArrayAllocationWitness state
+        return! finishRead ({ ``Site`` = a0; ``Construction`` = a1; ``Allocation`` = a2 } : global.Fidelity.PSG.MemorySnapshotRetirementWitness) state
+    }
+
     and read_Fidelity_PSG_MemoryStringPremise (state: ReadState) : Result<global.Fidelity.PSG.MemoryStringPremise * ReadState, BinaryError> = result {
         let! state = enterReadCases 4 state
         let! tag, state = readTag state
@@ -10962,37 +11078,41 @@ module internal BinaryGenerated =
                 return! finishRead (global.Fidelity.PSG.MemoryStringPremise.``Snapshot``) state
               }
             | 1 -> result {
-                return! finishRead (global.Fidelity.PSG.MemoryStringPremise.``ToBytesSnapshot``) state
+                let! a0, state = read_Fidelity_PSG_CheckedStringConstruction state
+                return! finishRead (global.Fidelity.PSG.MemoryStringPremise.``Checked``(a0)) state
               }
             | 2 -> result {
-                return! finishRead (global.Fidelity.PSG.MemoryStringPremise.``Copy``) state
+                return! finishRead (global.Fidelity.PSG.MemoryStringPremise.``ToBytesSnapshot``) state
               }
             | 3 -> result {
+                return! finishRead (global.Fidelity.PSG.MemoryStringPremise.``Copy``) state
+              }
+            | 4 -> result {
                 let! a0, state = readBigInteger state
                 let! a1, state = readBigInteger state
                 let! a2, state = readString state
                 return! finishRead (global.Fidelity.PSG.MemoryStringPremise.``Storage``(a0, a1, a2)) state
               }
-            | 4 -> result {
+            | 5 -> result {
                 return! finishRead (global.Fidelity.PSG.MemoryStringPremise.``Read``) state
               }
-            | 5 -> result {
+            | 6 -> result {
                 let! a0, state = readBigInteger state
                 let! a1, state = readBigInteger state
                 return! finishRead (global.Fidelity.PSG.MemoryStringPremise.``ReadRange``(a0, a1)) state
               }
-            | 6 -> result {
+            | 7 -> result {
                 return! finishRead (global.Fidelity.PSG.MemoryStringPremise.``Ascii``) state
               }
-            | 7 -> result {
+            | 8 -> result {
                 let! a0, state = (readList readU8) state
                 return! finishRead (global.Fidelity.PSG.MemoryStringPremise.``Utf8Constant``(a0)) state
               }
-            | 8 -> result {
+            | 9 -> result {
                 let! a0, state = read_Fidelity_PSG_BoundaryByteView state
                 return! finishRead (global.Fidelity.PSG.MemoryStringPremise.``ByteView``(a0)) state
               }
-            | 9 -> result {
+            | 10 -> result {
                 let! a0, state = read_Fidelity_PSG_BoundaryStringExtent state
                 return! finishRead (global.Fidelity.PSG.MemoryStringPremise.``Extent``(a0)) state
               }
@@ -11024,20 +11144,31 @@ module internal BinaryGenerated =
     }
 
     and read_Fidelity_PSG_MemoryStringViewWitness (state: ReadState) : Result<global.Fidelity.PSG.MemoryStringViewWitness * ReadState, BinaryError> = result {
-        let! state = enterReadFields 12 state
+        let! state = enterReadFields 13 state
         let! a0, state = read_Fidelity_PSG_NodeId state
         let! a1, state = read_Fidelity_PSG_NodeId state
         let! a2, state = read_Fidelity_PSG_NodeId state
         let! a3, state = read_Fidelity_PSG_NodeId state
         let! a4, state = read_Fidelity_PSG_MemoryStringViewDirection state
-        let! a5, state = read_Fidelity_PSG_ValueRepresentation state
+        let! a5, state = (readOption read_Fidelity_PSG_CheckedStringConstruction) state
         let! a6, state = read_Fidelity_PSG_ValueRepresentation state
-        let! a7, state = read_Fidelity_PSG_SettledSlot state
-        let! a8, state = read_Fidelity_PSG_NumericRepresentation state
-        let! a9, state = read_Fidelity_PSG_NodeId state
-        let! a10, state = read_Fidelity_PSG_ScalarCarrier state
-        let! a11, state = (readSet read_Fidelity_PSG_NodeId) state
-        return! finishRead ({ ``Site`` = a0; ``Source`` = a1; ``Owner`` = a2; ``Snapshot`` = a3; ``Direction`` = a4; ``SourceCarrier`` = a5; ``ResultCarrier`` = a6; ``Element`` = a7; ``Representation`` = a8; ``Declaration`` = a9; ``Extent`` = a10; ``Participants`` = a11 } : global.Fidelity.PSG.MemoryStringViewWitness) state
+        let! a7, state = read_Fidelity_PSG_ValueRepresentation state
+        let! a8, state = read_Fidelity_PSG_SettledSlot state
+        let! a9, state = read_Fidelity_PSG_NumericRepresentation state
+        let! a10, state = read_Fidelity_PSG_NodeId state
+        let! a11, state = read_Fidelity_PSG_ScalarCarrier state
+        let! a12, state = (readSet read_Fidelity_PSG_NodeId) state
+        return! finishRead ({ ``Site`` = a0; ``Source`` = a1; ``Owner`` = a2; ``Snapshot`` = a3; ``Direction`` = a4; ``Checked`` = a5; ``SourceCarrier`` = a6; ``ResultCarrier`` = a7; ``Element`` = a8; ``Representation`` = a9; ``Declaration`` = a10; ``Extent`` = a11; ``Participants`` = a12 } : global.Fidelity.PSG.MemoryStringViewWitness) state
+    }
+
+    and read_Fidelity_PSG_MemoryUtf8ValidationWitness (state: ReadState) : Result<global.Fidelity.PSG.MemoryUtf8ValidationWitness * ReadState, BinaryError> = result {
+        let! state = enterReadFields 5 state
+        let! a0, state = read_Fidelity_PSG_NodeId state
+        let! a1, state = read_Fidelity_PSG_CheckedStringConstruction state
+        let! a2, state = read_Fidelity_PSG_MemoryArrayCopyWitness state
+        let! a3, state = read_Fidelity_PSG_MemoryArrayAllocationWitness state
+        let! a4, state = read_Fidelity_PSG_ValueRepresentation state
+        return! finishRead ({ ``Site`` = a0; ``Construction`` = a1; ``Copy`` = a2; ``Allocation`` = a3; ``SourceCarrier`` = a4 } : global.Fidelity.PSG.MemoryUtf8ValidationWitness) state
     }
 
     and read_Fidelity_PSG_MemoryWitnessOperation (state: ReadState) : Result<global.Fidelity.PSG.MemoryWitnessOperation * ReadState, BinaryError> = result {
@@ -11072,6 +11203,18 @@ module internal BinaryGenerated =
             | 6 -> result {
                 let! a0, state = read_Fidelity_PSG_MemoryStringViewWitness state
                 return! finishRead (global.Fidelity.PSG.MemoryWitnessOperation.``StringView``(a0)) state
+              }
+            | 7 -> result {
+                let! a0, state = read_Fidelity_PSG_MemoryUtf8ValidationWitness state
+                return! finishRead (global.Fidelity.PSG.MemoryWitnessOperation.``Utf8Validation``(a0)) state
+              }
+            | 8 -> result {
+                let! a0, state = read_Fidelity_PSG_MemorySnapshotRetirementWitness state
+                return! finishRead (global.Fidelity.PSG.MemoryWitnessOperation.``SnapshotRetirement``(a0)) state
+              }
+            | 9 -> result {
+                let! a0, state = read_Fidelity_PSG_MemoryConstructedValueWitness state
+                return! finishRead (global.Fidelity.PSG.MemoryWitnessOperation.``ConstructedValue``(a0)) state
               }
             | _ -> malformed state "Unknown Fidelity.PSG.MemoryWitnessOperation case"
     }

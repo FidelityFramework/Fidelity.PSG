@@ -159,7 +159,7 @@ let private renderValue (ty: Type) value =
 [<Fact>]
 let ``inspection retains absence source plan and each independent promise input role`` () =
   let model : OptionalEntryAbsenceArgumentConversionModel =
-    { Call = NodeId 100; Parameter = 2; Actual = NodeId 101; Construction = NodeId 102; SourceCase = 0; Absence = NodeId 70
+    { Call = NodeId 100; Parameter = 2; Actual = NodeId 101; Construction = NodeId 102; SourceCase = 0; Absence = NodeId 70; ResultRetirement = None
       Arms = [{CaseOrdinal = 0; Choice = OptionalEntryAbsencePlanChoice.AbsentEntry}
               {CaseOrdinal = 1; Choice = OptionalEntryAbsencePlanChoice.RequiresClosedEntry}] }
   let body = ObligationBody.OptionalEntryAbsenceArgumentConversion model

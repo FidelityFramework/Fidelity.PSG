@@ -4,7 +4,7 @@ open Fidelity.Data.JSON
 module internal JsonGenerated =
     open JsonRuntime
     [<Literal>]
-    let NamedTypes = 319
+    let NamedTypes = 323
     let rec write_BAREWire_Descriptors_CallConv (value: global.BAREWire.Descriptors.CallConv) : JsonValue =
         match value with
         | global.BAREWire.Descriptors.CallConv.``CDecl`` -> union "CDecl" []
@@ -397,6 +397,9 @@ module internal JsonGenerated =
     and write_Fidelity_PSG_CaseArm (value: global.Fidelity.PSG.CaseArm) : JsonValue =
         JsonValue.Object [("Pattern", write_Fidelity_PSG_Pattern value.``Pattern``); ("Bindings", (writeList write_Fidelity_PSG_NodeId) value.``Bindings``); ("Guard", (writeOption write_Fidelity_PSG_NodeId) value.``Guard``); ("Body", write_Fidelity_PSG_NodeId value.``Body``)]
 
+    and write_Fidelity_PSG_CheckedStringConstruction (value: global.Fidelity.PSG.CheckedStringConstruction) : JsonValue =
+        JsonValue.Object [("Owner", write_Fidelity_PSG_NodeId value.``Owner``); ("Input", write_Fidelity_PSG_NodeId value.``Input``); ("Snapshot", write_Fidelity_PSG_NodeId value.``Snapshot``); ("Length", write_Fidelity_PSG_NodeId value.``Length``); ("Validation", write_Fidelity_PSG_NodeId value.``Validation``); ("Decision", write_Fidelity_PSG_NodeId value.``Decision``); ("Text", write_Fidelity_PSG_NodeId value.``Text``); ("Success", write_Fidelity_PSG_NodeId value.``Success``); ("Failure", write_Fidelity_PSG_NodeId value.``Failure``); ("Retirement", write_Fidelity_PSG_NodeId value.``Retirement``); ("Validator", writeString value.``Validator``)]
+
     and write_Fidelity_PSG_ChildDisposition (value: global.Fidelity.PSG.ChildDisposition) : JsonValue =
         JsonValue.Object [("Ordinal", writeInt32 value.``Ordinal``); ("Traversal", write_Fidelity_PSG_ChildTraversal value.``Traversal``)]
 
@@ -531,6 +534,7 @@ module internal JsonGenerated =
         | global.Fidelity.PSG.EdgeRole.``StringByteRead`` -> union "StringByteRead" []
         | global.Fidelity.PSG.EdgeRole.``StringByteRange``(a0, a1) -> union "StringByteRange" [("lower", writeBigInteger a0); ("upper", writeBigInteger a1)]
         | global.Fidelity.PSG.EdgeRole.``StringByteSnapshot`` -> union "StringByteSnapshot" []
+        | global.Fidelity.PSG.EdgeRole.``StringCheckedConstruction``(a0) -> union "StringCheckedConstruction" [("Item", write_Fidelity_PSG_CheckedStringConstruction a0)]
         | global.Fidelity.PSG.EdgeRole.``StringToBytesSnapshot`` -> union "StringToBytesSnapshot" []
         | global.Fidelity.PSG.EdgeRole.``StringAscii`` -> union "StringAscii" []
         | global.Fidelity.PSG.EdgeRole.``StringUtf8Constant``(a0) -> union "StringUtf8Constant" [("bytes", (writeList writeByte) a0)]
@@ -960,6 +964,9 @@ module internal JsonGenerated =
     and write_Fidelity_PSG_MemoryBoundsWitness (value: global.Fidelity.PSG.MemoryBoundsWitness) : JsonValue =
         JsonValue.Object [("Buffer", write_Fidelity_PSG_NodeId value.``Buffer``); ("Index", write_Fidelity_PSG_NodeId value.``Index``); ("IndexCarrier", write_Fidelity_PSG_ScalarCarrier value.``IndexCarrier``); ("ExtentCarrier", write_Fidelity_PSG_ScalarCarrier value.``ExtentCarrier``); ("IndexUnsigned", writeBool value.``IndexUnsigned``); ("Length", write_Fidelity_PSG_NodeId value.``Length``); ("Lower", write_Fidelity_PSG_NodeId value.``Lower``); ("Upper", write_Fidelity_PSG_NodeId value.``Upper``); ("Requirement", write_Fidelity_PSG_RequirementWitness value.``Requirement``); ("Participants", (writeSet write_Fidelity_PSG_NodeId) value.``Participants``)]
 
+    and write_Fidelity_PSG_MemoryConstructedValueWitness (value: global.Fidelity.PSG.MemoryConstructedValueWitness) : JsonValue =
+        JsonValue.Object [("Site", write_Fidelity_PSG_NodeId value.``Site``); ("Owner", write_Fidelity_PSG_NodeId value.``Owner``); ("SourceType", write_Fidelity_PSG_TypeIdentity value.``SourceType``); ("Residence", write_Fidelity_PSG_MemoryResidence value.``Residence``); ("Uses", (writeSet write_Fidelity_PSG_NodeId) value.``Uses``); ("Construction", write_Fidelity_PSG_CheckedStringConstruction value.``Construction``); ("Platform", write_Fidelity_PSG_NodeId value.``Platform``); ("Layout", write_Fidelity_PSG_NodeId value.``Layout``); ("Capacity", write_Fidelity_PSG_NodeId value.``Capacity``)]
+
     and write_Fidelity_PSG_MemoryDomain (value: global.Fidelity.PSG.MemoryDomain) : JsonValue =
         JsonValue.Object [("Premises", (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_BoundarySourcePremise) value.``Premises``); ("Platform", (writeOption write_Fidelity_PSG_BoundaryPlatformPremise) value.``Platform``); ("Meets", (writeMap write_Fidelity_PSG_NodeId (writeList write_Fidelity_PSG_Meet)) value.``Meets``); ("Guards", (writeList (fun (v1_0, v1_1) -> JsonValue.Array [write_Fidelity_PSG_NodeId v1_0; (writeList write_Fidelity_PSG_NodeId) v1_1])) value.``Guards``); ("Requirements", (writeList (fun (v1_0, v1_1, v1_2) -> JsonValue.Array [writeInt32 v1_0; write_Fidelity_PSG_NodeId v1_1; (writeList write_Fidelity_PSG_NodeId) v1_2])) value.``Requirements``); ("StringRelations", (writeList write_Fidelity_PSG_MemoryStringRelation) value.``StringRelations``); ("AllocationConstructions", (writeList write_Fidelity_PSG_ArrayAllocationConstruction) value.``AllocationConstructions``); ("CopyConstructions", (writeList write_Fidelity_PSG_ArrayCopyConstruction) value.``CopyConstructions``); ("ArrayCopies", (writeList write_Fidelity_PSG_MemoryArrayCopyWitness) value.``ArrayCopies``); ("Proofs", (writeList write_Fidelity_PSG_MemoryProof) value.``Proofs``); ("Required", (writeSet write_Fidelity_PSG_NodeId) value.``Required``); ("Operations", (writeList (fun (v1_0, v1_1) -> JsonValue.Array [write_Fidelity_PSG_NodeId v1_0; write_Fidelity_PSG_MemoryWitnessOperation v1_1])) value.``Operations``); ("Unresolved", (writeMap write_Fidelity_PSG_NodeId writeString) value.``Unresolved``)]
 
@@ -982,9 +989,13 @@ module internal JsonGenerated =
         | global.Fidelity.PSG.MemoryResidence.``Program``(a0) -> union "Program" [("Item", write_Fidelity_PSG_ProgramStorageIdentity a0)]
         | global.Fidelity.PSG.MemoryResidence.``ImmutableProgram``(a0) -> union "ImmutableProgram" [("space", write_Fidelity_PSG_NodeId a0)]
 
+    and write_Fidelity_PSG_MemorySnapshotRetirementWitness (value: global.Fidelity.PSG.MemorySnapshotRetirementWitness) : JsonValue =
+        JsonValue.Object [("Site", write_Fidelity_PSG_NodeId value.``Site``); ("Construction", write_Fidelity_PSG_CheckedStringConstruction value.``Construction``); ("Allocation", write_Fidelity_PSG_MemoryArrayAllocationWitness value.``Allocation``)]
+
     and write_Fidelity_PSG_MemoryStringPremise (value: global.Fidelity.PSG.MemoryStringPremise) : JsonValue =
         match value with
         | global.Fidelity.PSG.MemoryStringPremise.``Snapshot`` -> union "Snapshot" []
+        | global.Fidelity.PSG.MemoryStringPremise.``Checked``(a0) -> union "Checked" [("Item", write_Fidelity_PSG_CheckedStringConstruction a0)]
         | global.Fidelity.PSG.MemoryStringPremise.``ToBytesSnapshot`` -> union "ToBytesSnapshot" []
         | global.Fidelity.PSG.MemoryStringPremise.``Copy`` -> union "Copy" []
         | global.Fidelity.PSG.MemoryStringPremise.``Storage``(a0, a1, a2) -> union "Storage" [("lower", writeBigInteger a0); ("upper", writeBigInteger a1); ("representation", writeString a2)]
@@ -1004,7 +1015,10 @@ module internal JsonGenerated =
         | global.Fidelity.PSG.MemoryStringViewDirection.``ToBytes`` -> union "ToBytes" []
 
     and write_Fidelity_PSG_MemoryStringViewWitness (value: global.Fidelity.PSG.MemoryStringViewWitness) : JsonValue =
-        JsonValue.Object [("Site", write_Fidelity_PSG_NodeId value.``Site``); ("Source", write_Fidelity_PSG_NodeId value.``Source``); ("Owner", write_Fidelity_PSG_NodeId value.``Owner``); ("Snapshot", write_Fidelity_PSG_NodeId value.``Snapshot``); ("Direction", write_Fidelity_PSG_MemoryStringViewDirection value.``Direction``); ("SourceCarrier", write_Fidelity_PSG_ValueRepresentation value.``SourceCarrier``); ("ResultCarrier", write_Fidelity_PSG_ValueRepresentation value.``ResultCarrier``); ("Element", write_Fidelity_PSG_SettledSlot value.``Element``); ("Representation", write_Fidelity_PSG_NumericRepresentation value.``Representation``); ("Declaration", write_Fidelity_PSG_NodeId value.``Declaration``); ("Extent", write_Fidelity_PSG_ScalarCarrier value.``Extent``); ("Participants", (writeSet write_Fidelity_PSG_NodeId) value.``Participants``)]
+        JsonValue.Object [("Site", write_Fidelity_PSG_NodeId value.``Site``); ("Source", write_Fidelity_PSG_NodeId value.``Source``); ("Owner", write_Fidelity_PSG_NodeId value.``Owner``); ("Snapshot", write_Fidelity_PSG_NodeId value.``Snapshot``); ("Direction", write_Fidelity_PSG_MemoryStringViewDirection value.``Direction``); ("Checked", (writeOption write_Fidelity_PSG_CheckedStringConstruction) value.``Checked``); ("SourceCarrier", write_Fidelity_PSG_ValueRepresentation value.``SourceCarrier``); ("ResultCarrier", write_Fidelity_PSG_ValueRepresentation value.``ResultCarrier``); ("Element", write_Fidelity_PSG_SettledSlot value.``Element``); ("Representation", write_Fidelity_PSG_NumericRepresentation value.``Representation``); ("Declaration", write_Fidelity_PSG_NodeId value.``Declaration``); ("Extent", write_Fidelity_PSG_ScalarCarrier value.``Extent``); ("Participants", (writeSet write_Fidelity_PSG_NodeId) value.``Participants``)]
+
+    and write_Fidelity_PSG_MemoryUtf8ValidationWitness (value: global.Fidelity.PSG.MemoryUtf8ValidationWitness) : JsonValue =
+        JsonValue.Object [("Site", write_Fidelity_PSG_NodeId value.``Site``); ("Construction", write_Fidelity_PSG_CheckedStringConstruction value.``Construction``); ("Copy", write_Fidelity_PSG_MemoryArrayCopyWitness value.``Copy``); ("Allocation", write_Fidelity_PSG_MemoryArrayAllocationWitness value.``Allocation``); ("SourceCarrier", write_Fidelity_PSG_ValueRepresentation value.``SourceCarrier``)]
 
     and write_Fidelity_PSG_MemoryWitnessOperation (value: global.Fidelity.PSG.MemoryWitnessOperation) : JsonValue =
         match value with
@@ -1015,6 +1029,9 @@ module internal JsonGenerated =
         | global.Fidelity.PSG.MemoryWitnessOperation.``ArrayAllocation``(a0) -> union "ArrayAllocation" [("Item", write_Fidelity_PSG_MemoryArrayAllocationWitness a0)]
         | global.Fidelity.PSG.MemoryWitnessOperation.``Address``(a0) -> union "Address" [("Item", write_Fidelity_PSG_MemoryAddressWitness a0)]
         | global.Fidelity.PSG.MemoryWitnessOperation.``StringView``(a0) -> union "StringView" [("Item", write_Fidelity_PSG_MemoryStringViewWitness a0)]
+        | global.Fidelity.PSG.MemoryWitnessOperation.``Utf8Validation``(a0) -> union "Utf8Validation" [("Item", write_Fidelity_PSG_MemoryUtf8ValidationWitness a0)]
+        | global.Fidelity.PSG.MemoryWitnessOperation.``SnapshotRetirement``(a0) -> union "SnapshotRetirement" [("Item", write_Fidelity_PSG_MemorySnapshotRetirementWitness a0)]
+        | global.Fidelity.PSG.MemoryWitnessOperation.``ConstructedValue``(a0) -> union "ConstructedValue" [("Item", write_Fidelity_PSG_MemoryConstructedValueWitness a0)]
 
     and write_Fidelity_PSG_MemoryWitnessProjection (value: global.Fidelity.PSG.MemoryWitnessProjection) : JsonValue =
         JsonValue.Object [("Operations", (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_MemoryWitnessOperation) value.``Operations``); ("ArrayCopies", (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_MemoryArrayCopyWitness) value.``ArrayCopies``); ("Required", (writeSet write_Fidelity_PSG_NodeId) value.``Required``); ("Unresolved", (writeMap write_Fidelity_PSG_NodeId writeString) value.``Unresolved``)]

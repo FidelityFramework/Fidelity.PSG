@@ -1187,7 +1187,7 @@ let private snapshotFacts =
          CountOperand = {Actual = NodeId 5; Binding = NodeId 5; Reference = NodeId 5}
          Read = None; Write = None; Requirements = [requirement]; Participants = Set.ofList [NodeId 64; NodeId 404; NodeId 8000]}
     let view : MemoryStringViewWitness =
-        {Site = NodeId 1; Source = NodeId 3; Owner = NodeId 8000; Snapshot = NodeId 6; Direction = MemoryStringViewDirection.ToBytes
+        {Site = NodeId 1; Source = NodeId 3; Owner = NodeId 8000; Snapshot = NodeId 6; Direction = MemoryStringViewDirection.ToBytes; Checked = None
          SourceCarrier = numeric.OccurrenceRepresentations[NodeId 3] |> Result.defaultWith failwith
          ResultCarrier = numeric.OccurrenceRepresentations[NodeId 1] |> Result.defaultWith failwith
          Element = SettledSlot.Integer(32, None)
