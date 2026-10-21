@@ -1839,3 +1839,100 @@ let ``typed data metadata cannot substitute for an executable numeric operand`` 
     let changed = {operation with Operands = operation.Operands |> List.map(fun operand -> if operand.Actual = NodeId 3 then {operand with Actual = NodeId 72; Carrier = None; Adaptation = None} else operand)}
     let violations = Integrity.check (withNumericOperation changed referencedDataFacts)
     Assert.Contains(violations, fun violation -> violation.Part = "Emission.Numeric.Operations.Operands.Actual" && violation.Node = Some(NodeId 72))
+
+// Typed MMIO positions retain their source role after generated name enumeration.
+let private mmioRoleFacts =
+    let held =
+        revision [node 1 (SemanticKind.TupleExpr [NodeId 9; NodeId 2]) [9; 2]
+                  node 2 (SemanticKind.Literal(NativeLiteral.Bool true)) []
+                  node 3 (SemanticKind.TupleExpr [NodeId 10]) [10]]
+    let omit parent ordinal identity (source: WitnessSourceReadings) =
+        let children = source.Children[NodeId parent] |> List.map (fun child ->
+            if child.Ordinal = ordinal then
+                {child with Traversal = ChildTraversal.SourceOmitted(SupportKey.WholeOwningAnalysisRegion "mmio-fixture", NodeId identity)}
+            else child)
+        let key = NodeId parent, OccurrencePort.StructuralChild
+        let port = source.Ports[key]
+        {source with Children = source.Children.Add(NodeId parent, children)
+                     Ports = source.Ports.Add(key, {port with Positions = port.Positions.Remove ordinal})}
+    let source = held.SourceReadings |> omit 1 0 9 |> omit 3 0 10
+    let binding : MmioBindingEvidence =
+        {Plan = "plan"; Grant = "grant"; Register = "reg"; Region = "region"
+         Mapping = "mapping"; AddressSpace = "space"; DeclarationNodes = [NodeId 90]
+         Predicates = []; Premises = ["producer declaration account"]}
+    let access : MmioAccessEvidence = {Operation = "bind32"; Address = 4096I; Bits = 32; Binding = Some binding}
+    let operation : MmioOperation = {Site = NodeId 1; Operation = "bind32"; Arguments = [NodeId 9; NodeId 2]}
+    {held with SourceReadings = source
+               Codata = {held.Codata with Mmio = Map.ofList [NodeId 1, access]}
+               Foreign = {held.Foreign with Mmio = Map.ofList [NodeId 1, operation]}}
+
+let private mmioMissing part id violations =
+    let violation = within part violations
+    Assert.Equal(Some(NodeId id), violation.Node)
+    Assert.Equal(sprintf "Node %d is named and is not held by the revision." id, violation.Reason)
+
+[<Fact>]
+let ``MMIO roles retain body-free declarations own-site omissions and live arguments`` () =
+    Assert.Empty(Integrity.check mmioRoleFacts)
+    Assert.False(mmioRoleFacts.Nodes.ContainsKey(NodeId 90))
+    Assert.False(mmioRoleFacts.Nodes.ContainsKey(NodeId 9))
+    Assert.True(mmioRoleFacts.Nodes.ContainsKey(NodeId 2))
+    Assert.Equal<NodeId list>([NodeId 90], mmioRoleFacts.Codata.Mmio[NodeId 1].Binding.Value.DeclarationNodes)
+
+[<Theory>]
+[<InlineData("declaration")>]
+[<InlineData("expression")>]
+[<InlineData("dependency")>]
+let ``MMIO predicate positions cannot borrow declaration provenance`` position =
+    let predicate : PredicateEvidence =
+        {Name = "condition"; Declaration = (if position = "declaration" then NodeId 90 else NodeId 2)
+         Expression = (if position = "expression" then NodeId 90 else NodeId 2)
+         Dependencies = [if position = "dependency" then NodeId 90 else NodeId 2]
+         Status = Established; Message = "source checked"; Source = "fixture"}
+    let access = mmioRoleFacts.Codata.Mmio[NodeId 1]
+    let changed = {access with Binding = Some {access.Binding.Value with Predicates = [predicate]}}
+    let stated = {mmioRoleFacts with Codata = {mmioRoleFacts.Codata with Mmio = Map.ofList [NodeId 1, changed]}}
+    Integrity.check stated |> mmioMissing "Codata.Mmio.Binding" 90
+
+[<Fact>]
+let ``MMIO held predicate positions remain admissible`` () =
+    let predicate : PredicateEvidence =
+        {Name = "condition"; Declaration = NodeId 2; Expression = NodeId 2; Dependencies = [NodeId 2]
+         Status = Established; Message = "source checked"; Source = "fixture"}
+    let access = mmioRoleFacts.Codata.Mmio[NodeId 1]
+    let changed = {access with Binding = Some {access.Binding.Value with Predicates = [predicate]}}
+    Assert.Empty(Integrity.check {mmioRoleFacts with Codata = {mmioRoleFacts.Codata with Mmio = Map.ofList [NodeId 1, changed]}})
+
+[<Theory>]
+[<InlineData(10)>]
+[<InlineData(91)>]
+let ``MMIO arguments require their own site and exact omitted identity`` missing =
+    let operation = {mmioRoleFacts.Foreign.Mmio[NodeId 1] with Arguments = [NodeId missing; NodeId 2]}
+    let stated = {mmioRoleFacts with Foreign = {mmioRoleFacts.Foreign with Mmio = Map.ofList [NodeId 1, operation]}}
+    let violations = Integrity.check stated
+    Assert.DoesNotContain(violations, fun violation -> violation.Part = "SourceReadings.Children")
+    violations |> mmioMissing "Foreign.Mmio.Arguments" missing
+
+[<Fact>]
+let ``MMIO live argument still requires its executable body`` () =
+    let stated = {mmioRoleFacts with Nodes = mmioRoleFacts.Nodes.Remove(NodeId 2)}
+    Integrity.check stated |> mmioMissing "Foreign.Mmio.Arguments" 2
+
+[<Fact>]
+let ``MMIO omitted argument retains the existing nonempty support refusal`` () =
+    let children = mmioRoleFacts.SourceReadings.Children[NodeId 1] |> List.map (fun child ->
+        if child.Ordinal = 0 then
+            {child with Traversal = ChildTraversal.SourceOmitted(SupportKey.WholeOwningAnalysisRegion "", NodeId 9)}
+        else child)
+    let source = {mmioRoleFacts.SourceReadings with Children = mmioRoleFacts.SourceReadings.Children.Add(NodeId 1, children)}
+    let violation = Integrity.check {mmioRoleFacts with SourceReadings = source} |> within "SourceReadings.Children"
+    Assert.Equal(Some(NodeId 1), violation.Node)
+    Assert.Equal("An omitted child has an empty source support identity.", violation.Reason)
+
+[<Fact>]
+let ``MMIO stored operation site must equal its held map key`` () =
+    let operation = {mmioRoleFacts.Foreign.Mmio[NodeId 1] with Site = NodeId 3}
+    let stated = {mmioRoleFacts with Foreign = {mmioRoleFacts.Foreign with Mmio = Map.ofList [NodeId 1, operation]}}
+    let violation = Integrity.check stated |> only "Foreign.Mmio.Site"
+    Assert.Equal(Some(NodeId 1), violation.Node)
+    Assert.Equal("The MMIO operation is filed under a different site identity.", violation.Reason)

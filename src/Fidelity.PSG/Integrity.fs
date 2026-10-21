@@ -3539,7 +3539,9 @@ module Integrity =
         let stored =
             named revision
             |> List.collect (fun (part, ids) ->
-                ids |> List.distinct |> List.filter (fun id -> not (role part id)) |> List.map (missingBody part))
+                match part with
+                | "Codata.Mmio.Binding" | "Foreign.Mmio.Arguments" -> []
+                | _ -> ids |> List.distinct |> List.filter (fun id -> not (role part id)) |> List.map (missingBody part))
         let kinds =
             revision.Nodes |> Map.toList |> List.collect (fun (site, node) ->
                 let kindIds =
@@ -3591,7 +3593,32 @@ module Integrity =
                             ids |> List.distinct |> List.filter (fun id -> not (body id)) |> List.map (missingBody part))
                 exactRows)
             |> List.distinct
-        stored @ kinds @ edges
+        // Generated names discard the row key and nested role. Keep the typed
+        // positions here while sharing the original role authority above.
+        let mmio =
+            [ for KeyValue(_, row) in revision.Codata.Mmio do
+                  for binding in Option.toList row.Binding do
+                      // DeclarationNodes are the source-authored, body-free
+                      // provenance account in this binding, not executable bodies.
+                      for predicate in binding.Predicates do
+                          for id in predicate.Declaration :: predicate.Expression :: predicate.Dependencies do
+                              if not (role "Codata.Mmio.Binding" id) then
+                                  yield missingBody "Codata.Mmio.Binding" id
+              for KeyValue(site, row) in revision.Foreign.Mmio do
+                  if row.Site <> site then
+                      yield defect "Foreign.Mmio.Site" site
+                          "The MMIO operation is filed under a different site identity."
+                  for id in row.Arguments do
+                      let omittedHere =
+                          source.Children.TryFind site |> Option.defaultValue []
+                          |> List.exists (fun child ->
+                              match child.Traversal with
+                              | ChildTraversal.SourceOmitted(_, target) -> target = id
+                              | _ -> false)
+                      if not (role "Foreign.Mmio.Arguments" id || omittedHere) then
+                          yield missingBody "Foreign.Mmio.Arguments" id ]
+            |> List.distinct
+        stored @ kinds @ edges @ mmio
 
     /// Source-authored callable component integrity, independent of witnessing.
     let callableAggregates revision : IntegrityViolation list =
