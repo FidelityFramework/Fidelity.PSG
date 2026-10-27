@@ -323,7 +323,10 @@ type CallableAggregateTag = {
 [<RequireQualifiedAccess>]
 /// Result is an application-owned instance; its tag retains the callee's
 /// static constructor identity. Transport preserves the nearest instance.
-type CallableAggregateOperation = Construct | Project | Assign | Snapshot | Transport | Result
+type CallableAggregateOperation = Construct | Project | Assign | Snapshot | Transport | Result | Select
+
+/// Exact source condition and its direct constructor children.
+type CallableAggregateSelection = { Condition: NodeId; WhenTrue: NodeId; WhenFalse: NodeId }
 
 type CallableAggregateValue = {
     Occurrence: NodeId
@@ -345,6 +348,7 @@ type CallableAggregateValue = {
     ResultRetirement: Result<CallableAggregateResultRetirement, string> option
     Frontier: NodeId option
     Tag: CallableAggregateTag option
+    Selection: CallableAggregateSelection option
     Bytes: int
     Alignment: int
     /// Ordered exact source incidence; repeated nodes retain their own roles.

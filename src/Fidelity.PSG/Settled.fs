@@ -201,12 +201,22 @@ type BoundaryOptionalEntry = {
     Obligation: NodeId
 }
 
+[<RequireQualifiedAccess>]
+type BoundaryOptionalEntryChoice =
+    | Direct of BoundaryOptionalEntry
+    | Conditional of selection: NodeId * whenTrue: BoundaryOptionalEntry * whenFalse: BoundaryOptionalEntry
+
+module BoundaryOptionalEntryChoice =
+    let leaves = function
+        | BoundaryOptionalEntryChoice.Direct entry -> [entry]
+        | BoundaryOptionalEntryChoice.Conditional(_, whenTrue, whenFalse) -> [whenTrue; whenFalse]
+
 type BoundaryOperand = {
     Actual: NodeId
     Formal: NodeId
     Abi: BoundaryScalar
     Adaptation: Meet option
-    OptionalEntry: BoundaryOptionalEntry option
+    OptionalEntry: BoundaryOptionalEntryChoice option
 }
 
 /// A source-stated loading assumption; node identities describe this revision.

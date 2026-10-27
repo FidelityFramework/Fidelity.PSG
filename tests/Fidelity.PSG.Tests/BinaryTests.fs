@@ -74,18 +74,28 @@ let ``closed callback binary retains receiving hypothesis and complete original 
     Assert.Equal(carrier, BinaryGenerated.read_Fidelity_PSG_BoundaryScalar (indexedReadState limits bytes) |> take |> fst)
 
 [<Theory>]
-[<InlineData(false)>]
-[<InlineData(true)>]
-let ``optional entry binary retains exact absent and present source selection`` present =
+[<InlineData(false, false)>]
+[<InlineData(true, false)>]
+[<InlineData(false, true)>]
+[<InlineData(true, true)>]
+let ``optional entry binary retains exact absent and present source selection`` present conditional =
     let selected : BoundaryOptionalEntry =
         {Construction = NodeId 60; CaseOrdinal = if present then 1 else 0
          Payload = if present then Some(NodeId 61) else None
          Formation = if present then Some(NodeId 62) else None
          Transport = Set.ofList [NodeId 60; NodeId 63]
          Obligation = NodeId 64}
+    let choice =
+        if conditional then
+            let other = {selected with Construction = NodeId 66; CaseOrdinal = (if present then 0 else 1);
+                                       Payload = (if present then None else Some(NodeId 67));
+                                       Formation = (if present then None else Some(NodeId 68));
+                                       Obligation = NodeId 69}
+            BoundaryOptionalEntryChoice.Conditional(NodeId 65, selected, other)
+        else BoundaryOptionalEntryChoice.Direct selected
     let operand : BoundaryOperand =
         {Actual = NodeId 63; Formal = NodeId 42; Abi = BoundaryScalar.Entry(NodeId 40)
-         Adaptation = None; OptionalEntry = Some selected}
+         Adaptation = None; OptionalEntry = Some choice}
     let bytes = indexedEncoded BinaryGenerated.write_Fidelity_PSG_BoundaryOperand operand
     let actual, state = BinaryGenerated.read_Fidelity_PSG_BoundaryOperand (indexedReadState limits bytes) |> take
     Assert.Equal(operand, actual)
@@ -212,7 +222,7 @@ let ``snapshot header has independent version schema and fingerprint bytes`` () 
     // Pin the approved schema/shape pair independently of the generated values.
     // A changed published shape must earn a deliberate schema migration; merely
     // regenerating the codecs cannot update this oracle.
-    let prefix = Convert.FromHexString("465053474944583202000000260000002521EE15F0FCDB2902EF7A14976A8974E0180BC1874F48675FBE13A40307BE49")
+    let prefix = Convert.FromHexString("4650534749445832020000002E0000004194B45DFDE761379402869182C60B1003EB29AC9D63B9160936AA863082D43D")
     Assert.Equal<byte>(prefix, bytes[..47])
     Assert.Equal(Revision.Schema, System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(12, 4)))
     Assert.Equal<byte>(Convert.FromHexString(BinaryGenerated.Fingerprint), bytes[16..47])

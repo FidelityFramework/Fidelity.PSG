@@ -503,6 +503,86 @@ module internal CallableAggregateIntegrity =
               if (Option.isSome carrier.Environment || carrier.Kind = CallableKind.NativeEntry) && carrier.Lifetime.IsEmpty then
                   yield failure "I3" site "A retained environment or native entry has no lifetime participants."
               yield! vector site carrier.Lifetime ]
+        let selectedWrite (row: CallableAggregateValue) (slot: CallableAggregateSlot) =
+            match row.Selection, revision.Nodes.TryFind row.Occurrence with
+            | Some selection, Some branch ->
+                let source =
+                    match branch.Kind, branch.Children with
+                    | SemanticKind.IfThenElse(condition, whenTrue, Some whenFalse), [c; t; f] ->
+                        condition = selection.Condition && whenTrue = selection.WhenTrue && whenFalse = selection.WhenFalse &&
+                        c = condition && t = whenTrue && f = whenFalse && whenTrue <> whenFalse
+                    | _ -> false
+                let formal =
+                    match revision.Nodes.TryFind selection.Condition with
+                    | Some { Kind = SemanticKind.VarRef(_, Some formal); Type = TypeIdentity.Application(ty, []); Children = [] }
+                        when ty.NativeKind = Some NTUKind.NTUbool && revision.Nodes.ContainsKey formal &&
+                             sourceType formal = sourceType selection.Condition -> Some formal
+                    | _ -> None
+                let formalSupport =
+                    formal |> Option.exists (fun formal ->
+                        let owners = revision.Nodes.Values |> Seq.choose (fun node ->
+                            match node.Kind with
+                            | SemanticKind.Lambda(parameters, _, _, _, _) when parameters |> List.exists (fun (_, _, id) -> id = formal) -> Some node.Id
+                            | _ -> None) |> Seq.toList
+                        match owners with
+                        | [owner] ->
+                            [formal; owner] |> List.forall (fun id ->
+                                row.Participants |> List.exists (fun participant -> participant.Role = ParticipantRole.Source && participant.Group = row.Occurrence && participant.Node = id))
+                        | _ -> false)
+                let arm id = callable.AggregateValues.TryFind id |> Option.defaultValue []
+                             |> List.filter (fun candidate -> candidate.Slot = slot.Identity && candidate.Operation = CallableAggregateOperation.Construct)
+                let arms =
+                    match arm selection.WhenTrue, arm selection.WhenFalse with
+                    | [left], [right] ->
+                        let present, absent = if left.Alternatives.IsEmpty then right, left else left, right
+                        let tag constructor ordinal (candidate: CallableAggregateValue) =
+                            candidate.Tag |> Option.exists (fun tag -> tag.Constructor = constructor && tag.CaseOrdinal = ordinal)
+                        sourceType left.Occurrence = Some slot.AggregateType && sourceType right.Occurrence = Some slot.AggregateType &&
+                        left.Aggregate = left.Occurrence && right.Aggregate = right.Occurrence &&
+                        present.Alternatives.Length = 1 && absent.Alternatives.IsEmpty && present.Value.IsSome && absent.Value.IsNone &&
+                        tag present.Occurrence 1 present && tag absent.Occurrence 0 absent &&
+                        left.Bytes = right.Bytes && left.Alignment = right.Alignment &&
+                        row.Bytes = present.Bytes && row.Alignment = present.Alignment &&
+                        row.Alternatives = present.Alternatives && row.Selector = present.Selector
+                    | _ -> false
+                source && formalSupport && arms && row.Aggregate = row.Occurrence &&
+                row.FormationInputs = [selection.Condition; selection.WhenTrue; selection.WhenFalse] &&
+                row.Tag.IsNone && row.Value.IsNone && row.SelectedAlternative.IsNone && row.Frontier.IsNone && row.ResultRetirement.IsNone &&
+                slot.Path = [CallableAggregatePathStep.UnionPayload(1, 0)]
+            | _ -> false
+
+        let selectionTransport (row: CallableAggregateValue) (slot: CallableAggregateSlot) =
+            let path = row.Occurrence :: row.FormationInputs
+            let edge (source, target) =
+                match revision.Nodes.TryFind source with
+                | Some node ->
+                    match node.Kind, node.Children with
+                    | SemanticKind.VarRef(name, Some actual), [] ->
+                        actual = target &&
+                        (revision.SourceReadings.BindingUses.TryFind source |> Option.exists (fun held ->
+                            held.Binding = target && held.Name = name && held.Class = SourceBindingClass.ImmutableValue &&
+                            not held.IsProgramSlotIntent && not held.HasProgramSlotAuthority)) &&
+                        (revision.Nodes.TryFind target |> Option.exists (fun binding ->
+                            match binding.Kind with SemanticKind.Binding(_, false, _, _) -> true | _ -> false))
+                    | SemanticKind.Binding(_, false, _, _), [actual] -> actual = target
+                    | SemanticKind.TypeAnnotation(actual, declared), [child] -> actual = target && child = actual && declared = slot.AggregateType
+                    | _ -> false
+                | None -> false
+            match List.tryLast path with
+            | Some supplier when row.Operation = CallableAggregateOperation.Transport && row.Aggregate = supplier &&
+                                 row.Selection.IsNone && row.Tag.IsNone && row.Value.IsNone && row.SelectedAlternative.IsNone &&
+                                 row.Frontier.IsNone && row.ResultRetirement.IsNone && path.Length > 1 &&
+                                 path.Length = (List.distinct path).Length &&
+                                 (path |> List.forall (fun id -> sourceType id = Some slot.AggregateType)) &&
+                                 (path |> List.pairwise |> List.forall edge) ->
+                let suppliers = callable.AggregateValues.TryFind supplier |> Option.defaultValue []
+                                |> List.filter (fun source -> source.Slot = slot.Identity && source.Operation = CallableAggregateOperation.Select)
+                match suppliers with
+                | [source] -> selectedWrite source slot && source.Alternatives = row.Alternatives && source.Selector = row.Selector &&
+                              source.Bytes = row.Bytes && source.Alignment = row.Alignment
+                | _ -> false
+            | _ -> false
+
         let valueChecks (row: CallableAggregateValue) =
             let site = row.Occurrence
             let exactRow role ordinal node = exact site role ordinal site node row.Participants
@@ -517,7 +597,7 @@ module internal CallableAggregateIntegrity =
                       revision.Emission.Boundary.Calls.TryFind retirement.Receiver |> Option.bind(fun call ->
                           call.Arguments |> List.tryFind(fun operand ->
                               operand.Actual=retirement.Actual &&
-                              (operand.OptionalEntry |> Option.exists(fun selection -> Some selection.Construction=(row.Tag |> Option.map _.Constructor))))
+                              (operand.OptionalEntry |> Option.toList |> List.collect BoundaryOptionalEntryChoice.leaves |> List.exists(fun selection -> Some selection.Construction=(row.Tag |> Option.map _.Constructor))))
                           |> Option.bind(fun operand ->
                               match operand.Abi with
                               | BoundaryScalar.Entry invocation -> revision.Emission.Boundary.CallbackInvocations.TryFind invocation
@@ -547,6 +627,8 @@ module internal CallableAggregateIntegrity =
               | _ -> ()
               if row.Operation = CallableAggregateOperation.Construct && row.Aggregate <> site then
                   yield failure "I5" site "A construction row names another aggregate occurrence."
+              if (row.Operation = CallableAggregateOperation.Select) <> row.Selection.IsSome then
+                  yield failure "I5" site "Only a Select owns its immutable selection account."
               if row.Operation = CallableAggregateOperation.Construct &&
                  (row.Tag |> Option.exists (fun tag -> tag.Constructor <> site)) then
                   yield failure "I5" site "The construction tag names another constructor occurrence."
@@ -555,15 +637,18 @@ module internal CallableAggregateIntegrity =
               match callable.AggregateSlots.TryFind row.Slot with
               | None -> yield failure "I5" site "The component's resolved slot row is absent."
               | Some slot ->
+                  if row.Operation = CallableAggregateOperation.Select && not (selectedWrite row slot) then
+                      yield failure "I5" site "The optional selection differs from its exact Boolean source, constructor arms, slot or placement."
                   if slot.Path |> List.exists (function CallableAggregatePathStep.UnionPayload _ -> true | _ -> false) then
-                      if row.Tag.IsNone then yield failure "I5" site "A callable union payload has no current constructor/tag evidence."
+                      if row.Tag.IsNone && row.Operation <> CallableAggregateOperation.Select && not (selectionTransport row slot) then
+                          yield failure "I5" site "A callable union payload has no current constructor/tag evidence."
                   elif row.Tag.IsSome then
                       yield failure "I5" site "A record component carries union tag evidence."
                   if row.Operation = CallableAggregateOperation.Result && not (returnedWrite row slot) then
                       yield failure "I5" site "The aggregate result differs from its exact closed application, return or original constructor."
                   match representation row with
                   | Some(Ok held) ->
-                      if row.Operation = CallableAggregateOperation.Transport && not (transportedWrite row slot) then
+                      if row.Operation = CallableAggregateOperation.Transport && not (transportedWrite row slot || selectionTransport row slot) then
                           yield failure "I5" site "The immutable aggregate transport differs from its exact source path or supplying construction."
                       if row.Operation = CallableAggregateOperation.Project then
                           if not (projectSubject row slot held) then
@@ -620,7 +705,8 @@ module internal CallableAggregateIntegrity =
                           if value <> alternative.Carrier then
                               yield failure "I5" site "The selected write is not paired with its actual carrier input."
                       | _ -> yield failure "I2" site "The written value has no selected alternative in the admitted family."
-                  | None, None when count = 0 || row.Operation = CallableAggregateOperation.Project || row.Operation = CallableAggregateOperation.Snapshot -> ()
+                  | None, None when count = 0 || row.Operation = CallableAggregateOperation.Project || row.Operation = CallableAggregateOperation.Snapshot ||
+                                        row.Operation = CallableAggregateOperation.Select || selectionTransport row slot -> ()
                   | Some _, None when row.Operation = CallableAggregateOperation.Project || row.Operation = CallableAggregateOperation.Snapshot -> ()
                   | _ -> yield failure "I5" site "The source write and its selection are incomplete."
                   for alternative in row.Alternatives do

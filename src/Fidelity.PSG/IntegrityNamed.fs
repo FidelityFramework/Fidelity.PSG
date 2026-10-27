@@ -264,7 +264,7 @@ module IntegrityNamed =
         @ [ value.Formal ]
         @ (idsOfBoundaryScalar value.Abi)
         @ (value.Adaptation |> Option.toList |> List.collect (fun v0 -> (idsOfMeet v0)))
-        @ (value.OptionalEntry |> Option.toList |> List.collect (fun v0 -> (idsOfBoundaryOptionalEntry v0)))
+        @ (value.OptionalEntry |> Option.toList |> List.collect (fun v0 -> (idsOfBoundaryOptionalEntryChoice v0)))
 
     and private idsOfBoundaryOptionalEntry (value: Fidelity.PSG.BoundaryOptionalEntry) : NodeId list =
         [ value.Construction ]
@@ -272,6 +272,11 @@ module IntegrityNamed =
         @ (value.Formation |> Option.toList |> List.collect (fun v0 -> [ v0 ]))
         @ (value.Transport |> Set.toList |> List.collect (fun v0 -> [ v0 ]))
         @ [ value.Obligation ]
+
+    and private idsOfBoundaryOptionalEntryChoice (value: Fidelity.PSG.BoundaryOptionalEntryChoice) : NodeId list =
+        match value with
+        | Fidelity.PSG.BoundaryOptionalEntryChoice.Direct(a0) -> (idsOfBoundaryOptionalEntry a0)
+        | Fidelity.PSG.BoundaryOptionalEntryChoice.Conditional(a0, a1, a2) -> [ a0 ] @ (idsOfBoundaryOptionalEntry a1) @ (idsOfBoundaryOptionalEntry a2)
 
     and private idsOfBoundaryResourceAccess (value: Fidelity.PSG.BoundaryResourceAccess) : NodeId list =
         [ value.Site ]
@@ -402,6 +407,11 @@ module IntegrityNamed =
         @ [ value.Receiver ]
         @ (value.Uses |> List.collect (fun v0 -> [ v0 ]))
 
+    and private idsOfCallableAggregateSelection (value: Fidelity.PSG.CallableAggregateSelection) : NodeId list =
+        [ value.Condition ]
+        @ [ value.WhenTrue ]
+        @ [ value.WhenFalse ]
+
     and private idsOfCallableAggregateSelector (value: Fidelity.PSG.CallableAggregateSelector) : NodeId list =
         (value.Storage |> Option.toList |> List.collect (fun v0 -> [ v0 ]))
 
@@ -434,6 +444,7 @@ module IntegrityNamed =
         @ (value.ResultRetirement |> Option.toList |> List.collect (fun v0 -> (match v0 with Ok v1 -> (idsOfCallableAggregateResultRetirement v1) | Error v1 -> [])))
         @ (value.Frontier |> Option.toList |> List.collect (fun v0 -> [ v0 ]))
         @ (value.Tag |> Option.toList |> List.collect (fun v0 -> (idsOfCallableAggregateTag v0)))
+        @ (value.Selection |> Option.toList |> List.collect (fun v0 -> (idsOfCallableAggregateSelection v0)))
         @ (value.Participants |> List.collect (fun v0 -> (idsOfParticipant v0)))
 
     and private idsOfCallableBranchAlternative (value: Fidelity.PSG.CallableBranchAlternative) : NodeId list =

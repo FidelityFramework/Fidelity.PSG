@@ -4,7 +4,7 @@ open Fidelity.Data.JSON
 module internal JsonGenerated =
     open JsonRuntime
     [<Literal>]
-    let NamedTypes = 328
+    let NamedTypes = 330
     let rec write_BAREWire_Descriptors_CallConv (value: global.BAREWire.Descriptors.CallConv) : JsonValue =
         match value with
         | global.BAREWire.Descriptors.CallConv.``CDecl`` -> union "CDecl" []
@@ -165,10 +165,15 @@ module internal JsonGenerated =
         JsonValue.Object [("Identity", write_Fidelity_PSG_NodeId value.``Identity``); ("Binding", write_Fidelity_PSG_NodeId value.``Binding``); ("Selector", writeString value.``Selector``); ("Contract", write_BAREWire_Platform_ProcessLinkContract value.``Contract``); ("Platform", write_Fidelity_PSG_NodeId value.``Platform``); ("Core", write_Fidelity_PSG_NodeId value.``Core``); ("DeclarationFacts", (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_BoundaryDeclarationFact) value.``DeclarationFacts``); ("Participants", (writeSet write_Fidelity_PSG_NodeId) value.``Participants``)]
 
     and write_Fidelity_PSG_BoundaryOperand (value: global.Fidelity.PSG.BoundaryOperand) : JsonValue =
-        JsonValue.Object [("Actual", write_Fidelity_PSG_NodeId value.``Actual``); ("Formal", write_Fidelity_PSG_NodeId value.``Formal``); ("Abi", write_Fidelity_PSG_BoundaryScalar value.``Abi``); ("Adaptation", (writeOption write_Fidelity_PSG_Meet) value.``Adaptation``); ("OptionalEntry", (writeOption write_Fidelity_PSG_BoundaryOptionalEntry) value.``OptionalEntry``)]
+        JsonValue.Object [("Actual", write_Fidelity_PSG_NodeId value.``Actual``); ("Formal", write_Fidelity_PSG_NodeId value.``Formal``); ("Abi", write_Fidelity_PSG_BoundaryScalar value.``Abi``); ("Adaptation", (writeOption write_Fidelity_PSG_Meet) value.``Adaptation``); ("OptionalEntry", (writeOption write_Fidelity_PSG_BoundaryOptionalEntryChoice) value.``OptionalEntry``)]
 
     and write_Fidelity_PSG_BoundaryOptionalEntry (value: global.Fidelity.PSG.BoundaryOptionalEntry) : JsonValue =
         JsonValue.Object [("Construction", write_Fidelity_PSG_NodeId value.``Construction``); ("CaseOrdinal", writeInt32 value.``CaseOrdinal``); ("Payload", (writeOption write_Fidelity_PSG_NodeId) value.``Payload``); ("Formation", (writeOption write_Fidelity_PSG_NodeId) value.``Formation``); ("Transport", (writeSet write_Fidelity_PSG_NodeId) value.``Transport``); ("Obligation", write_Fidelity_PSG_NodeId value.``Obligation``)]
+
+    and write_Fidelity_PSG_BoundaryOptionalEntryChoice (value: global.Fidelity.PSG.BoundaryOptionalEntryChoice) : JsonValue =
+        match value with
+        | global.Fidelity.PSG.BoundaryOptionalEntryChoice.``Direct``(a0) -> union "Direct" [("Item", write_Fidelity_PSG_BoundaryOptionalEntry a0)]
+        | global.Fidelity.PSG.BoundaryOptionalEntryChoice.``Conditional``(a0, a1, a2) -> union "Conditional" [("selection", write_Fidelity_PSG_NodeId a0); ("whenTrue", write_Fidelity_PSG_BoundaryOptionalEntry a1); ("whenFalse", write_Fidelity_PSG_BoundaryOptionalEntry a2)]
 
     and write_Fidelity_PSG_BoundaryPlatformPremise (value: global.Fidelity.PSG.BoundaryPlatformPremise) : JsonValue =
         JsonValue.Object [("Id", writeString value.``Id``); ("Description", (writeOption writeString) value.``Description``); ("Loading", (writeOption writeString) value.``Loading``); ("LibraryPath", (writeOption writeString) value.``LibraryPath``); ("SourcePaths", (writeSet writeString) value.``SourcePaths``); ("Architecture", (writeOption writeString) value.``Architecture``); ("OS", (writeOption writeString) value.``OS``); ("RuntimeClaim", (writeOption write_Fidelity_PSG_RuntimeModel) value.``RuntimeClaim``); ("Substrate", (writeOption write_Fidelity_PSG_SubstrateKind) value.``Substrate``); ("Dimensions", (writeMap writeString writeInt32) value.``Dimensions``); ("Representations", (writeMap writeString write_Fidelity_PSG_NumericRepresentation) value.``Representations``); ("EndpointReturns", (writeMap writeString write_Fidelity_PSG_ReturnBound) value.``EndpointReturns``)]
@@ -263,6 +268,7 @@ module internal JsonGenerated =
         | global.Fidelity.PSG.CallableAggregateOperation.``Snapshot`` -> union "Snapshot" []
         | global.Fidelity.PSG.CallableAggregateOperation.``Transport`` -> union "Transport" []
         | global.Fidelity.PSG.CallableAggregateOperation.``Result`` -> union "Result" []
+        | global.Fidelity.PSG.CallableAggregateOperation.``Select`` -> union "Select" []
 
     and write_Fidelity_PSG_CallableAggregatePathStep (value: global.Fidelity.PSG.CallableAggregatePathStep) : JsonValue =
         match value with
@@ -271,6 +277,9 @@ module internal JsonGenerated =
 
     and write_Fidelity_PSG_CallableAggregateResultRetirement (value: global.Fidelity.PSG.CallableAggregateResultRetirement) : JsonValue =
         JsonValue.Object [("Application", write_Fidelity_PSG_NodeId value.``Application``); ("Caller", write_Fidelity_PSG_NodeId value.``Caller``); ("Construction", write_Fidelity_PSG_NodeId value.``Construction``); ("Actual", write_Fidelity_PSG_NodeId value.``Actual``); ("Receiver", write_Fidelity_PSG_NodeId value.``Receiver``); ("Policy", write_Fidelity_PSG_ProjectMemoryPolicy value.``Policy``); ("Uses", (writeList write_Fidelity_PSG_NodeId) value.``Uses``)]
+
+    and write_Fidelity_PSG_CallableAggregateSelection (value: global.Fidelity.PSG.CallableAggregateSelection) : JsonValue =
+        JsonValue.Object [("Condition", write_Fidelity_PSG_NodeId value.``Condition``); ("WhenTrue", write_Fidelity_PSG_NodeId value.``WhenTrue``); ("WhenFalse", write_Fidelity_PSG_NodeId value.``WhenFalse``)]
 
     and write_Fidelity_PSG_CallableAggregateSelector (value: global.Fidelity.PSG.CallableAggregateSelector) : JsonValue =
         JsonValue.Object [("Lower", writeInt32 value.``Lower``); ("UpperExclusive", writeInt32 value.``UpperExclusive``); ("Storage", (writeOption write_Fidelity_PSG_NodeId) value.``Storage``); ("Slot", (writeOption write_Fidelity_PSG_SettledSlot) value.``Slot``); ("ByteOffset", (writeOption writeInt32) value.``ByteOffset``)]
@@ -285,7 +294,7 @@ module internal JsonGenerated =
         JsonValue.Object [("Constructor", write_Fidelity_PSG_NodeId value.``Constructor``); ("TagRead", (writeOption write_Fidelity_PSG_NodeId) value.``TagRead``); ("CaseOrdinal", writeInt32 value.``CaseOrdinal``); ("PayloadOrdinal", (writeOption writeInt32) value.``PayloadOrdinal``); ("Payload", (writeOption write_Fidelity_PSG_NodeId) value.``Payload``); ("Participants", (writeList write_Fidelity_PSG_Participant) value.``Participants``)]
 
     and write_Fidelity_PSG_CallableAggregateValue (value: global.Fidelity.PSG.CallableAggregateValue) : JsonValue =
-        JsonValue.Object [("Occurrence", write_Fidelity_PSG_NodeId value.``Occurrence``); ("Aggregate", write_Fidelity_PSG_NodeId value.``Aggregate``); ("Slot", write_Fidelity_PSG_NodeId value.``Slot``); ("Alternatives", (writeList write_Fidelity_PSG_CallableAggregateAlternative) value.``Alternatives``); ("Selector", (writeOption write_Fidelity_PSG_CallableAggregateSelector) value.``Selector``); ("FormationInputs", (writeList write_Fidelity_PSG_NodeId) value.``FormationInputs``); ("Value", (writeOption write_Fidelity_PSG_NodeId) value.``Value``); ("SelectedAlternative", (writeOption writeInt32) value.``SelectedAlternative``); ("Operation", write_Fidelity_PSG_CallableAggregateOperation value.``Operation``); ("ResultRetirement", (writeOption (writeResult write_Fidelity_PSG_CallableAggregateResultRetirement writeString)) value.``ResultRetirement``); ("Frontier", (writeOption write_Fidelity_PSG_NodeId) value.``Frontier``); ("Tag", (writeOption write_Fidelity_PSG_CallableAggregateTag) value.``Tag``); ("Bytes", writeInt32 value.``Bytes``); ("Alignment", writeInt32 value.``Alignment``); ("Participants", (writeList write_Fidelity_PSG_Participant) value.``Participants``)]
+        JsonValue.Object [("Occurrence", write_Fidelity_PSG_NodeId value.``Occurrence``); ("Aggregate", write_Fidelity_PSG_NodeId value.``Aggregate``); ("Slot", write_Fidelity_PSG_NodeId value.``Slot``); ("Alternatives", (writeList write_Fidelity_PSG_CallableAggregateAlternative) value.``Alternatives``); ("Selector", (writeOption write_Fidelity_PSG_CallableAggregateSelector) value.``Selector``); ("FormationInputs", (writeList write_Fidelity_PSG_NodeId) value.``FormationInputs``); ("Value", (writeOption write_Fidelity_PSG_NodeId) value.``Value``); ("SelectedAlternative", (writeOption writeInt32) value.``SelectedAlternative``); ("Operation", write_Fidelity_PSG_CallableAggregateOperation value.``Operation``); ("ResultRetirement", (writeOption (writeResult write_Fidelity_PSG_CallableAggregateResultRetirement writeString)) value.``ResultRetirement``); ("Frontier", (writeOption write_Fidelity_PSG_NodeId) value.``Frontier``); ("Tag", (writeOption write_Fidelity_PSG_CallableAggregateTag) value.``Tag``); ("Selection", (writeOption write_Fidelity_PSG_CallableAggregateSelection) value.``Selection``); ("Bytes", writeInt32 value.``Bytes``); ("Alignment", writeInt32 value.``Alignment``); ("Participants", (writeList write_Fidelity_PSG_Participant) value.``Participants``)]
 
     and write_Fidelity_PSG_CallableBranchAlternative (value: global.Fidelity.PSG.CallableBranchAlternative) : JsonValue =
         JsonValue.Object [("Constructor", write_Fidelity_PSG_NodeId value.``Constructor``); ("Tag", writeInt32 value.``Tag``); ("Payloads", (writeList write_Fidelity_PSG_NodeId) value.``Payloads``)]

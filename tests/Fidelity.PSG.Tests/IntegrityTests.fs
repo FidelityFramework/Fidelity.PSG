@@ -1722,7 +1722,7 @@ let ``an ordinary scalar operand cannot acquire an optional entry account`` () =
         {Construction = NodeId 3; CaseOrdinal = 0; Payload = None; Formation = None
          Transport = Set.singleton(NodeId 3)
          Obligation = NodeId 404}
-    let changed = {call with Arguments = {call.Arguments.Head with OptionalEntry = Some optional} :: call.Arguments.Tail}
+    let changed = {call with Arguments = {call.Arguments.Head with OptionalEntry = Some (BoundaryOptionalEntryChoice.Direct optional)} :: call.Arguments.Tail}
     let boundary = {boundaryCalleeFacts.Emission.Boundary with Calls = Map.ofList [call.Site, changed]}
     let violations = Integrity.check {boundaryCalleeFacts with Emission = {boundaryCalleeFacts.Emission with Boundary = boundary}}
     let violation = within "Emission.Boundary.Calls.OptionalEntry" violations
@@ -1739,7 +1739,7 @@ let ``optional entry inventory retains absent and present selection identities``
          Formation = if present then Some(NodeId 9103) else None
          Transport = Set.singleton(NodeId 9104)
          Obligation = NodeId 9106}
-    let changed = {call with Arguments = [{call.Arguments.Head with OptionalEntry = Some optional}]}
+    let changed = {call with Arguments = [{call.Arguments.Head with OptionalEntry = Some (BoundaryOptionalEntryChoice.Direct optional)}]}
     let boundary = {boundaryCalleeFacts.Emission.Boundary with Calls = Map.ofList [call.Site, changed]}
     let named = Integrity.named {boundaryCalleeFacts with Emission = {boundaryCalleeFacts.Emission with Boundary = boundary}}
                 |> List.collect snd |> Set.ofList

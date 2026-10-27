@@ -5,11 +5,11 @@ module internal BinaryGenerated =
     [<Literal>]
     let Format = 2u
     [<Literal>]
-    let Schema = 45
+    let Schema = 46
     [<Literal>]
-    let Fingerprint = "7C0BEA78037DA7A487D58A72617031BA9E01A0A56ED6FE3AC4AED3D0B406A29A"
+    let Fingerprint = "4194B45DFDE761379402869182C60B1003EB29AC9D63B9160936AA863082D43D"
     [<Literal>]
-    let NamedTypes = 341
+    let NamedTypes = 343
     [<Literal>]
     let RevisionFields = 17
     [<Literal>]
@@ -693,7 +693,7 @@ module internal BinaryGenerated =
         let! state = write_Fidelity_PSG_NodeId state value.``Formal``
         let! state = write_Fidelity_PSG_BoundaryScalar state value.``Abi``
         let! state = (writeOption write_Fidelity_PSG_Meet) state value.``Adaptation``
-        let! state = (writeOption write_Fidelity_PSG_BoundaryOptionalEntry) state value.``OptionalEntry``
+        let! state = (writeOption write_Fidelity_PSG_BoundaryOptionalEntryChoice) state value.``OptionalEntry``
         return leaveWrite state
     }
 
@@ -706,6 +706,24 @@ module internal BinaryGenerated =
         let! state = (writeSet write_Fidelity_PSG_NodeId) state value.``Transport``
         let! state = write_Fidelity_PSG_NodeId state value.``Obligation``
         return leaveWrite state
+    }
+
+    and write_Fidelity_PSG_BoundaryOptionalEntryChoice (state: WriteState) (value: global.Fidelity.PSG.BoundaryOptionalEntryChoice) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        return!
+            match value with
+            | global.Fidelity.PSG.BoundaryOptionalEntryChoice.``Direct``(a0) -> result {
+                let! state = writeTag state 0
+                let! state = write_Fidelity_PSG_BoundaryOptionalEntry state a0
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.BoundaryOptionalEntryChoice.``Conditional``(a0, a1, a2) -> result {
+                let! state = writeTag state 1
+                let! state = write_Fidelity_PSG_NodeId state a0
+                let! state = write_Fidelity_PSG_BoundaryOptionalEntry state a1
+                let! state = write_Fidelity_PSG_BoundaryOptionalEntry state a2
+                return leaveWrite state
+              }
     }
 
     and write_Fidelity_PSG_BoundaryPlatformPremise (state: WriteState) (value: global.Fidelity.PSG.BoundaryPlatformPremise) : Result<WriteState, BinaryError> = result {
@@ -1064,6 +1082,10 @@ module internal BinaryGenerated =
                 let! state = writeTag state 5
                 return leaveWrite state
               }
+            | global.Fidelity.PSG.CallableAggregateOperation.``Select`` -> result {
+                let! state = writeTag state 6
+                return leaveWrite state
+              }
     }
 
     and write_Fidelity_PSG_CallableAggregatePathStep (state: WriteState) (value: global.Fidelity.PSG.CallableAggregatePathStep) : Result<WriteState, BinaryError> = result {
@@ -1092,6 +1114,14 @@ module internal BinaryGenerated =
         let! state = write_Fidelity_PSG_NodeId state value.``Receiver``
         let! state = write_Fidelity_PSG_ProjectMemoryPolicy state value.``Policy``
         let! state = (writeList write_Fidelity_PSG_NodeId) state value.``Uses``
+        return leaveWrite state
+    }
+
+    and write_Fidelity_PSG_CallableAggregateSelection (state: WriteState) (value: global.Fidelity.PSG.CallableAggregateSelection) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = write_Fidelity_PSG_NodeId state value.``Condition``
+        let! state = write_Fidelity_PSG_NodeId state value.``WhenTrue``
+        let! state = write_Fidelity_PSG_NodeId state value.``WhenFalse``
         return leaveWrite state
     }
 
@@ -1153,6 +1183,7 @@ module internal BinaryGenerated =
         let! state = (writeOption (writeResult write_Fidelity_PSG_CallableAggregateResultRetirement writeString)) state value.``ResultRetirement``
         let! state = (writeOption write_Fidelity_PSG_NodeId) state value.``Frontier``
         let! state = (writeOption write_Fidelity_PSG_CallableAggregateTag) state value.``Tag``
+        let! state = (writeOption write_Fidelity_PSG_CallableAggregateSelection) state value.``Selection``
         let! state = writeI32 state value.``Bytes``
         let! state = writeI32 state value.``Alignment``
         let! state = (writeList write_Fidelity_PSG_Participant) state value.``Participants``
@@ -8199,7 +8230,7 @@ module internal BinaryGenerated =
         let! a1, state = read_Fidelity_PSG_NodeId state
         let! a2, state = read_Fidelity_PSG_BoundaryScalar state
         let! a3, state = (readOption read_Fidelity_PSG_Meet) state
-        let! a4, state = (readOption read_Fidelity_PSG_BoundaryOptionalEntry) state
+        let! a4, state = (readOption read_Fidelity_PSG_BoundaryOptionalEntryChoice) state
         return! finishRead ({ ``Actual`` = a0; ``Formal`` = a1; ``Abi`` = a2; ``Adaptation`` = a3; ``OptionalEntry`` = a4 } : global.Fidelity.PSG.BoundaryOperand) state
     }
 
@@ -8212,6 +8243,24 @@ module internal BinaryGenerated =
         let! a4, state = (readSet read_Fidelity_PSG_NodeId) state
         let! a5, state = read_Fidelity_PSG_NodeId state
         return! finishRead ({ ``Construction`` = a0; ``CaseOrdinal`` = a1; ``Payload`` = a2; ``Formation`` = a3; ``Transport`` = a4; ``Obligation`` = a5 } : global.Fidelity.PSG.BoundaryOptionalEntry) state
+    }
+
+    and read_Fidelity_PSG_BoundaryOptionalEntryChoice (state: ReadState) : Result<global.Fidelity.PSG.BoundaryOptionalEntryChoice * ReadState, BinaryError> = result {
+        let! state = enterReadCases 4 state
+        let! tag, state = readTag state
+        return!
+            match tag with
+            | 0 -> result {
+                let! a0, state = read_Fidelity_PSG_BoundaryOptionalEntry state
+                return! finishRead (global.Fidelity.PSG.BoundaryOptionalEntryChoice.``Direct``(a0)) state
+              }
+            | 1 -> result {
+                let! a0, state = read_Fidelity_PSG_NodeId state
+                let! a1, state = read_Fidelity_PSG_BoundaryOptionalEntry state
+                let! a2, state = read_Fidelity_PSG_BoundaryOptionalEntry state
+                return! finishRead (global.Fidelity.PSG.BoundaryOptionalEntryChoice.``Conditional``(a0, a1, a2)) state
+              }
+            | _ -> malformed state "Unknown Fidelity.PSG.BoundaryOptionalEntryChoice case"
     }
 
     and read_Fidelity_PSG_BoundaryPlatformPremise (state: ReadState) : Result<global.Fidelity.PSG.BoundaryPlatformPremise * ReadState, BinaryError> = result {
@@ -8560,6 +8609,9 @@ module internal BinaryGenerated =
             | 5 -> result {
                 return! finishRead (global.Fidelity.PSG.CallableAggregateOperation.``Result``) state
               }
+            | 6 -> result {
+                return! finishRead (global.Fidelity.PSG.CallableAggregateOperation.``Select``) state
+              }
             | _ -> malformed state "Unknown Fidelity.PSG.CallableAggregateOperation case"
     }
 
@@ -8590,6 +8642,14 @@ module internal BinaryGenerated =
         let! a5, state = read_Fidelity_PSG_ProjectMemoryPolicy state
         let! a6, state = (readList read_Fidelity_PSG_NodeId) state
         return! finishRead ({ ``Application`` = a0; ``Caller`` = a1; ``Construction`` = a2; ``Actual`` = a3; ``Receiver`` = a4; ``Policy`` = a5; ``Uses`` = a6 } : global.Fidelity.PSG.CallableAggregateResultRetirement) state
+    }
+
+    and read_Fidelity_PSG_CallableAggregateSelection (state: ReadState) : Result<global.Fidelity.PSG.CallableAggregateSelection * ReadState, BinaryError> = result {
+        let! state = enterReadFields 3 state
+        let! a0, state = read_Fidelity_PSG_NodeId state
+        let! a1, state = read_Fidelity_PSG_NodeId state
+        let! a2, state = read_Fidelity_PSG_NodeId state
+        return! finishRead ({ ``Condition`` = a0; ``WhenTrue`` = a1; ``WhenFalse`` = a2 } : global.Fidelity.PSG.CallableAggregateSelection) state
     }
 
     and read_Fidelity_PSG_CallableAggregateSelector (state: ReadState) : Result<global.Fidelity.PSG.CallableAggregateSelector * ReadState, BinaryError> = result {
@@ -8637,7 +8697,7 @@ module internal BinaryGenerated =
     }
 
     and read_Fidelity_PSG_CallableAggregateValue (state: ReadState) : Result<global.Fidelity.PSG.CallableAggregateValue * ReadState, BinaryError> = result {
-        let! state = enterReadFields 15 state
+        let! state = enterReadFields 16 state
         let! a0, state = read_Fidelity_PSG_NodeId state
         let! a1, state = read_Fidelity_PSG_NodeId state
         let! a2, state = read_Fidelity_PSG_NodeId state
@@ -8650,10 +8710,11 @@ module internal BinaryGenerated =
         let! a9, state = (readOption (readResult read_Fidelity_PSG_CallableAggregateResultRetirement readString)) state
         let! a10, state = (readOption read_Fidelity_PSG_NodeId) state
         let! a11, state = (readOption read_Fidelity_PSG_CallableAggregateTag) state
-        let! a12, state = readI32 state
+        let! a12, state = (readOption read_Fidelity_PSG_CallableAggregateSelection) state
         let! a13, state = readI32 state
-        let! a14, state = (readList read_Fidelity_PSG_Participant) state
-        return! finishRead ({ ``Occurrence`` = a0; ``Aggregate`` = a1; ``Slot`` = a2; ``Alternatives`` = a3; ``Selector`` = a4; ``FormationInputs`` = a5; ``Value`` = a6; ``SelectedAlternative`` = a7; ``Operation`` = a8; ``ResultRetirement`` = a9; ``Frontier`` = a10; ``Tag`` = a11; ``Bytes`` = a12; ``Alignment`` = a13; ``Participants`` = a14 } : global.Fidelity.PSG.CallableAggregateValue) state
+        let! a14, state = readI32 state
+        let! a15, state = (readList read_Fidelity_PSG_Participant) state
+        return! finishRead ({ ``Occurrence`` = a0; ``Aggregate`` = a1; ``Slot`` = a2; ``Alternatives`` = a3; ``Selector`` = a4; ``FormationInputs`` = a5; ``Value`` = a6; ``SelectedAlternative`` = a7; ``Operation`` = a8; ``ResultRetirement`` = a9; ``Frontier`` = a10; ``Tag`` = a11; ``Selection`` = a12; ``Bytes`` = a13; ``Alignment`` = a14; ``Participants`` = a15 } : global.Fidelity.PSG.CallableAggregateValue) state
     }
 
     and read_Fidelity_PSG_CallableBranchAlternative (state: ReadState) : Result<global.Fidelity.PSG.CallableBranchAlternative * ReadState, BinaryError> = result {

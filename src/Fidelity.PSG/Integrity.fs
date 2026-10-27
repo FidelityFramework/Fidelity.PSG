@@ -89,15 +89,18 @@ module Integrity =
         let boundary=revision.Emission.Boundary
         let optionalOnly =
             boundary.Calls.Values |> Seq.forall(fun call -> call.Arguments |> List.indexed |> List.forall(fun(ordinal,operand) ->
-                let uses=entry.Transport.Contains operand.Actual || (operand.OptionalEntry |> Option.exists(fun selected->selected.Formation=Some entry.Formation))
+                let uses=entry.Transport.Contains operand.Actual || (operand.OptionalEntry |> Option.toList |> List.collect BoundaryOptionalEntryChoice.leaves |> List.exists(fun selected->selected.Formation=Some entry.Formation))
                 not uses ||
                 match operand.OptionalEntry,operand.Abi with
-                | Some selected,BoundaryScalar.Entry identity when selected.CaseOrdinal=1 && selected.Payload.IsSome && selected.Formation=Some entry.Formation ->
-                    match boundary.CallbackInvocations.TryFind identity,revision.CurrentClaims.TryFind selected.Obligation with
-                    | Some invocation,Some {Body=ObligationBody.OptionalEntryArgumentConversion model} ->
-                        invocation.Extent=BoundaryCallbackExtent.DuringCall && invocation.Import=call.Import && invocation.Parameter=ordinal &&
-                        model.Call=call.Site && model.Parameter=ordinal && model.Actual=operand.Actual &&
-                        model.Formation=entry.Formation && model.Invocation=identity
+                | Some choice,BoundaryScalar.Entry identity ->
+                    match choice |> BoundaryOptionalEntryChoice.leaves |> List.filter(fun selected -> selected.CaseOrdinal=1 && selected.Payload.IsSome && selected.Formation=Some entry.Formation) with
+                    | [selected] ->
+                        match boundary.CallbackInvocations.TryFind identity,revision.CurrentClaims.TryFind selected.Obligation with
+                        | Some invocation,Some {Body=ObligationBody.OptionalEntryArgumentConversion model} ->
+                            invocation.Extent=BoundaryCallbackExtent.DuringCall && invocation.Import=call.Import && invocation.Parameter=ordinal &&
+                            model.Call=call.Site && model.Parameter=ordinal && model.Actual=operand.Actual &&
+                            model.Formation=entry.Formation && model.Invocation=identity
+                        | _ -> false
                     | _ -> false
                 | _ -> false))
         match boundary.CallbackInvocations.TryFind entry.Invocation with
@@ -524,7 +527,7 @@ module Integrity =
                   match claim.Body with
                   | ObligationBody.OptionalEntryArgumentConversion _ | ObligationBody.OptionalEntryAbsenceArgumentConversion _ ->
                       let owners = revision.Emission.Boundary.Calls.Values |> Seq.collect (fun call ->
-                          call.Arguments |> List.choose (fun operand -> operand.OptionalEntry |> Option.filter (fun selected -> selected.Obligation=id))) |> Seq.length
+                          call.Arguments |> List.collect (fun operand -> operand.OptionalEntry |> Option.toList |> List.collect BoundaryOptionalEntryChoice.leaves |> List.filter (fun selected -> selected.Obligation=id))) |> Seq.length
                       if owners<>1 then yield defect "CurrentClaims.OptionalEntry" id "A finite optional-entry source plan requires one exact current per-call operand owner."
                   | _ -> () ]
         missing @ inventory @ incidence @ optionalOwners
@@ -2157,8 +2160,8 @@ module Integrity =
                         yield defect "CurrentClaims.Pending" id "A Pending claim requires nonempty reason strings and no solver logic."
                     let owners =
                         boundary.Calls.Values |> Seq.collect (fun call ->
-                            call.Arguments |> List.indexed |> List.choose (fun (ordinal, operand) ->
-                                operand.OptionalEntry |> Option.bind (fun optional ->
+                            call.Arguments |> List.indexed |> List.collect (fun (ordinal, operand) ->
+                                operand.OptionalEntry |> Option.toList |> List.collect BoundaryOptionalEntryChoice.leaves |> List.choose (fun optional ->
                                     if optional.Obligation = id && claim.Kind = $"foreign-optional-entry-conversion-{ordinal}" then Some call.Site else None)))
                         |> Seq.toList
                     if owners.Length <> 1 then
@@ -2412,144 +2415,184 @@ module Integrity =
                             yield! adaptationRow "Emission.Boundary.Calls.Arguments.Adaptation" call.Site operand.Actual meet
                     | BoundaryScalar.Entry invocation ->
                       match operand.OptionalEntry with
-                      | Some optional ->
-                        let part = "Emission.Boundary.Calls.OptionalEntry"
-                        let callable = revision.Emission.Callable
-                        let constructions = callable.AggregateValues.TryFind optional.Construction |> Option.defaultValue []
-                                            |> List.filter (fun row -> row.Occurrence = optional.Construction && row.Operation = CallableAggregateOperation.Construct)
-                        let selected = callable.AggregateValues.TryFind operand.Actual |> Option.defaultValue []
-                        let receiving = boundary.CallbackInvocations.TryFind invocation
-                        let sourceType = revision.Nodes.TryFind operand.Actual |> Option.map _.Type
-                        let nominalOption =
-                            match sourceType with
-                            | Some(TypeIdentity.Application(constructor, [TypeIdentity.Application(entry, [TypeIdentity.Function _])])) ->
-                                constructor = {Declaration = {Module = []; Name = "option"}; Parameters = [TypeParamKind.Type]; NativeKind = None} &&
-                                entry.NativeKind = Some NTUKind.NTUfnptr
-                            | _ -> false
-                        let incidence =
-                            match constructions, receiving, boundary.Imports.TryFind call.Import with
-                            | [construction], Some receiver, Some imported ->
-                                let live =
-                                    match revision.Nodes.TryFind optional.Construction with
-                                    | Some { Kind = SemanticKind.UnionCase(_, caseOrdinal, payload) }
-                                    | Some { Kind = SemanticKind.DUConstruct(_, caseOrdinal, payload, _) } ->
-                                        caseOrdinal = optional.CaseOrdinal && payload = optional.Payload
+                      | Some choice ->
+                        let conditionalCurrent =
+                            match choice with
+                            | BoundaryOptionalEntryChoice.Direct _ -> true
+                            | BoundaryOptionalEntryChoice.Conditional(selection, whenTrue, whenFalse) ->
+                                let callable = revision.Emission.Callable
+                                let selections = callable.AggregateValues.TryFind selection |> Option.defaultValue []
+                                                 |> List.filter (fun row -> row.Operation = CallableAggregateOperation.Select)
+                                match selections with
+                                | [selected] ->
+                                    let actual = callable.AggregateValues.TryFind operand.Actual |> Option.defaultValue []
+                                                 |> List.filter (fun row -> row.Slot = selected.Slot)
+                                    let path =
+                                        match actual with
+                                        | [row] when row.Operation = CallableAggregateOperation.Select && row.Occurrence = selection -> Some [operand.Actual]
+                                        | [row] when row.Operation = CallableAggregateOperation.Transport && row.Aggregate = selection &&
+                                                     List.tryLast row.FormationInputs = Some selection -> Some (operand.Actual :: row.FormationInputs)
+                                        | _ -> None
+                                    match selected.Selection, path, callable.AggregateDependencies.TryFind operand.Actual with
+                                    | Some held, Some path, Some account ->
+                                        held.WhenTrue = whenTrue.Construction && held.WhenFalse = whenFalse.Construction &&
+                                        selected.Occurrence = selection && selected.Aggregate = selection &&
+                                        whenTrue.Construction <> whenFalse.Construction && whenTrue.Obligation <> whenFalse.Obligation &&
+                                        Set.ofList [whenTrue.CaseOrdinal; whenFalse.CaseOrdinal] = Set.ofList [0; 1] &&
+                                        whenTrue.Transport = Set.ofList (whenTrue.Construction :: path) &&
+                                        whenFalse.Transport = Set.ofList (whenFalse.Construction :: path) &&
+                                        account.Occurrence = operand.Actual && List.contains selected account.Values &&
+                                        (account.Sources |> List.exists (fun source -> source.Node = held.Condition))
                                     | _ -> false
-                                let current =
-                                    selected |> List.exists (fun row ->
-                                        let instance =
-                                            if operand.Actual=optional.Construction || row.FormationInputs |> List.contains optional.Construction then true
-                                            else
-                                                let supplier =
-                                                    if row.Operation=CallableAggregateOperation.Result then Some row.Occurrence
-                                                    elif row.Operation=CallableAggregateOperation.Transport then Some row.Aggregate
-                                                    else None
-                                                supplier |> Option.exists(fun site->
-                                                    callable.AggregateValues.TryFind site |> Option.defaultValue []
-                                                    |> List.exists(fun result->
-                                                        result.Operation=CallableAggregateOperation.Result && result.Occurrence=site && result.Aggregate=site &&
-                                                        result.Slot=row.Slot && result.Tag=construction.Tag && result.Alternatives=construction.Alternatives &&
-                                                        (match result.FormationInputs with
-                                                         | [_;_;_;_;_;ctor] when optional.Payload.IsNone -> ctor=optional.Construction
-                                                         | [_;_;_;_;_;ctor;payload] -> ctor=optional.Construction && optional.Payload=Some payload
-                                                         | _ -> false)))
-                                        row.Slot = construction.Slot && row.Tag = construction.Tag && row.Alternatives = construction.Alternatives &&
-                                        instance)
-                                let support =
-                                    match callable.AggregateDependencies.TryFind operand.Actual with
-                                    | Some account when account.Occurrence = operand.Actual ->
-                                        let dependencies = account.Sources |> List.map _.Node |> Set.ofList
-                                        Set.isSubset dependencies call.Participants &&
-                                        Set.isSubset receiver.Participants call.Participants
-                                    | _ -> false
-                                let typed =
-                                    match callable.AggregateSlots.TryFind construction.Slot with
-                                    | Some slot ->
-                                        slot.Path = [CallableAggregatePathStep.UnionPayload(1, 0)] &&
-                                        sourceType = Some slot.AggregateType && imported.SourceTypes.TryFind operand.Formal = sourceType
-                                    | _ -> false
-                                live && current && support && typed && nominalOption && construction.Value = optional.Payload &&
-                                (construction.Tag |> Option.exists (fun tag ->
-                                    tag.Constructor = optional.Construction && tag.CaseOrdinal = optional.CaseOrdinal &&
-                                    tag.Payload = optional.Payload && tag.PayloadOrdinal = (optional.Payload |> Option.map (fun _ -> 0)))) &&
-                                receiver.Import = call.Import && receiver.Formal = operand.Formal && receiver.Parameter = ordinal &&
-                                receiver.Extent = BoundaryCallbackExtent.DuringCall && operand.Adaptation.IsNone &&
-                                (match optional.CaseOrdinal, optional.Payload, optional.Formation with
-                                 | 0, None, None -> construction.Alternatives.IsEmpty
-                                 | 1, Some payload, Some formation ->
-                                     match boundary.ClosedEntries.TryFind formation, construction.Alternatives with
-                                     | Some entry, [alternative] ->
-                                         optionalCodeWitness revision entry receiver && entry.Transport.Contains payload &&
-                                         alternative.Formation = formation && alternative.Carrier = formation &&
-                                         alternative.EnvironmentPlacement.IsNone &&
-                                         optional.Transport.Contains payload && optional.Transport.Contains formation
-                                     | _ -> false
-                                 | _ -> false)
-                            | _ -> false
-                        if not incidence then
-                            yield defect part call.Site "The optional callback differs from its exact current Option construction, tag, payload, closed entry or receiving ordinal."
-                        let required = Set.ofList ([call.Site; call.Import; operand.Actual; operand.Formal; invocation; optional.Construction; optional.Obligation] @ Option.toList optional.Payload @ Option.toList optional.Formation)
-                        if not (Set.isSubset required call.Participants) || not (Set.isSubset optional.Transport call.Participants) ||
-                           not (optional.Transport.Contains operand.Actual) || not (optional.Transport.Contains optional.Construction) then
-                            yield defect (part + ".Participants") call.Site "The optional callback omits its exact source selection, transport, invocation or conversion claim support."
-                        let claimMatches =
-                            let expectedSupport =
-                                match callable.AggregateDependencies.TryFind operand.Actual,boundary.Imports.TryFind call.Import,boundary.CallbackInvocations.TryFind invocation with
-                                | Some account,Some imported,Some receiver when account.Occurrence=operand.Actual && not account.Slots.IsEmpty &&
-                                    (account.Slots |> List.forall(fun slot->account.Participants |> List.exists(fun participant->participant.Node=slot.Identity && participant.Role=ParticipantRole.AggregateSlot))) ->
-                                    let own=account.Sources |> List.map _.Node |> Set.ofList
-                                    let extra=if optional.Payload.IsSome then Set.empty else boundary.CallbackAbsences.Values |> Seq.filter(fun row->row.Import=call.Import && row.Parameter=ordinal && row.Invocation=invocation) |> Seq.collect(fun row->row.DeclarationFacts |> Map.keys) |> Set.ofSeq
-                                    Some(Set.unionMany[own;optional.Transport;Set.ofList[call.Site;call.Import;call.Callee;operand.Actual;operand.Formal;optional.Construction];imported.Participants;receiver.Participants;extra])
-                                | _ -> None
-                            let expectedReasons =
-                                if optional.CaseOrdinal = 0 then
-                                    ["Selected-target optional-entry conversion and the foreign nullable-acceptance premise remain Pending."]
-                                else ["Selected-target optional-entry conversion remains Pending."]
-                            match revision.CurrentClaims.TryFind optional.Obligation with
-                            | Some claim ->
-                                let bodyMatches =
-                                    match claim.Body with
-                                    | ObligationBody.Pending reasons ->
-                                        claim.Logic = "" && claim.Statement = "The exact source Option selection requires an admitted target boundary conversion." && reasons=expectedReasons
-                                    | ObligationBody.OptionalEntryArgumentConversion model ->
-                                        let arms = [{CaseOrdinal=0;Choice=OptionalEntryPlanChoice.PendingAbsence;Formation=None}
-                                                    {CaseOrdinal=1;Choice=OptionalEntryPlanChoice.ClosedEntry;Formation=Some model.Formation}]
-                                        model.Call=call.Site && model.Parameter=ordinal && model.Actual=operand.Actual &&
-                                        model.Construction=optional.Construction && model.SourceCase=1 && optional.CaseOrdinal=1 &&
-                                        optional.Payload=Some model.Payload && optional.Formation=Some model.Formation &&
-                                        model.Invocation=invocation && model.Arms=arms &&
-                                        (revision.Emission.Callable.AggregateDependencies.TryFind operand.Actual |> Option.exists(fun account->
-                                            match account.Values |> List.filter(fun value->value.Operation=CallableAggregateOperation.Result) with
-                                            | [] -> model.ResultRetirement.IsNone
-                                            | [row] -> row.ResultRetirement=Option.map Ok model.ResultRetirement &&
-                                                       (model.ResultRetirement |> Option.exists(fun retirement->retirement.Receiver=call.Site && retirement.Actual=operand.Actual && retirement.Construction=optional.Construction && account.MemoryPolicy=Some retirement.Policy))
-                                            | _ -> false)) &&
-                                        claim.Logic="QF_LIA" && claim.Statement="The exact source Some selection has complete finite native-choice plan correspondence; target realization remains an artifact obligation."
-                                    | ObligationBody.OptionalEntryAbsenceArgumentConversion model ->
-                                        let arms=[{CaseOrdinal=0;Choice=OptionalEntryAbsencePlanChoice.AbsentEntry};{CaseOrdinal=1;Choice=OptionalEntryAbsencePlanChoice.RequiresClosedEntry}]
-                                        model.Call=call.Site && model.Parameter=ordinal && model.Actual=operand.Actual && model.Construction=optional.Construction && model.SourceCase=0 &&
-                                        optional.CaseOrdinal=0 && optional.Payload.IsNone && optional.Formation.IsNone && model.Arms=arms &&
-                                        (revision.Emission.Callable.AggregateDependencies.TryFind operand.Actual |> Option.exists(fun account->
-                                            match account.Values |> List.filter(fun value->value.Operation=CallableAggregateOperation.Result) with
-                                            | [] -> model.ResultRetirement.IsNone
-                                            | [row] -> row.ResultRetirement=Option.map Ok model.ResultRetirement &&
-                                                       (model.ResultRetirement |> Option.exists(fun retirement->retirement.Receiver=call.Site && retirement.Actual=operand.Actual && retirement.Construction=optional.Construction && account.MemoryPolicy=Some retirement.Policy))
-                                            | _ -> false)) &&
-                                        (boundary.CallbackAbsences.TryFind model.Absence |> Option.exists(fun row->row.Quote=model.Absence && row.Import=call.Import && row.Parameter=ordinal && row.Formal=operand.Formal && row.Invocation=invocation && absenceAccountCurrent boundary row)) &&
-                                        claim.Logic="QF_LIA" && claim.Statement="The exact source None selection has complete finite absence-choice correspondence under its external binding hypothesis; target realization remains an artifact obligation."
-                                    | _ -> false
-                                claim.Kind = $"foreign-optional-entry-conversion-{ordinal}" &&
-                                bodyMatches &&
-                                (revision.Obligations |> List.filter (fun row -> row.Id = claim.Id)) = [claim] &&
-                                // The live revision carries the complete grouped
-                                // claim sources; analytical F edges stay with Baker.
-                                (match revision.ObligationSources.TryFind optional.Obligation, expectedSupport with
-                                 | Some [group], Some support ->
-                                     Set.isSubset support call.Participants && group = List.distinct (call.Site :: Set.toList support)
-                                 | _ -> false)
-                            | _ -> false
-                        if not claimMatches then
-                            yield defect (part + ".Obligation") call.Site "The optional callback requires its exact existing Pending per-call conversion claim."
+                                | _ -> false
+                        if not conditionalCurrent then
+                            yield defect "Emission.Boundary.Calls.OptionalEntry" call.Site "The conditional optional entry differs from its exact source selection, actual transport, arm order or claim identities."
+                        for optional in BoundaryOptionalEntryChoice.leaves choice do
+                          let part = "Emission.Boundary.Calls.OptionalEntry"
+                          let callable = revision.Emission.Callable
+                          let constructions = callable.AggregateValues.TryFind optional.Construction |> Option.defaultValue []
+                                              |> List.filter (fun row -> row.Occurrence = optional.Construction && row.Operation = CallableAggregateOperation.Construct)
+                          let selected = callable.AggregateValues.TryFind operand.Actual |> Option.defaultValue []
+                          let receiving = boundary.CallbackInvocations.TryFind invocation
+                          let sourceType = revision.Nodes.TryFind operand.Actual |> Option.map _.Type
+                          let nominalOption =
+                              match sourceType with
+                              | Some(TypeIdentity.Application(constructor, [TypeIdentity.Application(entry, [TypeIdentity.Function _])])) ->
+                                  constructor = {Declaration = {Module = []; Name = "option"}; Parameters = [TypeParamKind.Type]; NativeKind = None} &&
+                                  entry.NativeKind = Some NTUKind.NTUfnptr
+                              | _ -> false
+                          let incidence =
+                              match constructions, receiving, boundary.Imports.TryFind call.Import with
+                              | [construction], Some receiver, Some imported ->
+                                  let live =
+                                      match revision.Nodes.TryFind optional.Construction with
+                                      | Some { Kind = SemanticKind.UnionCase(_, caseOrdinal, payload) }
+                                      | Some { Kind = SemanticKind.DUConstruct(_, caseOrdinal, payload, _) } ->
+                                          caseOrdinal = optional.CaseOrdinal && payload = optional.Payload
+                                      | _ -> false
+                                  let current =
+                                      selected |> List.exists (fun row ->
+                                          let instance =
+                                              match choice with
+                                              | BoundaryOptionalEntryChoice.Conditional(selection, _, _) ->
+                                                  conditionalCurrent && row.Slot = construction.Slot &&
+                                                  ((row.Operation = CallableAggregateOperation.Select && row.Occurrence = selection) ||
+                                                   (row.Operation = CallableAggregateOperation.Transport && row.Aggregate = selection))
+                                              | BoundaryOptionalEntryChoice.Direct _ when operand.Actual=optional.Construction || row.FormationInputs |> List.contains optional.Construction -> true
+                                              | BoundaryOptionalEntryChoice.Direct _ ->
+                                                  let supplier =
+                                                      if row.Operation=CallableAggregateOperation.Result then Some row.Occurrence
+                                                      elif row.Operation=CallableAggregateOperation.Transport then Some row.Aggregate
+                                                      else None
+                                                  supplier |> Option.exists(fun site->
+                                                      callable.AggregateValues.TryFind site |> Option.defaultValue []
+                                                      |> List.exists(fun result->
+                                                          result.Operation=CallableAggregateOperation.Result && result.Occurrence=site && result.Aggregate=site &&
+                                                          result.Slot=row.Slot && result.Tag=construction.Tag && result.Alternatives=construction.Alternatives &&
+                                                          (match result.FormationInputs with
+                                                           | [_;_;_;_;_;ctor] when optional.Payload.IsNone -> ctor=optional.Construction
+                                                           | [_;_;_;_;_;ctor;payload] -> ctor=optional.Construction && optional.Payload=Some payload
+                                                           | _ -> false)))
+                                          match choice with
+                                          | BoundaryOptionalEntryChoice.Direct _ -> row.Slot = construction.Slot && row.Tag = construction.Tag && row.Alternatives = construction.Alternatives && instance
+                                          | BoundaryOptionalEntryChoice.Conditional _ -> instance)
+                                  let support =
+                                      match callable.AggregateDependencies.TryFind operand.Actual with
+                                      | Some account when account.Occurrence = operand.Actual ->
+                                          let dependencies = account.Sources |> List.map _.Node |> Set.ofList
+                                          Set.isSubset dependencies call.Participants &&
+                                          Set.isSubset receiver.Participants call.Participants
+                                      | _ -> false
+                                  let typed =
+                                      match callable.AggregateSlots.TryFind construction.Slot with
+                                      | Some slot ->
+                                          slot.Path = [CallableAggregatePathStep.UnionPayload(1, 0)] &&
+                                          sourceType = Some slot.AggregateType && imported.SourceTypes.TryFind operand.Formal = sourceType
+                                      | _ -> false
+                                  live && current && support && typed && nominalOption && construction.Value = optional.Payload &&
+                                  (construction.Tag |> Option.exists (fun tag ->
+                                      tag.Constructor = optional.Construction && tag.CaseOrdinal = optional.CaseOrdinal &&
+                                      tag.Payload = optional.Payload && tag.PayloadOrdinal = (optional.Payload |> Option.map (fun _ -> 0)))) &&
+                                  receiver.Import = call.Import && receiver.Formal = operand.Formal && receiver.Parameter = ordinal &&
+                                  receiver.Extent = BoundaryCallbackExtent.DuringCall && operand.Adaptation.IsNone &&
+                                  (match optional.CaseOrdinal, optional.Payload, optional.Formation with
+                                   | 0, None, None -> construction.Alternatives.IsEmpty
+                                   | 1, Some payload, Some formation ->
+                                       match boundary.ClosedEntries.TryFind formation, construction.Alternatives with
+                                       | Some entry, [alternative] ->
+                                           optionalCodeWitness revision entry receiver && entry.Transport.Contains payload &&
+                                           alternative.Formation = formation && alternative.Carrier = formation &&
+                                           alternative.EnvironmentPlacement.IsNone &&
+                                           (match choice with
+                                            | BoundaryOptionalEntryChoice.Direct _ -> optional.Transport.Contains payload && optional.Transport.Contains formation
+                                            | BoundaryOptionalEntryChoice.Conditional _ -> entry.Transport.Contains formation)
+                                       | _ -> false
+                                   | _ -> false)
+                              | _ -> false
+                          if not incidence then
+                              yield defect part call.Site "The optional callback differs from its exact current Option construction, tag, payload, closed entry or receiving ordinal."
+                          let required = Set.ofList ([call.Site; call.Import; operand.Actual; operand.Formal; invocation; optional.Construction; optional.Obligation] @ Option.toList optional.Payload @ Option.toList optional.Formation)
+                          if not (Set.isSubset required call.Participants) || not (Set.isSubset optional.Transport call.Participants) ||
+                             not (optional.Transport.Contains operand.Actual) || not (optional.Transport.Contains optional.Construction) then
+                              yield defect (part + ".Participants") call.Site "The optional callback omits its exact source selection, transport, invocation or conversion claim support."
+                          let claimMatches =
+                              let expectedSupport =
+                                  match callable.AggregateDependencies.TryFind operand.Actual,boundary.Imports.TryFind call.Import,boundary.CallbackInvocations.TryFind invocation with
+                                  | Some account,Some imported,Some receiver when account.Occurrence=operand.Actual && not account.Slots.IsEmpty &&
+                                      (account.Slots |> List.forall(fun slot->account.Participants |> List.exists(fun participant->participant.Node=slot.Identity && participant.Role=ParticipantRole.AggregateSlot))) ->
+                                      let own=account.Sources |> List.map _.Node |> Set.ofList
+                                      let extra=if optional.Payload.IsSome then Set.empty else boundary.CallbackAbsences.Values |> Seq.filter(fun row->row.Import=call.Import && row.Parameter=ordinal && row.Invocation=invocation) |> Seq.collect(fun row->row.DeclarationFacts |> Map.keys) |> Set.ofSeq
+                                      Some(Set.unionMany[own;optional.Transport;Set.ofList[call.Site;call.Import;call.Callee;operand.Actual;operand.Formal;optional.Construction];imported.Participants;receiver.Participants;extra])
+                                  | _ -> None
+                              let expectedReasons =
+                                  if optional.CaseOrdinal = 0 then
+                                      ["Selected-target optional-entry conversion and the foreign nullable-acceptance premise remain Pending."]
+                                  else ["Selected-target optional-entry conversion remains Pending."]
+                              match revision.CurrentClaims.TryFind optional.Obligation with
+                              | Some claim ->
+                                  let bodyMatches =
+                                      match claim.Body with
+                                      | ObligationBody.Pending reasons ->
+                                          claim.Logic = "" && claim.Statement = "The exact source Option selection requires an admitted target boundary conversion." && reasons=expectedReasons
+                                      | ObligationBody.OptionalEntryArgumentConversion model ->
+                                          let arms = [{CaseOrdinal=0;Choice=OptionalEntryPlanChoice.PendingAbsence;Formation=None}
+                                                      {CaseOrdinal=1;Choice=OptionalEntryPlanChoice.ClosedEntry;Formation=Some model.Formation}]
+                                          model.Call=call.Site && model.Parameter=ordinal && model.Actual=operand.Actual &&
+                                          model.Construction=optional.Construction && model.SourceCase=1 && optional.CaseOrdinal=1 &&
+                                          optional.Payload=Some model.Payload && optional.Formation=Some model.Formation &&
+                                          model.Invocation=invocation && model.Arms=arms &&
+                                          (revision.Emission.Callable.AggregateDependencies.TryFind operand.Actual |> Option.exists(fun account->
+                                              match account.Values |> List.filter(fun value->value.Operation=CallableAggregateOperation.Result) with
+                                              | [] -> model.ResultRetirement.IsNone
+                                              | [row] -> row.ResultRetirement=Option.map Ok model.ResultRetirement &&
+                                                         (model.ResultRetirement |> Option.exists(fun retirement->retirement.Receiver=call.Site && retirement.Actual=operand.Actual && retirement.Construction=optional.Construction && account.MemoryPolicy=Some retirement.Policy))
+                                              | _ -> false)) &&
+                                          claim.Logic="QF_LIA" && claim.Statement="The exact source Some selection has complete finite native-choice plan correspondence; target realization remains an artifact obligation."
+                                      | ObligationBody.OptionalEntryAbsenceArgumentConversion model ->
+                                          let arms=[{CaseOrdinal=0;Choice=OptionalEntryAbsencePlanChoice.AbsentEntry};{CaseOrdinal=1;Choice=OptionalEntryAbsencePlanChoice.RequiresClosedEntry}]
+                                          model.Call=call.Site && model.Parameter=ordinal && model.Actual=operand.Actual && model.Construction=optional.Construction && model.SourceCase=0 &&
+                                          optional.CaseOrdinal=0 && optional.Payload.IsNone && optional.Formation.IsNone && model.Arms=arms &&
+                                          (revision.Emission.Callable.AggregateDependencies.TryFind operand.Actual |> Option.exists(fun account->
+                                              match account.Values |> List.filter(fun value->value.Operation=CallableAggregateOperation.Result) with
+                                              | [] -> model.ResultRetirement.IsNone
+                                              | [row] -> row.ResultRetirement=Option.map Ok model.ResultRetirement &&
+                                                         (model.ResultRetirement |> Option.exists(fun retirement->retirement.Receiver=call.Site && retirement.Actual=operand.Actual && retirement.Construction=optional.Construction && account.MemoryPolicy=Some retirement.Policy))
+                                              | _ -> false)) &&
+                                          (boundary.CallbackAbsences.TryFind model.Absence |> Option.exists(fun row->row.Quote=model.Absence && row.Import=call.Import && row.Parameter=ordinal && row.Formal=operand.Formal && row.Invocation=invocation && absenceAccountCurrent boundary row)) &&
+                                          claim.Logic="QF_LIA" && claim.Statement="The exact source None selection has complete finite absence-choice correspondence under its external binding hypothesis; target realization remains an artifact obligation."
+                                      | _ -> false
+                                  claim.Kind = $"foreign-optional-entry-conversion-{ordinal}" &&
+                                  bodyMatches &&
+                                  (revision.Obligations |> List.filter (fun row -> row.Id = claim.Id)) = [claim] &&
+                                  // The live revision carries the complete grouped
+                                  // claim sources; analytical F edges stay with Baker.
+                                  (match revision.ObligationSources.TryFind optional.Obligation, expectedSupport with
+                                   | Some [group], Some support ->
+                                       Set.isSubset support call.Participants && group = List.distinct (call.Site :: Set.toList support)
+                                   | _ -> false)
+                              | _ -> false
+                          if not claimMatches then
+                              yield defect (part + ".Obligation") call.Site "The optional callback requires its exact existing Pending per-call conversion claim."
                       | None ->
                         let entries = boundary.ClosedEntries.Values |> Seq.filter (fun entry -> entry.Invocation = invocation && entry.Transport.Contains operand.Actual) |> Seq.toList
                         match boundary.CallbackInvocations.TryFind invocation, entries with
