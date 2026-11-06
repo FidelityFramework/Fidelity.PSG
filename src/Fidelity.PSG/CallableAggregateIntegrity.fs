@@ -217,13 +217,16 @@ module internal CallableAggregateIntegrity =
                 let site=row.Occurrence
                 let sources=callable.AggregateValues.TryFind construction |> Option.defaultValue []
                             |> List.filter(fun source->source.Slot=row.Slot && source.Operation=CallableAggregateOperation.Construct)
-                let nominalType =
+                let optionalType, ordinaryResult =
                     match slot.AggregateType,slot.Path with
                     | TypeIdentity.Application(constructor,[TypeIdentity.Application(entry,[TypeIdentity.Function _])]),
                       [CallableAggregatePathStep.UnionPayload(1,0)] ->
-                        constructor={Declaration={Module=[];Name="option"};Parameters=[TypeParamKind.Type];NativeKind=None} &&
-                        entry.NativeKind=Some NTUKind.NTUfnptr
-                    | _ -> false
+                        (constructor={Declaration={Module=[];Name="option"};Parameters=[TypeParamKind.Type];NativeKind=None} &&
+                         entry.NativeKind=Some NTUKind.NTUfnptr), false
+                    | TypeIdentity.Application(constructor,[TypeIdentity.Function _; _]),
+                      [CallableAggregatePathStep.UnionPayload(0,0)] ->
+                        false, constructor={Declaration={Module=[];Name="Result"};Parameters=[TypeParamKind.Type;TypeParamKind.Type];NativeKind=None}
+                    | _ -> false, false
                 match revision.Nodes.TryFind site,revision.Nodes.TryFind callee,revision.Nodes.TryFind implementation,sources with
                 | Some {Kind=SemanticKind.Application(heldCallee,[heldArgument]);Children=children},
                   Some {Kind=SemanticKind.VarRef(_,Some binding)},
@@ -244,15 +247,17 @@ module internal CallableAggregateIntegrity =
                         revision.Nodes.TryFind construction |> Option.exists(fun node->
                             node.Type=slot.AggregateType &&
                             match node.Kind,row.Tag with
-                            | (SemanticKind.UnionCase("None",0,None) | SemanticKind.DUConstruct("None",0,None,_)),Some tag ->
+                            | (SemanticKind.UnionCase("None",0,None) | SemanticKind.DUConstruct("None",0,None,_)),Some tag when optionalType ->
                                 row.Value.IsNone && tag.Constructor=construction && tag.CaseOrdinal=0 && tag.Payload.IsNone && tag.PayloadOrdinal.IsNone
-                            | (SemanticKind.UnionCase("Some",1,Some value) | SemanticKind.DUConstruct("Some",1,Some value,_)),Some tag ->
+                            | (SemanticKind.UnionCase("Some",1,Some value) | SemanticKind.DUConstruct("Some",1,Some value,_)),Some tag when optionalType ->
                                 row.Value=Some value && tag.Constructor=construction && tag.CaseOrdinal=1 && tag.Payload=Some value && tag.PayloadOrdinal=Some 0
+                            | (SemanticKind.UnionCase("Ok",0,Some value) | SemanticKind.DUConstruct("Ok",0,Some value,_)),Some tag when ordinaryResult ->
+                                row.Value=Some value && tag.Constructor=construction && tag.CaseOrdinal=0 && tag.Payload=Some value && tag.PayloadOrdinal=Some 0
                             | _ -> false)
                     heldCallee=callee && heldArgument=argument && children=[callee;argument] &&
                     heldFormal=formal && heldBody=body && lambdaChildren=[formal;body] &&
                     TypeIdentity.isUnit parameterType && (sourceType argument |> Option.exists TypeIdentity.isUnit) &&
-                    sourceType site=Some slot.AggregateType && nominalType && bindingMatches && bodyMatches && nominal &&
+                    sourceType site=Some slot.AggregateType && (optionalType || ordinaryResult) && bindingMatches && bodyMatches && nominal &&
                     source.Occurrence=construction && source.Aggregate=construction && sameComponent source &&
                     callable.Symbols.ContainsKey implementation &&
                     has ParticipantRole.Site 0 site site && has ParticipantRole.Path 0 site callee &&

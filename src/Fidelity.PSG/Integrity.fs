@@ -611,6 +611,18 @@ module Integrity =
               | Error _ ->
                   yield defect "Emission.Callable.ProgramInstances.Carrier.Contract" carrier.Occurrence
                       "An initialized program instance has no settled receiving contract."
+          for KeyValue(_, storage) in callable.MutableStorage do
+              for carrier in storage.AlternativeCarriers do
+                  yield! need "Emission.Callable.MutableStorage.AlternativeCarriers"
+                      "Emission.Callable.Carriers with the exact callable carrier" carrier.Occurrence
+                      (callable.Carriers.TryFind carrier.Occurrence = Some carrier)
+                  match carrier.Contract with
+                  | Ok identity ->
+                      yield! need "Emission.Callable.MutableStorage.AlternativeCarriers.Contract"
+                          "Emission.Callable.Contracts" identity (callable.Contracts.ContainsKey identity)
+                  | Error _ ->
+                      yield defect "Emission.Callable.MutableStorage.AlternativeCarriers.Contract" carrier.Occurrence
+                          "A callable storage alternative has no settled receiving contract."
           for KeyValue(site, call) in callable.Calls do
               if site <> call.Site then yield defect "Emission.Callable.Calls.Site" site "A call is filed under a different site."
               yield! implementation "Emission.Callable.Calls.Implementation" call.Implementation
@@ -3365,9 +3377,11 @@ module Integrity =
                          "Emission.Spatial.Hardware.ClockReference"
                          "Emission.Spatial.Hardware.ResetDeclaration"; "Emission.Spatial.Hardware.ClockPath"
                          "Emission.Storage.Startup.Initializers"
-                         // callableRows checks the complete embedded row
-                         // against its canonical carrier and exact contract.
+                         // callableRows checks these complete embedded rows
+                         // against their canonical carriers and exact contracts.
                          "Emission.Callable.ProgramInstances.Carrier"
+                         "Emission.Callable.MutableStorage.AlternativeCarriers"
+                         "Codata.MutableCallableStorage.AlternativeCarriers"
                          "Emission.Boundary.IntrinsicWriteImports.Scope"
                          "Emission.Boundary.Calls.Arguments"; "Emission.Boundary.IntrinsicWriteProofs (values)"
                          "Emission.Numeric.ForeignResultUses.Claims"

@@ -1562,7 +1562,8 @@ let private programInstanceFacts =
 let private changeInstanceCallable change revision =
     let callable = change revision.Emission.Callable
     {revision with Emission = {revision.Emission with Callable = callable}
-                   Codata = {revision.Codata with CallableCarriers = callable.Carriers; CallableContracts = callable.Contracts}}
+                   Codata = {revision.Codata with CallableCarriers = callable.Carriers; CallableContracts = callable.Contracts;
+                                                 MutableCallableStorage = callable.MutableStorage}}
 
 [<Fact>]
 let ``an embedded program carrier retains typed contract and signature identities without their bodies`` () =
@@ -1625,6 +1626,97 @@ let ``matching pending canonical and embedded carriers do not authorize a progra
     let violation = within "Emission.Callable.ProgramInstances.Carrier.Contract" (Integrity.check changed)
     Assert.Equal(Some(NodeId 2), violation.Node)
     Assert.Contains("no settled receiving contract", violation.Reason)
+
+// Mutable alternatives copy the same mixed-role carrier as program instances.
+// The storage account adds no executable body for a receiving contract or signature.
+let private mutableAlternativeFacts =
+    programInstanceFacts |> changeInstanceCallable (fun callable ->
+        let carrier = callable.Carriers[NodeId 2]
+        let storage : MutableCallableStorage =
+            {Binding = NodeId 2; SourceType = carrier.SourceType
+             Initializer = {Site = NodeId 2; Destination = NodeId 2; Value = NodeId 2; Alternative = 0}
+             Writes = []; Reads = Set.singleton(NodeId 2); Alternatives = [NodeId 2]
+             AlternativeCarriers = [carrier]; EnvironmentBytes = None; Captures = Set.empty; Borrows = Set.empty}
+        {callable with MutableStorage = Map.ofList [NodeId 2, storage]; ProgramInstances = Map.empty})
+
+[<Fact>]
+let ``mutable alternatives retain typed contract and signature identities without their bodies`` () =
+    let held = mutableAlternativeFacts
+    for id in [NodeId 70; NodeId 100; NodeId 101; NodeId 7000] do
+        Assert.False(held.Nodes.ContainsKey id)
+    Assert.True(held.Emission.Callable.Contracts.ContainsKey(NodeId 7000))
+    let carrier = Assert.Single held.Emission.Callable.MutableStorage[NodeId 2].AlternativeCarriers
+    Assert.Equal(held.Emission.Callable.Carriers[NodeId 2], carrier)
+    Assert.Equal<Map<NodeId, MutableCallableStorage>>(held.Emission.Callable.MutableStorage, held.Codata.MutableCallableStorage)
+    for part in ["Emission.Callable.MutableStorage.AlternativeCarriers"; "Codata.MutableCallableStorage.AlternativeCarriers"] do
+        Assert.Contains(Integrity.named held, fun (name, ids) -> name = part && List.contains (NodeId 7000) ids)
+    Assert.Empty(Integrity.check held)
+
+[<Theory>]
+[<InlineData("stale contract")>]
+[<InlineData("changed formation")>]
+[<InlineData("missing canonical")>]
+let ``a mutable alternative must be the exact current canonical carrier`` mutation =
+    let changed = mutableAlternativeFacts |> changeInstanceCallable (fun callable ->
+        let storage = callable.MutableStorage[NodeId 2]
+        let carrier = Assert.Single storage.AlternativeCarriers
+        match mutation with
+        | "missing canonical" -> {callable with Carriers = Map.empty}
+        | "stale contract" ->
+            let alternate =
+                {callable.Contracts[NodeId 7000] with
+                    Identity = NodeId 7001
+                    Participants = [{Node = NodeId 7001; Role = ParticipantRole.CallableContract; Ordinal = 0; Group = NodeId 7001}]}
+            let storage = {storage with AlternativeCarriers = [{carrier with Contract = Ok(NodeId 7001)}]}
+            {callable with Contracts = callable.Contracts.Add(NodeId 7001, alternate)
+                           MutableStorage = callable.MutableStorage.Add(NodeId 2, storage)}
+        | _ ->
+            let storage = {storage with AlternativeCarriers = [{carrier with Formation = NodeId 70}]}
+            {callable with MutableStorage = callable.MutableStorage.Add(NodeId 2, storage)})
+    let violation = within "Emission.Callable.MutableStorage.AlternativeCarriers" (Integrity.check changed)
+    Assert.Equal(Some(NodeId 2), violation.Node)
+    Assert.Contains("exact callable carrier", violation.Reason)
+
+[<Theory>]
+[<InlineData(false)>]
+[<InlineData(true)>]
+let ``a mutable alternative requires a contract row even when that identity has an executable body`` bodyPresent =
+    let held = mutableAlternativeFacts
+    let identity = if bodyPresent then NodeId 2 else NodeId 7000
+    Assert.Equal(bodyPresent, held.Nodes.ContainsKey identity)
+    let changed = held |> changeInstanceCallable (fun callable ->
+        let carrier = {callable.Carriers[NodeId 2] with Contract = Ok identity}
+        let storage = {callable.MutableStorage[NodeId 2] with AlternativeCarriers = [carrier]}
+        {callable with Contracts = Map.empty; Carriers = Map.ofList [NodeId 2, carrier]
+                       MutableStorage = Map.ofList [NodeId 2, storage]})
+    let violation = within "Emission.Callable.MutableStorage.AlternativeCarriers.Contract" (Integrity.check changed)
+    Assert.Equal(Some identity, violation.Node)
+    Assert.Contains("Emission.Callable.Contracts", violation.Reason)
+
+[<Fact>]
+let ``matching pending canonical and alternative carriers do not authorize mutable storage`` () =
+    let changed = mutableAlternativeFacts |> changeInstanceCallable (fun callable ->
+        let carrier = {callable.Carriers[NodeId 2] with Contract = Error "The receiving convention is not settled."}
+        let storage = {callable.MutableStorage[NodeId 2] with AlternativeCarriers = [carrier]}
+        {callable with Contracts = Map.empty; Carriers = Map.ofList [NodeId 2, carrier]
+                       MutableStorage = Map.ofList [NodeId 2, storage]})
+    let carrier = Assert.Single changed.Emission.Callable.MutableStorage[NodeId 2].AlternativeCarriers
+    Assert.Equal(changed.Emission.Callable.Carriers[NodeId 2], carrier)
+    let violation = within "Emission.Callable.MutableStorage.AlternativeCarriers.Contract" (Integrity.check changed)
+    Assert.Equal(Some(NodeId 2), violation.Node)
+    Assert.Equal("A callable storage alternative has no settled receiving contract.", violation.Reason)
+
+[<Fact>]
+let ``an exact mutable alternative does not waive its canonical formation body`` () =
+    let changed = mutableAlternativeFacts |> changeInstanceCallable (fun callable ->
+        let carrier = {callable.Carriers[NodeId 2] with Formation = NodeId 9000}
+        let storage = {callable.MutableStorage[NodeId 2] with AlternativeCarriers = [carrier]}
+        {callable with Carriers = Map.ofList [NodeId 2, carrier]; MutableStorage = Map.ofList [NodeId 2, storage]})
+    let carrier = Assert.Single changed.Emission.Callable.MutableStorage[NodeId 2].AlternativeCarriers
+    Assert.Equal(changed.Emission.Callable.Carriers[NodeId 2], carrier)
+    let violation = within "Emission.Callable.Carriers.Formation" (Integrity.check changed)
+    Assert.Equal(Some(NodeId 9000), violation.Node)
+    Assert.Equal("Node 9000 is named and is not held by the revision.", violation.Reason)
 
 let private intrinsicContextFacts =
     let imported : IntrinsicWriteImport =
