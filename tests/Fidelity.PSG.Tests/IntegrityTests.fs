@@ -1718,6 +1718,80 @@ let ``an exact mutable alternative does not waive its canonical formation body``
     Assert.Equal(Some(NodeId 9000), violation.Node)
     Assert.Equal("Node 9000 is named and is not held by the revision.", violation.Reason)
 
+// A module-level mutable callable binding resides in one program-long cell.
+// The cell restates the published storage protocol; it never replaces it.
+let private callableCellFacts environment =
+    let held =
+        mutableAlternativeFacts |> changeInstanceCallable (fun callable ->
+            {callable with MutableStorage = callable.MutableStorage.Add(NodeId 2, {callable.MutableStorage[NodeId 2] with EnvironmentBytes = environment})})
+        |> fun revision -> {revision with Platform = {revision.Platform with Pointer = Ok 64}}
+    let pointerBytes =
+        match held.Platform.Pointer with
+        | Ok bits -> bits / 8
+        | Error reason -> failwith reason
+    let bytes = pointerBytes + defaultArg environment 0
+    let space : BAREWire.Platform.MemorySpace =
+        {Name = "program"; Kind = "ram"; Capacity = 4096L; Alignment = 8; Granularity = 8; Growth = "fixed"; Access = "rw"
+         Base = None; Notes = ""; MapKind = ""; Since = ""; Until = ""}
+    let identity = ProgramStorageIdentity.BindingSlot(NodeId 2)
+    let entry : ProgramStorageEntry =
+        {Identity = identity; SourceType = held.Codata.MutableCallableStorage[NodeId 2].SourceType
+         Shape = ProgramStorageShape.CallableCell environment
+         Bytes = bytes; Alignment = pointerBytes; SpaceNode = NodeId 5521; Space = space
+         Participants = Set.ofList [NodeId 2; NodeId 5521]}
+    let reservation : BAREWire.Platform.WritableReservation =
+        {Space = space; Requests = [|{Name = "binding:2"; Length = int64 bytes; Alignment = pointerBytes}|]; PayloadSize = int64 bytes}
+    let storage : ProgramStorageInventory =
+        {Entries = Map.ofList [identity, entry]; Reservations = Map.ofList [NodeId 5521, reservation]; Unresolved = Map.empty}
+    {held with
+        Codata = {held.Codata with ProgramStorage = storage; Escapes = held.Codata.Escapes.Add(NodeId 2, EscapeKind.StaticLifetime)}
+        Emission = {held.Emission with Storage = {held.Emission.Storage with ProgramStorage = storage}}}
+
+let private withProgramStorage change (revision: Revision) =
+    let storage = change revision.Codata.ProgramStorage
+    {revision with
+        Codata = {revision.Codata with ProgramStorage = storage}
+        Emission = {revision.Emission with Storage = {revision.Emission.Storage with ProgramStorage = storage}}}
+
+[<Theory>]
+[<InlineData(0)>]
+[<InlineData(16)>]
+let ``a program-long callable cell restates its published storage protocol and environment`` environment =
+    let held = callableCellFacts (if environment = 0 then None else Some environment)
+    Assert.Empty(Integrity.check held)
+
+[<Theory>]
+[<InlineData("environment", "Codata.ProgramStorage.Entries.CallableCell")>]
+[<InlineData("source type", "Codata.ProgramStorage.Entries.CallableCell")>]
+[<InlineData("lifetime", "Codata.ProgramStorage.Entries.CallableCell")>]
+[<InlineData("no protocol", "Codata.ProgramStorage.Entries.CallableCell")>]
+[<InlineData("allocation identity", "Codata.ProgramStorage.Entries.CallableCell")>]
+[<InlineData("allocation twin", "Codata.ProgramStorage.Entries.CallableCell.Identity")>]
+[<InlineData("extent", "Codata.ProgramStorage.Entries.CallableCell.Layout")>]
+[<InlineData("alignment", "Codata.ProgramStorage.Entries.CallableCell.Layout")>]
+let ``a callable cell cannot stand without its exact protocol lifetime and layout`` defect (part: string) =
+    let held = callableCellFacts (Some 16)
+    let identity = ProgramStorageIdentity.BindingSlot(NodeId 2)
+    let entry = held.Codata.ProgramStorage.Entries[identity]
+    let reshape change = held |> withProgramStorage (fun storage -> {storage with Entries = storage.Entries.Add(identity, change entry)})
+    let changed =
+        match defect with
+        | "environment" -> reshape (fun entry -> {entry with Shape = ProgramStorageShape.CallableCell(Some 24); Bytes = entry.Bytes + 8})
+        | "source type" -> reshape (fun entry -> {entry with SourceType = unitType})
+        | "lifetime" -> {held with Codata = {held.Codata with Escapes = held.Codata.Escapes.Add(NodeId 2, EscapeKind.StackScoped)}}
+        | "no protocol" -> held |> changeInstanceCallable (fun callable -> {callable with MutableStorage = Map.empty})
+        | "allocation identity" ->
+            held |> withProgramStorage (fun storage ->
+                let moved = ProgramStorageIdentity.Allocation(NodeId 2)
+                {storage with Entries = Map.ofList [moved, {entry with Identity = moved}]})
+        | "allocation twin" ->
+            held |> withProgramStorage (fun storage ->
+                let twin = ProgramStorageIdentity.Allocation(NodeId 2)
+                {storage with Entries = storage.Entries.Add(twin, {entry with Identity = twin; Shape = ProgramStorageShape.Bytes})})
+        | "extent" -> reshape (fun entry -> {entry with Bytes = entry.Bytes - 8})
+        | _ -> reshape (fun entry -> {entry with Alignment = entry.Alignment * 2})
+    Assert.Contains(Integrity.check changed, fun violation -> violation.Part = part && violation.Node = Some(NodeId 2))
+
 let private intrinsicContextFacts =
     let imported : IntrinsicWriteImport =
         {Identity = NodeId 2; Scope = NodeId 50; Symbol = "write"; Fd = BoundaryScalar.Integer(32, true)

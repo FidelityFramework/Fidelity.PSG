@@ -5,9 +5,9 @@ module internal BinaryGenerated =
     [<Literal>]
     let Format = 2u
     [<Literal>]
-    let Schema = 46
+    let Schema = 47
     [<Literal>]
-    let Fingerprint = "4194B45DFDE761379402869182C60B1003EB29AC9D63B9160936AA863082D43D"
+    let Fingerprint = "34AD7546EDD6648652CE97A1529972CE456DA92490656AB31BE8682CF4D92C69"
     [<Literal>]
     let NamedTypes = 343
     [<Literal>]
@@ -5853,6 +5853,11 @@ module internal BinaryGenerated =
             | global.Fidelity.PSG.ProgramStorageShape.``NativeEntry``(a0) -> result {
                 let! state = writeTag state 3
                 let! state = write_Fidelity_PSG_NodeId state a0
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.ProgramStorageShape.``CallableCell``(a0) -> result {
+                let! state = writeTag state 4
+                let! state = (writeOption writeI32) state a0
                 return leaveWrite state
               }
     }
@@ -12883,6 +12888,10 @@ module internal BinaryGenerated =
             | 3 -> result {
                 let! a0, state = read_Fidelity_PSG_NodeId state
                 return! finishRead (global.Fidelity.PSG.ProgramStorageShape.``NativeEntry``(a0)) state
+              }
+            | 4 -> result {
+                let! a0, state = (readOption readI32) state
+                return! finishRead (global.Fidelity.PSG.ProgramStorageShape.``CallableCell``(a0)) state
               }
             | _ -> malformed state "Unknown Fidelity.PSG.ProgramStorageShape case"
     }

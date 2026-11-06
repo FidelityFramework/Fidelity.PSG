@@ -1593,6 +1593,7 @@ module IntegrityNamed =
         | Fidelity.PSG.ProgramStorageShape.Scalar(_) -> []
         | Fidelity.PSG.ProgramStorageShape.ValueView(_) -> []
         | Fidelity.PSG.ProgramStorageShape.NativeEntry(a0) -> [ a0 ]
+        | Fidelity.PSG.ProgramStorageShape.CallableCell(_) -> []
 
     and private idsOfRequirementWitness (value: Fidelity.PSG.RequirementWitness) : NodeId list =
         [ value.Site ]

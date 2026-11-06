@@ -1269,6 +1269,57 @@ module Integrity =
                                             read
                                             "The native entry slot read lacks its exact immutable binding, storage and entry transport account."
                             | _ -> ()
+                    | ProgramStorageShape.CallableCell environmentBytes ->
+                        // The cell is the residence of a published mutable callable protocol,
+                        // never a protocol of its own: binding, source type and retained
+                        // environment come from that one storage row, and the binding's
+                        // published lifetime is program-long.
+                        let storageRows =
+                            revision.Codata.MutableCallableStorage
+                            |> Map.toList
+                            |> List.filter (fun (_, row) -> row.Binding = id)
+
+                        let correspondence =
+                            match identity, storageRows with
+                            | ProgramStorageIdentity.BindingSlot binding, [ _, row ] ->
+                                binding = id
+                                && row.SourceType = entry.SourceType
+                                && row.EnvironmentBytes = environmentBytes
+                                && entry.Participants.Contains binding
+                                && revision.Codata.Escapes.TryFind binding = Some EscapeKind.StaticLifetime
+                            | _ -> false
+
+                        if not correspondence then
+                            yield
+                                defect
+                                    (part + ".Entries.CallableCell")
+                                    id
+                                    "The callable cell lacks exactly one published Codata.MutableCallableStorage row for its binding with the same source type and environment bytes, or a program-long lifetime."
+
+                        if storage.Entries.ContainsKey(ProgramStorageIdentity.Allocation id) then
+                            yield
+                                defect
+                                    (part + ".Entries.CallableCell.Identity")
+                                    id
+                                    "A callable cell binding is also filed as a program allocation."
+
+                        let layout =
+                            match revision.Platform.Pointer, environmentBytes with
+                            | Ok bits, environment when
+                                bits > 0
+                                && bits % 8 = 0
+                                && (environment |> Option.forall (fun bytes -> bytes > 0))
+                                ->
+                                entry.Bytes = bits / 8 + defaultArg environment 0
+                                && entry.Alignment = bits / 8
+                            | _ -> false
+
+                        if not layout then
+                            yield
+                                defect
+                                    (part + ".Entries.CallableCell.Layout")
+                                    id
+                                    "The callable cell differs from one Pointer-extent discriminator followed by its positive environment bytes at Pointer alignment."
                     | _ -> ()
                 for KeyValue(space, reservation) in storage.Reservations do
                     let entries =
