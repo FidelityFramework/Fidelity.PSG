@@ -5,9 +5,9 @@ module internal BinaryGenerated =
     [<Literal>]
     let Format = 2u
     [<Literal>]
-    let Schema = 47
+    let Schema = 48
     [<Literal>]
-    let Fingerprint = "34AD7546EDD6648652CE97A1529972CE456DA92490656AB31BE8682CF4D92C69"
+    let Fingerprint = "F6D4A733B1700EB7D4C2BED18551E3D57835CE819EC3474F503EF831F3052874"
     [<Literal>]
     let NamedTypes = 343
     [<Literal>]
@@ -4993,7 +4993,7 @@ module internal BinaryGenerated =
                 let! state = (writeList (fun state (v1_0, v1_1, v1_2) -> enterWrite state |> Result.bind (fun state -> writeBigInteger state v1_0 |> Result.bind (fun state -> writeBigInteger state v1_1 |> Result.bind (fun state -> writeBigInteger state v1_2 |> Result.bind (fun state -> Ok(leaveWrite state))))))) state a0
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.ObligationBody.``SnapshotBorrowBound``(a0, a1, a2, a3, a4, a5) -> result {
+            | global.Fidelity.PSG.ObligationBody.``SnapshotBorrowBound``(a0, a1, a2, a3, a4, a5, a6, a7) -> result {
                 let! state = writeTag state 26
                 let! state = write_Fidelity_PSG_NodeId state a0
                 let! state = write_Fidelity_PSG_NodeId state a1
@@ -5001,6 +5001,8 @@ module internal BinaryGenerated =
                 let! state = write_Fidelity_PSG_NodeId state a3
                 let! state = writeBigInteger state a4
                 let! state = writeBigInteger state a5
+                let! state = writeBigInteger state a6
+                let! state = writeBigInteger state a7
                 return leaveWrite state
               }
             | global.Fidelity.PSG.ObligationBody.``InputCopyBound``(a0, a1) -> result {
@@ -11992,7 +11994,7 @@ module internal BinaryGenerated =
     }
 
     and read_Fidelity_PSG_ObligationBody (state: ReadState) : Result<global.Fidelity.PSG.ObligationBody * ReadState, BinaryError> = result {
-        let! state = enterReadCases 8 state
+        let! state = enterReadCases 9 state
         let! tag, state = readTag state
         return!
             match tag with
@@ -12150,7 +12152,9 @@ module internal BinaryGenerated =
                 let! a3, state = read_Fidelity_PSG_NodeId state
                 let! a4, state = readBigInteger state
                 let! a5, state = readBigInteger state
-                return! finishRead (global.Fidelity.PSG.ObligationBody.``SnapshotBorrowBound``(a0, a1, a2, a3, a4, a5)) state
+                let! a6, state = readBigInteger state
+                let! a7, state = readBigInteger state
+                return! finishRead (global.Fidelity.PSG.ObligationBody.``SnapshotBorrowBound``(a0, a1, a2, a3, a4, a5, a6, a7)) state
               }
             | 27 -> result {
                 let! a0, state = readI64 state

@@ -2082,6 +2082,10 @@ module Integrity =
                 && model.PayloadOffset = offset && model.OptionBytes = bytes && model.OptionAlignment = optionAlignment
                 && model.TagBits = tagBits && model.TagBytes = tagBits / 8
                 && account.NoneCase = model.NoneCase && account.SomeCase = model.SomeCase
+                && model.CaseCount = 2
+                && model.Arms =
+                    [ { NativeNonNull = false; CaseOrdinal = account.NoneCase; PayloadOrigin = None }
+                      { NativeNonNull = true; CaseOrdinal = account.SomeCase; PayloadOrigin = Some call.Site } ]
             | _ -> false
         let callIncidence (call: BoundaryCall) =
             match revision.Nodes.TryFind call.Site, boundary.Imports.TryFind call.Import with
@@ -2998,7 +3002,7 @@ module Integrity =
             for KeyValue(_, proofs) in boundary.IntrinsicWriteProofs do
                 for proof in proofs do
                     match proof.Body with
-                    | ObligationBody.SnapshotBorrowBound(count, snapshotId, copyId, allocationId, minimum, maximum) ->
+                    | ObligationBody.SnapshotBorrowBound(count, snapshotId, copyId, allocationId, minimum, maximum, elementBytes, allocationCapacity) ->
                         let part = "Emission.Boundary.IntrinsicWriteProofs.SnapshotBorrowBound"
                         let linked =
                             match boundary.IntrinsicWrites.TryFind proof.Site,
@@ -3030,9 +3034,11 @@ module Integrity =
                                 allocation.Count = operand.Reference && allocation.CountCarrier.Site = operand.Reference &&
                                 carrier.Site = count && carrier.Range = ValueRange.Bounded(minimum, maximum) &&
                                 snapshot.Extent.Range = carrier.Range && allocation.CountCarrier.Range = carrier.Range &&
-                                allocation.MinimumCount = minimum && allocation.MaximumCount = maximum &&
+                                0I <= allocation.MinimumCount && allocation.MinimumCount <= allocation.MaximumCount &&
+                                elementBytes = bigint allocation.ElementBytes &&
+                                allocationCapacity = allocation.MaximumCount * bigint allocation.ElementBytes &&
                                 not copy.Requirements.IsEmpty &&
-                                (SnapshotBorrowProof.ofBounds minimum maximum |> Result.isOk)
+                                (SnapshotBorrowProof.ofBounds count snapshotId copyId allocationId minimum maximum elementBytes allocationCapacity |> Result.isOk)
                             | _ -> false
                         if not linked then
                             yield defect part proof.Site "The runtime borrow claim differs from its exact count, snapshot, copy or bound-operand allocation account."

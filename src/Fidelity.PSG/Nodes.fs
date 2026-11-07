@@ -395,6 +395,7 @@ module ResourceProof =
 
     type Projection = {
         Declarations: (string * Sort) list
+        ParticipantRoles: (string * string) list
         Premises: Expr
         Conclusion: Expr
         Alternatives: Expr list
@@ -413,6 +414,8 @@ module ResourceProof =
     let private notTerm = Expr.Not
     let private nonnullName = "resource_nonnull"
     let private nonnull = Expr.Variable nonnullName
+    let private resourceCaseName = "resource_case"
+    let private resourceCase = Expr.Variable resourceCaseName
 
     /// A single sort reader for both output transcribers. Ill-sorted or
     /// undeclared terms are refused rather than assigned a consumer default.
@@ -467,37 +470,115 @@ module ResourceProof =
         projection.Declarations |> List.map (fun (name, sort) ->
             sprintf "(declare-fun %s () %s)" name (match sort with Sort.Boolean -> "Bool" | Sort.Integer -> "Int"))
 
+    let rec conjuncts = function
+        | Expr.And [] -> [Expr.Boolean true]
+        | Expr.And values -> values |> List.collect conjuncts
+        | other -> [other]
+
+    let rec freeVariables = function
+        | Expr.Boolean _ | Expr.Integer _ -> Set.empty
+        | Expr.Variable name -> Set.singleton name
+        | Expr.Not value -> freeVariables value
+        | Expr.And values | Expr.Or values | Expr.Add values -> values |> List.map freeVariables |> Set.unionMany
+        | Expr.Implies(left, right) | Expr.Equal(left, right)
+        | Expr.LessThan(left, right) | Expr.LessOrEqual(left, right)
+        | Expr.Multiply(left, right) | Expr.Modulo(left, right) ->
+            Set.union (freeVariables left) (freeVariables right)
+        | Expr.IfThenElse(condition, yes, no) ->
+            Set.unionMany [freeVariables condition; freeVariables yes; freeVariables no]
+
+    let participantRoles (projection: Projection) =
+        projection.ParticipantRoles
+
+    let participantVariables (projection: Projection) =
+        projection.ParticipantRoles
+        |> List.map snd
+        |> Set.ofList
+        |> Set.toList
+        |> List.sort
+
+    let missingParticipantVariables (projection: Projection) =
+        let premiseVars = freeVariables projection.Premises
+        let conclusionVars = freeVariables projection.Conclusion
+        participantVariables projection
+        |> List.filter (fun name -> not (premiseVars.Contains name && conclusionVars.Contains name))
+
+    let conversionParticipantRoles =
+        [ "native_nonnull", nonnullName
+          "case_ordinal", resourceCaseName
+          "none_case", "resource_none_case"
+          "some_case", "resource_some_case"
+          "acquisition", "resource_acquisition_origin"
+          "payload_origin", "resource_payload_origin"
+          "payload_offset", "resource_payload_offset" ]
+
     let ofConversion (model: ResourceConversionModel) : Result<Projection, string> =
-        if model.TagBits < 0 || model.TagBits > 64 then
+        let maximumTag = if model.TagBits >= 0 && model.TagBits <= 64 then (1I <<< model.TagBits) - 1I else -1I
+        let caseValid ordinal = ordinal >= 0 && bigint ordinal <= maximumTag && ordinal < model.CaseCount
+        if model.TagBits <= 0 || model.TagBits > 64 || model.TagBytes <= 0 || model.TagBits <> 8 * model.TagBytes then
             Error "The finite resource profile requires an established tag width of at most 64 bits."
+        elif model.PointerBits <= 0 || model.PointerBits <> model.SelectedPointerBits || model.HandleBytes <= 0 || model.HandleAlignment <= 0 || model.PointerBits <> 8 * model.HandleBytes then
+            Error "The finite resource profile requires positive handle bytes and alignment matching the selected pointer width."
+        elif model.OptionBytes <= 0 || model.OptionAlignment <= 0 || model.OptionBytes % model.OptionAlignment <> 0 || model.OptionAlignment % model.HandleAlignment <> 0 then
+            Error "The finite resource profile requires an aligned option layout."
+        elif model.CaseCount <> 2 || model.NoneCase = model.SomeCase || not (caseValid model.NoneCase) || not (caseValid model.SomeCase) then
+            Error "The finite resource profile requires distinct None and Some case ordinals within the two-case tag representation."
         else
-            let maximumTag = (1I <<< model.TagBits) - 1I
-            let caseFits ordinal = andAlso [nonnegative ordinal; Expr.LessOrEqual(number ordinal, integer maximumTag); Expr.LessThan(number ordinal, number model.CaseCount)]
-            let arms = model.Arms |> List.map (fun arm ->
-                let origin = arm.PayloadOrigin |> Option.map (fun origin -> equal (node origin) (node model.Acquisition)) |> Option.defaultValue (boolean false)
-                andAlso [
-                    implies (boolean arm.NativeNonNull) (andAlso [equal (number arm.CaseOrdinal) (number model.SomeCase); origin])
-                    implies (notTerm (boolean arm.NativeNonNull)) (andAlso [equal (number arm.CaseOrdinal) (number model.NoneCase); boolean arm.PayloadOrigin.IsNone]) ])
+            let noneCaseName = "resource_none_case"
+            let noneCase = Expr.Variable noneCaseName
+            let someCaseName = "resource_some_case"
+            let someCase = Expr.Variable someCaseName
+            let acquisitionOriginName = "resource_acquisition_origin"
+            let acquisitionOrigin = Expr.Variable acquisitionOriginName
+            let payloadOriginName = "resource_payload_origin"
+            let payloadOrigin = Expr.Variable payloadOriginName
+            let payloadOffsetName = "resource_payload_offset"
+            let payloadOffset = Expr.Variable payloadOffsetName
+            let armPremises = model.Arms |> List.map (fun arm ->
+                let condition = if arm.NativeNonNull then nonnull else notTerm nonnull
+                let originValue =
+                    match arm.PayloadOrigin with
+                    | Some origin -> node origin
+                    | None -> number (if arm.NativeNonNull then -1 else 0)
+                implies condition (andAlso [
+                    equal resourceCase (number arm.CaseOrdinal)
+                    equal payloadOrigin originValue ]))
+            let premises =
+                andAlso
+                    (armPremises
+                     @ [ equal noneCase (number model.NoneCase)
+                         equal someCase (number model.SomeCase)
+                         equal acquisitionOrigin (node model.Acquisition)
+                         equal payloadOffset (number model.PayloadOffset) ])
+            let alignmentClauses =
+                if model.HandleAlignment = 1 then
+                    []
+                else
+                    [ equal (Expr.Modulo(payloadOffset, number model.HandleAlignment)) (number 0) ]
             let conclusion =
-                [ equal (number model.Arms.Length) (number 2)
-                  equal (number (model.Arms |> List.distinctBy _.NativeNonNull |> List.length)) (number 2)
-                  equal (number model.CaseCount) (number 2)
-                  notTerm (equal (number model.NoneCase) (number model.SomeCase))
-                  caseFits model.NoneCase; caseFits model.SomeCase
-                  positive model.PointerBits; equal (number model.PointerBits) (number model.SelectedPointerBits)
-                  equal (number model.PointerBits) (Expr.Multiply(number 8, number model.HandleBytes))
-                  positive model.HandleBytes; positive model.HandleAlignment
-                  positive model.TagBits; positive model.TagBytes
-                  equal (number model.TagBits) (Expr.Multiply(number 8, number model.TagBytes))
-                  Expr.LessOrEqual(number model.TagBytes, number model.PayloadOffset)
-                  Expr.LessOrEqual(Expr.Add[number model.PayloadOffset; number model.HandleBytes], number model.OptionBytes)
-                  positive model.OptionBytes; positive model.OptionAlignment
-                  equal (Expr.Modulo(number model.PayloadOffset, number model.HandleAlignment)) (number 0)
-                  equal (Expr.Modulo(number model.OptionBytes, number model.OptionAlignment)) (number 0)
-                  equal (Expr.Modulo(number model.OptionAlignment, number model.HandleAlignment)) (number 0) ] @ arms
-                |> andAlso
-            Ok { Declarations = [nonnullName, Sort.Boolean]
-                 Premises = boolean true; Conclusion = conclusion
+                andAlso (
+                    [
+                        Expr.LessOrEqual(number 0, resourceCase)
+                        Expr.LessOrEqual(resourceCase, integer maximumTag)
+                        Expr.LessThan(resourceCase, number model.CaseCount)
+                        equal resourceCase (Expr.IfThenElse(nonnull, someCase, noneCase))
+                        equal payloadOrigin (Expr.IfThenElse(nonnull, acquisitionOrigin, number 0))
+                        Expr.LessOrEqual(number model.TagBytes, payloadOffset)
+                        Expr.LessOrEqual(Expr.Add [payloadOffset; number model.HandleBytes], number model.OptionBytes)
+                    ]
+                    @ alignmentClauses
+                )
+            Ok { Declarations =
+                     [ nonnullName, Sort.Boolean
+                       resourceCaseName, Sort.Integer
+                       noneCaseName, Sort.Integer
+                       someCaseName, Sort.Integer
+                       acquisitionOriginName, Sort.Integer
+                       payloadOriginName, Sort.Integer
+                       payloadOffsetName, Sort.Integer ]
+                 ParticipantRoles = conversionParticipantRoles
+                 Premises = premises
+                 Conclusion = conclusion
                  Alternatives = [notTerm nonnull; nonnull] }
 
     let ofCleanup (model: ResourceCleanupModel) : Result<Projection, string> =
@@ -508,6 +589,14 @@ module ResourceProof =
             model.Points |> List.choose (fun point -> point.Event |> Option.map (fun event -> point.Site, event))
             |> List.distinct |> Map.ofList
         let knownOrigins = origins |> Map.add model.Acquisition ResourceFlowEvent.Acquisition
+        let originSites =
+            knownOrigins
+            |> Map.toList
+            |> List.filter (fun (_, event) ->
+                match event with
+                | ResourceFlowEvent.Release _ -> false
+                | _ -> true)
+        let originSiteMap = Map.ofList originSites
         let invalid message = Error("The finite resource cleanup profile is incomplete: " + message)
         let relation index = model.Relations |> List.tryItem index
         let findOperand site ordinal =
@@ -522,11 +611,11 @@ module ResourceProof =
             | ResourceFlowEvent.Payload source | ResourceFlowEvent.Release(source, _) -> Some source
             | ResourceFlowEvent.Acquisition -> None
         let sourceKnown = knownOrigins |> Map.forall (fun _ event ->
-            siteOfOrigin event |> Option.forall knownOrigins.ContainsKey)
+            siteOfOrigin event |> Option.forall originSiteMap.ContainsKey)
         let rec hasOrigin seen site =
             if site = model.Acquisition then true
             elif Set.contains site seen then false
-            else knownOrigins.TryFind site |> Option.bind siteOfOrigin
+            else originSiteMap.TryFind site |> Option.bind siteOfOrigin
                  |> Option.exists (hasOrigin (Set.add site seen))
         // The source owner refuses ambiguous merges. This reader also refuses
         // a model that assigns different lineage events to one original site.
@@ -585,6 +674,59 @@ module ResourceProof =
             match row.Role with
             | ResourceEvaluationRole.Pending _ | ResourceEvaluationRole.Operand EvaluationAccess.Storage -> true
             | _ -> false)
+        let acquisitionPoints = model.Points |> List.filter (fun point -> point.Event = Some ResourceFlowEvent.Acquisition)
+        let failureExits = model.Points |> List.filter (fun point -> point.Port = EvaluationPort.FailureExit) |> List.map _.Label
+        let roots = model.Relations |> List.filter (fun row -> row.Role = ResourceEvaluationRole.Root)
+        let actualExits =
+            failureExits @ (roots |> List.collect (fun row -> model.Points |> List.filter (fun point -> point.Site = row.Target && point.Context.IsEmpty && point.Port = EvaluationPort.Exit) |> List.map _.Label))
+            |> List.distinct |> List.sort
+        let exactPointCheck site context port label =
+            match points.TryFind label with
+            | Some point -> point.Site = site && point.Context = context && point.Port = port
+            | None -> false
+        let edgeCorrespondenceValid =
+            model.Edges |> List.forall (fun edge ->
+                match relation edge.Relation, points.TryFind edge.From, points.TryFind edge.To with
+                | Some row, Some fromPoint, Some toPoint ->
+                    match edge.Connection, row.Role, row.Sources with
+                    | ResourceFlowConnection.Local, ResourceEvaluationRole.Flow(fromPort, toPort, actualTransfer), _ ->
+                        exactPointCheck row.Target fromPoint.Context fromPort edge.From &&
+                        exactPointCheck row.Target fromPoint.Context toPort edge.To &&
+                        edge.Transfer = actualTransfer
+                    | ResourceFlowConnection.OperandEntry, ResourceEvaluationRole.Operand EvaluationAccess.Value, [_; child] ->
+                        exactPointCheck row.Target fromPoint.Context (EvaluationPort.OperandEntry row.Ordinal) edge.From &&
+                        exactPointCheck child (fromPoint.Context @ [row.Ordinal]) EvaluationPort.Entry edge.To &&
+                        edge.Transfer = EvaluationTransfer.Continue
+                    | ResourceFlowConnection.OperandExit, ResourceEvaluationRole.Operand EvaluationAccess.Value, [_; child] ->
+                        exactPointCheck child (toPoint.Context @ [row.Ordinal]) EvaluationPort.Exit edge.From &&
+                        exactPointCheck row.Target toPoint.Context (EvaluationPort.OperandExit row.Ordinal) edge.To &&
+                        edge.Transfer = EvaluationTransfer.Continue
+                    | _ -> false
+                | _ -> false)
+        let occurrences = model.Points |> List.map (fun point -> point.Site, point.Context) |> List.distinct
+        let relationCoverageValid =
+            model.Relations |> List.mapi (fun relationIndex row ->
+                match row.Role with
+                | ResourceEvaluationRole.Root ->
+                    row.Ordinal = 0 && exactPointCheck row.Target [] EvaluationPort.Entry model.Entry
+                | ResourceEvaluationRole.Flow _ | ResourceEvaluationRole.Operand EvaluationAccess.Value ->
+                    occurrences |> List.filter (fst >> (=) row.Target) |> List.forall (fun (_, context) ->
+                        let connections = match row.Role with ResourceEvaluationRole.Flow _ -> [ResourceFlowConnection.Local] | _ -> [ResourceFlowConnection.OperandEntry; ResourceFlowConnection.OperandExit]
+                        connections |> List.forall (fun connection ->
+                            model.Edges |> List.filter (fun edge ->
+                                edge.Relation = relationIndex && edge.Connection = connection &&
+                                (if connection = ResourceFlowConnection.OperandExit then points[edge.To].Context else points[edge.From].Context) = context)
+                            |> List.length = 1))
+                | _ -> false) |> List.forall id
+        let eventPortAndBindingValid =
+            model.Points |> List.forall (fun point ->
+                match point.Event with
+                | None -> true
+                | Some ResourceFlowEvent.Acquisition -> point.Port = EvaluationPort.Exit && point.Site = model.Acquisition
+                | Some(ResourceFlowEvent.OptionAlias _) | Some(ResourceFlowEvent.Payload _) | Some(ResourceFlowEvent.HandleAlias _) ->
+                    point.Port = EvaluationPort.Exit
+                | Some(ResourceFlowEvent.Release(_, declaration)) ->
+                    point.Port = EvaluationPort.Exit && declaration = model.Release)
         if points.Count <> model.Points.Length || not (points.ContainsKey model.Entry) || model.Points.IsEmpty then invalid "the evaluation point census is missing or duplicated."
         elif cases.Count <> model.Cases.Length || not (model.Cases |> List.forall caseShape) then invalid "an Option case is unknown, ambiguous or unrelated to this conversion."
         elif literals.Count <> model.LiteralGuards.Length then invalid "a guard has conflicting literal premises."
@@ -593,6 +735,13 @@ module ResourceProof =
         elif unknownRows || transfers |> List.exists Option.isNone then invalid "an actual flow relation or guard is unresolved."
         elif model.Edges |> List.exists (fun edge -> not(points.ContainsKey edge.From && points.ContainsKey edge.To) || edge.From >= edge.To) then invalid "an endpoint is absent or evaluation is cyclic."
         elif model.Exits.IsEmpty || model.Exits |> List.exists (points.ContainsKey >> not) then invalid "the exit census is absent."
+        elif model.Acquisition <> model.ConversionModel.Acquisition || model.Declaration <> model.ConversionModel.Declaration ||
+             acquisitionPoints.Length <> 1 || roots.Length <> 1 ||
+             actualExits <> (model.Exits |> List.distinct |> List.sort) ||
+             model.Exits.Length <> (List.distinct model.Exits).Length ||
+             (model.Edges |> List.exists (fun edge -> edge.To = model.Entry)) ||
+             not edgeCorrespondenceValid || not relationCoverageValid || not eventPortAndBindingValid then
+            invalid "the cleanup graph structure or event census is inconsistent."
         else
             ofConversion model.ConversionModel |> Result.map (fun conversion ->
                 let reached label = Expr.Variable(sprintf "resource_reached_%d" label)
@@ -605,7 +754,7 @@ module ResourceProof =
                 let exactlyOne expressions =
                     expressions |> List.map (fun expression -> Expr.IfThenElse(expression, number 1, number 0))
                     |> Expr.Add |> fun sum -> equal sum (number 1)
-                let originPremises = knownOrigins |> Map.toList |> List.choose (fun (site, event) ->
+                let originPremises = originSites |> List.choose (fun (site, event) ->
                     match event with
                     | ResourceFlowEvent.Acquisition -> Some(equal (origin site) (node site))
                     | ResourceFlowEvent.Release _ -> None
@@ -625,80 +774,46 @@ module ResourceProof =
                      yield implies (reached point.Label) transition])
                 let edgePremises = model.Edges |> List.mapi (fun index edge ->
                     implies (taken index) (andAlso [reached edge.From; reached edge.To; transfers[index].Value; equal (after edge.From) (before edge.To)]))
-                let acquisitionPoints = model.Points |> List.filter (fun point -> point.Event = Some ResourceFlowEvent.Acquisition)
                 let acquisitionReached = acquisitionPoints |> List.map (fun point -> reached point.Label) |> orElse
-                let exactPoint site context port label =
-                    let point = points[label]
-                    andAlso [equal (node point.Site) (node site); boolean(point.Context = context); boolean(point.Port = port)]
-                let edgeCorrespondence = model.Edges |> List.map (fun edge ->
-                    let row = model.Relations[edge.Relation]
-                    let fromPoint, toPoint = points[edge.From], points[edge.To]
-                    match edge.Connection, row.Role, row.Sources with
-                    | ResourceFlowConnection.Local, ResourceEvaluationRole.Flow(fromPort, toPort, actualTransfer), _ ->
-                        andAlso [exactPoint row.Target fromPoint.Context fromPort edge.From
-                                 exactPoint row.Target fromPoint.Context toPort edge.To
-                                 boolean(edge.Transfer = actualTransfer)]
-                    | ResourceFlowConnection.OperandEntry, ResourceEvaluationRole.Operand EvaluationAccess.Value, [_; child] ->
-                        andAlso [exactPoint row.Target fromPoint.Context (EvaluationPort.OperandEntry row.Ordinal) edge.From
-                                 exactPoint child (fromPoint.Context @ [row.Ordinal]) EvaluationPort.Entry edge.To
-                                 boolean(edge.Transfer = EvaluationTransfer.Continue)]
-                    | ResourceFlowConnection.OperandExit, ResourceEvaluationRole.Operand EvaluationAccess.Value, [_; child] ->
-                        andAlso [exactPoint child (toPoint.Context @ [row.Ordinal]) EvaluationPort.Exit edge.From
-                                 exactPoint row.Target toPoint.Context (EvaluationPort.OperandExit row.Ordinal) edge.To
-                                 boolean(edge.Transfer = EvaluationTransfer.Continue)]
-                    | _ -> boolean false)
-                let occurrences = model.Points |> List.map (fun point -> point.Site, point.Context) |> List.distinct
-                let relationCoverage = model.Relations |> List.mapi (fun relationIndex row ->
-                    match row.Role with
-                    | ResourceEvaluationRole.Root ->
-                        andAlso [equal (number row.Ordinal) (number 0)
-                                 exactPoint row.Target [] EvaluationPort.Entry model.Entry]
-                    | ResourceEvaluationRole.Flow _ | ResourceEvaluationRole.Operand EvaluationAccess.Value ->
-                        occurrences |> List.filter (fst >> (=) row.Target) |> List.collect (fun (_, context) ->
-                            let connections = match row.Role with ResourceEvaluationRole.Flow _ -> [ResourceFlowConnection.Local] | _ -> [ResourceFlowConnection.OperandEntry; ResourceFlowConnection.OperandExit]
-                            connections |> List.map (fun connection ->
-                                model.Edges |> List.filter (fun edge ->
-                                    edge.Relation = relationIndex && edge.Connection = connection &&
-                                    (if connection = ResourceFlowConnection.OperandExit then points[edge.To].Context else points[edge.From].Context) = context)
-                                |> List.length |> number |> fun count -> equal count (number 1))) |> andAlso
-                    | _ -> boolean false)
-                let failureExits = model.Points |> List.filter (fun point -> point.Port = EvaluationPort.FailureExit) |> List.map _.Label
-                let roots = model.Relations |> List.filter (fun row -> row.Role = ResourceEvaluationRole.Root)
-                let actualExits =
-                    failureExits @ (roots |> List.collect (fun row -> model.Points |> List.filter (fun point -> point.Site = row.Target && point.Context.IsEmpty && point.Port = EvaluationPort.Exit) |> List.map _.Label))
-                    |> List.distinct |> List.sort
-                let eventSafety = model.Points |> List.map (fun point ->
-                    let atExit = boolean(point.Port = EvaluationPort.Exit)
-                    let requirement =
+                let pointSafety = model.Points |> List.map (fun point ->
+                    let baseSafety =
+                        [ implies (before point.Label) nonnull
+                          implies (after point.Label) nonnull ]
+                        @ (if List.contains point.Label model.Exits then [notTerm (after point.Label)] else [])
+                    let eventReq =
                         match point.Event with
-                        | None -> boolean true
-                        | Some ResourceFlowEvent.Acquisition -> andAlso [atExit; equal (node point.Site) (node model.Acquisition); notTerm(before point.Label)]
-                        | Some(ResourceFlowEvent.OptionAlias _) -> atExit
+                        | None | Some(ResourceFlowEvent.OptionAlias _) -> []
+                        | Some ResourceFlowEvent.Acquisition -> [notTerm (before point.Label)]
                         | Some(ResourceFlowEvent.Payload source) | Some(ResourceFlowEvent.HandleAlias source) ->
-                            andAlso [atExit; before point.Label; nonnull; equal (origin source) (node model.Acquisition)]
-                        | Some(ResourceFlowEvent.Release(actual, declaration)) ->
-                            andAlso [atExit; before point.Label; equal (origin actual) (node model.Acquisition); equal (node declaration) (node model.Release)]
-                    implies (reached point.Label) requirement)
+                            [before point.Label; nonnull; equal (origin source) (node model.Acquisition); after point.Label]
+                        | Some(ResourceFlowEvent.Release(actual, _)) ->
+                            [before point.Label; equal (origin actual) (node model.Acquisition); notTerm (after point.Label)]
+                    implies (reached point.Label) (andAlso (baseSafety @ eventReq)))
+                let edgeSafety = model.Edges |> List.mapi (fun index edge ->
+                    implies (taken index) (andAlso [implies (after edge.From) nonnull; implies (before edge.To) nonnull]))
+                let originSafety = originSites |> List.map (fun (site, _) ->
+                    implies nonnull (equal (origin site) (node model.Acquisition)))
                 let conclusion =
-                    [conversion.Conclusion
-                     equal (node model.Acquisition) (node model.ConversionModel.Acquisition)
-                     equal (node model.Declaration) (node model.ConversionModel.Declaration)
-                     equal (number acquisitionPoints.Length) (number 1)
-                     equal (number roots.Length) (number 1)
-                     boolean(actualExits = (model.Exits |> List.distinct |> List.sort))
-                     boolean(model.Exits.Length = (List.distinct model.Exits).Length)
-                     notTerm(incoming model.Entry |> List.map (fst >> taken) |> orElse)]
-                    @ edgeCorrespondence @ relationCoverage @ eventSafety
-                    @ (model.Exits |> List.map (fun label -> implies (reached label) (notTerm(after label)))) |> andAlso
+                    (conversion.Conclusion :: pointSafety @ edgeSafety @ originSafety)
+                    |> andAlso
                 let declarations =
                     conversion.Declarations @ (model.Points |> List.collect (fun point ->
                         [sprintf "resource_reached_%d" point.Label, Sort.Boolean
                          sprintf "resource_live_before_%d" point.Label, Sort.Boolean
                          sprintf "resource_live_after_%d" point.Label, Sort.Boolean]))
                     @ (model.Edges |> List.mapi (fun index _ -> sprintf "resource_edge_%d" index, Sort.Boolean))
-                    @ (knownOrigins |> Map.toList |> List.map (fun (site, _) -> sprintf "resource_origin_%d" (NodeId.value site), Sort.Integer))
+                    @ (originSites |> List.map (fun (site, _) -> sprintf "resource_origin_%d" (NodeId.value site), Sort.Integer))
+                let participantRoles =
+                    conversion.ParticipantRoles
+                    @ (model.Points |> List.collect (fun point ->
+                        [ sprintf "point_%d_reached" point.Label, sprintf "resource_reached_%d" point.Label
+                          sprintf "point_%d_live_before" point.Label, sprintf "resource_live_before_%d" point.Label
+                          sprintf "point_%d_live_after" point.Label, sprintf "resource_live_after_%d" point.Label ]))
+                    @ (model.Edges |> List.mapi (fun index _ -> sprintf "edge_%d" index, sprintf "resource_edge_%d" index))
+                    @ (originSites |> List.map (fun (site, _) -> sprintf "origin_%d" (NodeId.value site), sprintf "resource_origin_%d" (NodeId.value site)))
                 { Declarations = declarations
-                  Premises = andAlso(originPremises @ pathPremises @ edgePremises @ [acquisitionReached])
+                  ParticipantRoles = participantRoles
+                  Premises = andAlso(conversion.Premises :: originPremises @ pathPremises @ edgePremises @ [acquisitionReached])
                   Conclusion = conclusion
                   Alternatives = conversion.Alternatives })
 
@@ -712,6 +827,28 @@ module ResourceProof =
              sprintf "(declare-fun %s () Bool)" identity
              "(check-sat)"] |> String.concat "\n")
 
+    let anchoredNonVacuityQueries identity projection =
+        let participants = participantVariables projection |> String.concat ", "
+        conjuncts projection.Conclusion
+        |> List.mapi (fun index clause ->
+            let clauseText = smtLib clause
+            let query =
+                [ sprintf "; clause %d: %s" index clauseText
+                  sprintf "; participants: %s" participants
+                  "(set-logic QF_LIA)" ]
+                @ declarations projection
+                @ [ sprintf "(assert (not %s))" clauseText
+                    sprintf "(declare-fun %s () Bool)" identity
+                    "(check-sat)" ]
+                |> String.concat "\n"
+            index, clauseText, query)
+
+    let anchoredNonVacuityQuery identity projection =
+        ["(set-logic QF_LIA)"] @ declarations projection @
+        [sprintf "(assert (not %s))" (smtLib projection.Conclusion)
+         sprintf "(declare-fun %s () Bool)" identity
+         "(check-sat)"] |> String.concat "\n"
+
     let refutation identity projection =
         declarations projection @
         [sprintf "(assert %s)" (smtLib projection.Premises)
@@ -723,33 +860,42 @@ module ResourceProof =
 module OptionalEntryArgumentProof =
     /// The same finite conversion citizen binds its source-owned retirement
     /// and captured policy version. These constants grant no policy by parsing.
-    let private withRetirement call actual construction retirement (projection:ResourceProof.Projection) =
+    let private withRetirement call actual construction retirement (projection:ResourceProof.Projection) : Result<ResourceProof.Projection, string> =
         match retirement with
-        | None -> projection
+        | None -> Ok projection
         | Some (row:CallableAggregateResultRetirement) ->
-            let integer value = ResourceProof.Expr.Integer value
-            let number value = integer(bigint(NodeId.value value))
-            let text (value:string) = value |> Seq.fold(fun total c->total*65537I+bigint(int c+1)) 0I |> integer
-            let fields =
-                ["application",number row.Application;"caller",number row.Caller;"construction",number row.Construction
-                 "actual",number row.Actual;"receiver",number row.Receiver
-                 "policy_path",text row.Policy.ProjectPath;"policy_version",text row.Policy.SourceVersion;"policy_model",text row.Policy.Model] @
-                (row.Uses |> List.mapi(fun ordinal use' -> $"use_{ordinal}",number use'))
-            let bindings = fields |> List.map(fun(name,value)->ResourceProof.Expr.Equal(ResourceProof.Expr.Variable("optional_retirement_"+name),value))
             let complete =
                 row.Receiver=call && row.Actual=actual && row.Construction=construction &&
                 row.Application<>row.Receiver && List.tryHead row.Uses=Some row.Application && List.tryLast row.Uses=Some row.Receiver &&
                 List.contains row.Actual row.Uses && List.distinct row.Uses=row.Uses &&
                 row.Policy.ProjectPath<>"" && row.Policy.SourceVersion<>"" && row.Policy.Model<>""
-            { projection with
-                Declarations=projection.Declarations @ (fields |> List.map(fun(name,_)->"optional_retirement_"+name,ResourceProof.Sort.Integer))
-                Premises=ResourceProof.Expr.And(projection.Premises::bindings)
-                Conclusion=ResourceProof.Expr.And(projection.Conclusion::ResourceProof.Expr.Boolean complete::bindings) }
+            if not complete then
+                Error "The optional entry aggregate result retirement account is incomplete."
+            else
+                let integer value = ResourceProof.Expr.Integer value
+                let number value = integer(bigint(NodeId.value value))
+                let text (value:string) = value |> Seq.fold(fun total c->total*65537I+bigint(int c+1)) 0I |> integer
+                let fields =
+                    ["application",number row.Application;"caller",number row.Caller;"construction",number row.Construction
+                     "actual",number row.Actual;"receiver",number row.Receiver
+                     "policy_path",text row.Policy.ProjectPath;"policy_version",text row.Policy.SourceVersion;"policy_model",text row.Policy.Model] @
+                    (row.Uses |> List.mapi(fun ordinal use' -> $"use_{ordinal}",number use'))
+                let bindings = fields |> List.map(fun(name,value)->ResourceProof.Expr.Equal(ResourceProof.Expr.Variable("optional_retirement_"+name),value))
+                let retirementBounds =
+                    fields |> List.map(fun(name,value)->ResourceProof.Expr.LessOrEqual(value,ResourceProof.Expr.Variable("optional_retirement_"+name)))
+                let retirementClause =
+                    ResourceProof.Expr.Implies(
+                        ResourceProof.Expr.And retirementBounds,
+                        ResourceProof.Expr.Not(ResourceProof.Expr.Equal(ResourceProof.Expr.Variable "optional_retirement_application", ResourceProof.Expr.Variable "optional_retirement_receiver")))
+                Ok { projection with
+                        Declarations=projection.Declarations @ (fields |> List.map(fun(name,_)->"optional_retirement_"+name,ResourceProof.Sort.Integer))
+                        ParticipantRoles=projection.ParticipantRoles @ (fields |> List.map(fun(name,_)->"retirement_"+name,"optional_retirement_"+name))
+                        Premises=ResourceProof.Expr.And(projection.Premises::bindings)
+                        Conclusion=ResourceProof.Expr.And [projection.Conclusion; retirementClause] }
 
     let project (model: OptionalEntryArgumentConversionModel) : Result<ResourceProof.Projection, string> =
         let number (value: int) = ResourceProof.Expr.Integer(bigint value)
         let equal left right = ResourceProof.Expr.Equal(left, right)
-        let boolean value = ResourceProof.Expr.Boolean value
         let all values = ResourceProof.Expr.And values
         let sourceCase = ResourceProof.Expr.Variable "optional_entry_case"
         // This term denotes only an immutable source formation identity.
@@ -757,24 +903,30 @@ module OptionalEntryArgumentProof =
         let identity value = number (NodeId.value value)
         let selected = model.Arms |> List.map (fun arm ->
             ResourceProof.Expr.IfThenElse(equal sourceCase (number arm.CaseOrdinal), number 1, number 0))
-        let table = model.Arms |> List.map (fun arm ->
-            match arm.Choice, arm.Formation with
-            | OptionalEntryPlanChoice.PendingAbsence, None -> equal (number arm.CaseOrdinal) (number 0)
-            | OptionalEntryPlanChoice.ClosedEntry, Some entry ->
-                all [equal (number arm.CaseOrdinal) (number 1); equal (identity entry) formation]
-            | _ -> boolean false)
-        Ok (withRetirement model.Call model.Actual model.Construction model.ResultRetirement {
-            Declarations = ["optional_entry_case", ResourceProof.Sort.Integer; "optional_entry_formation", ResourceProof.Sort.Integer]
-            Premises = all [equal sourceCase (number model.SourceCase); equal formation (identity model.Formation)]
-            Conclusion = all (
-                [equal sourceCase (number 1)
-                 equal (number model.Arms.Length) (number 2)
-                 boolean ((model.Arms |> List.map _.CaseOrdinal |> List.sort) = [0;1])
-                 equal (ResourceProof.Expr.Add selected) (number 1)] @ table)
-            // Only Some is source-feasible in this tranche. Both table arms
-            // remain mandatory in the conclusion; None grants no admission.
-            Alternatives = [equal sourceCase (number 1)]
-        })
+        let armPremises = model.Arms |> List.map (fun arm ->
+            let armFormation =
+                match arm.Formation with
+                | Some entry -> identity entry
+                | None -> number 0
+            ResourceProof.Expr.Implies(equal sourceCase (number arm.CaseOrdinal), equal formation armFormation))
+        let arm0 = model.Arms |> List.tryFind (fun arm -> arm.CaseOrdinal = 0)
+        let arm1 = model.Arms |> List.tryFind (fun arm -> arm.CaseOrdinal = 1)
+        match model.Arms.Length, arm0, arm1 with
+        | 2, Some { Choice = OptionalEntryPlanChoice.PendingAbsence; Formation = None }, Some { Choice = OptionalEntryPlanChoice.ClosedEntry; Formation = Some _ } ->
+            withRetirement model.Call model.Actual model.Construction model.ResultRetirement {
+                Declarations = ["optional_entry_case", ResourceProof.Sort.Integer; "optional_entry_formation", ResourceProof.Sort.Integer]
+                ParticipantRoles = ["source_case", "optional_entry_case"; "formation", "optional_entry_formation"]
+                Premises = all (equal sourceCase (number model.SourceCase) :: armPremises)
+                Conclusion = all [
+                    ResourceProof.Expr.LessOrEqual(number 1, sourceCase)
+                    equal (ResourceProof.Expr.Add selected) (number 1)
+                    equal formation (ResourceProof.Expr.IfThenElse(equal sourceCase (number 1), identity model.Formation, number 0))
+                ]
+                // Only Some is source-feasible in this tranche. Both table arms
+                // remain mandatory in the conclusion; None grants no admission.
+                Alternatives = [equal sourceCase (number 1)]
+            }
+        | _ -> Error "The optional entry conversion plan requires exact None and Some arms."
 
 
     /// Conditional finite source correspondence. The account-bound Boolean is
@@ -784,38 +936,83 @@ module OptionalEntryArgumentProof =
         let equal left right = ResourceProof.Expr.Equal(left, right)
         let all values = ResourceProof.Expr.And values
         let sourceCase = ResourceProof.Expr.Variable "optional_entry_absence_case"
+        let choice = ResourceProof.Expr.Variable "optional_entry_absence_choice"
         let promiseName = sprintf "optional_entry_absence_accepted_%d" (NodeId.value model.Absence)
         let promise = ResourceProof.Expr.Variable promiseName
         let selected = model.Arms |> List.map (fun arm ->
             ResourceProof.Expr.IfThenElse(equal sourceCase (number arm.CaseOrdinal), number 1, number 0))
-        let table = model.Arms |> List.map (fun arm ->
-            equal (number arm.CaseOrdinal) (number (match arm.Choice with OptionalEntryAbsencePlanChoice.AbsentEntry -> 0 | OptionalEntryAbsencePlanChoice.RequiresClosedEntry -> 1)))
-        Ok (withRetirement model.Call model.Actual model.Construction model.ResultRetirement {
-            Declarations = ["optional_entry_absence_case", ResourceProof.Sort.Integer; promiseName, ResourceProof.Sort.Boolean]
-            Premises = all [equal sourceCase (number model.SourceCase); promise]
-            Conclusion = all ([equal sourceCase (number 0); promise
-                               equal (number model.Arms.Length) (number 2)
-                               ResourceProof.Expr.Boolean ((model.Arms |> List.map _.CaseOrdinal |> List.sort) = [0;1])
-                               equal (ResourceProof.Expr.Add selected) (number 1)] @ table)
-            Alternatives = [equal sourceCase (number 0)]
-        })
+        let armPremises = model.Arms |> List.map (fun arm ->
+            let armChoice =
+                match arm.Choice with
+                | OptionalEntryAbsencePlanChoice.AbsentEntry -> number 0
+                | OptionalEntryAbsencePlanChoice.RequiresClosedEntry -> number 1
+            ResourceProof.Expr.Implies(equal sourceCase (number arm.CaseOrdinal), equal choice armChoice))
+        let arm0 = model.Arms |> List.tryFind (fun arm -> arm.CaseOrdinal = 0)
+        let arm1 = model.Arms |> List.tryFind (fun arm -> arm.CaseOrdinal = 1)
+        match model.Arms.Length, arm0, arm1 with
+        | 2, Some { Choice = OptionalEntryAbsencePlanChoice.AbsentEntry }, Some { Choice = OptionalEntryAbsencePlanChoice.RequiresClosedEntry } ->
+            withRetirement model.Call model.Actual model.Construction model.ResultRetirement {
+                Declarations =
+                    [ "optional_entry_absence_case", ResourceProof.Sort.Integer
+                      "optional_entry_absence_choice", ResourceProof.Sort.Integer
+                      promiseName, ResourceProof.Sort.Boolean ]
+                ParticipantRoles =
+                    [ "source_case", "optional_entry_absence_case"
+                      "choice", "optional_entry_absence_choice"
+                      "absence", promiseName ]
+                Premises = all ([equal sourceCase (number model.SourceCase); promise] @ armPremises)
+                Conclusion = all [
+                    equal (ResourceProof.Expr.Add selected) (number 1)
+                    equal choice (ResourceProof.Expr.IfThenElse(all [equal sourceCase (number 0); promise], number 0, number 1))
+                ]
+                Alternatives = [equal sourceCase (number 0)]
+            }
+        | _ -> Error "The optional entry absence conversion plan requires exact AbsentEntry and RequiresClosedEntry arms."
 
 /// Arithmetic for a complete local snapshot whose copy and allocation use the
 /// same source count. The producer supplies that incidence; this projection
 /// neither discovers equality nor substitutes a range endpoint for the count.
 module SnapshotBorrowProof =
-    let ofBounds minimum maximum : Result<ResourceProof.Projection, string> =
+    let participantRoles =
+        [ "count", "snapshot_count"
+          "snapshot", "snapshot_copy_extent"
+          "copy", "snapshot_copy_extent"
+          "allocation", "snapshot_allocation_capacity"
+          "minimum", "snapshot_count"
+          "maximum", "snapshot_count" ]
+
+    let ofBounds (count: NodeId) (snapshot: NodeId) (copy: NodeId) (allocation: NodeId) minimum maximum elementBytes allocationCapacity : Result<ResourceProof.Projection, string> =
         if minimum < 0I || maximum < minimum then
             Error "A snapshot borrow requires a finite nonnegative count domain."
+        elif elementBytes <= 0I || allocationCapacity < 0I then
+            Error "A snapshot borrow requires positive element bytes and a nonnegative allocation capacity."
+        elif ([count; snapshot; copy; allocation] |> Set.ofList |> Set.count) <> 4 then
+            Error "A snapshot borrow requires distinct count, snapshot, copy and allocation participants."
         else
-            let count = ResourceProof.Expr.Variable "snapshot_count"
+            let countVar = ResourceProof.Expr.Variable "snapshot_count"
+            let copyExtentVar = ResourceProof.Expr.Variable "snapshot_copy_extent"
+            let capacityVar = ResourceProof.Expr.Variable "snapshot_allocation_capacity"
             let lower = ResourceProof.Expr.Integer minimum
             let upper = ResourceProof.Expr.Integer maximum
             let zero = ResourceProof.Expr.Integer 0I
+            let elemBytes = ResourceProof.Expr.Integer elementBytes
+            let allocCap = ResourceProof.Expr.Integer allocationCapacity
             Ok {
-                Declarations = ["snapshot_count", ResourceProof.Sort.Integer]
-                Premises = ResourceProof.Expr.And [ResourceProof.Expr.LessOrEqual(lower, count); ResourceProof.Expr.LessOrEqual(count, upper)]
-                Conclusion = ResourceProof.Expr.And [ResourceProof.Expr.LessOrEqual(zero, count); ResourceProof.Expr.LessOrEqual(count, count)]
+                Declarations =
+                    [ "snapshot_count", ResourceProof.Sort.Integer
+                      "snapshot_copy_extent", ResourceProof.Sort.Integer
+                      "snapshot_allocation_capacity", ResourceProof.Sort.Integer ]
+                ParticipantRoles = participantRoles
+                Premises =
+                    ResourceProof.Expr.And
+                        [ ResourceProof.Expr.LessOrEqual(lower, countVar)
+                          ResourceProof.Expr.LessOrEqual(countVar, upper)
+                          ResourceProof.Expr.Equal(copyExtentVar, ResourceProof.Expr.Multiply(countVar, elemBytes))
+                          ResourceProof.Expr.Equal(capacityVar, allocCap) ]
+                Conclusion =
+                    ResourceProof.Expr.And
+                        [ ResourceProof.Expr.LessOrEqual(zero, countVar)
+                          ResourceProof.Expr.LessOrEqual(copyExtentVar, capacityVar) ]
                 Alternatives = [ResourceProof.Expr.Boolean true]
             }
 
@@ -944,6 +1141,14 @@ module ForeignResultCoverage =
         | Constant of bigint
         | Argument of int
         | Result
+        | HypothesisLower
+        | HypothesisUpper
+        | AbiLower
+        | AbiUpper
+        | ResultLower
+        | ResultUpper
+        | DestinationLower
+        | DestinationUpper
 
     [<RequireQualifiedAccess>]
     type Predicate =
@@ -954,15 +1159,45 @@ module ForeignResultCoverage =
     type Projection =
         {
             Arguments: int list
+            ParticipantRoles: (string * string) list
             Premises: Predicate
             Totality: Predicate
             Claim: Predicate
             Conclusion: Predicate
         }
 
+    let argumentName index = sprintf "foreign_arg_%d" index
+
+    let baseParticipantRoles =
+        [
+            "hypothesis_lower", "foreign_hypothesis_lower"
+            "hypothesis_upper", "foreign_hypothesis_upper"
+            "abi_lower", "foreign_abi_lower"
+            "abi_upper", "foreign_abi_upper"
+            "result_lower", "foreign_result_lower"
+            "result_upper", "foreign_result_upper"
+            "destination_lower", "foreign_destination_lower"
+            "destination_upper", "foreign_destination_upper"
+            "result", "foreign_result"
+        ]
+
+    let private equalTerm left right =
+        Predicate.And
+            [
+                Predicate.LessOrEqual(left, right)
+                Predicate.LessOrEqual(right, left)
+            ]
+
     let private enclosure term =
         function
-        | ValueRange.Empty -> Ok(Predicate.LessOrEqual(Term.Constant 1I, Term.Constant 0I))
+        | ValueRange.Empty ->
+            Ok(
+                Predicate.And
+                    [
+                        Predicate.LessOrEqual(Term.Constant 1I, term)
+                        Predicate.LessOrEqual(term, Term.Constant 0I)
+                    ]
+            )
         | ValueRange.Bounded(lower, upper) ->
             Ok(
                 Predicate.And
@@ -972,6 +1207,39 @@ module ForeignResultCoverage =
                     ]
             )
         | _ -> Error "Foreign result coverage has no established finite enclosure"
+
+    let private rangeEndpoints lowerTerm upperTerm =
+        function
+        | ValueRange.Empty ->
+            Ok(
+                Predicate.And
+                    [
+                        equalTerm lowerTerm (Term.Constant 1I)
+                        equalTerm upperTerm (Term.Constant 0I)
+                    ]
+            )
+        | ValueRange.Bounded(lower, upper) ->
+            Ok(
+                Predicate.And
+                    [
+                        equalTerm lowerTerm (Term.Constant lower)
+                        equalTerm upperTerm (Term.Constant upper)
+                    ]
+            )
+        | _ -> Error "Foreign result coverage has no established finite enclosure"
+
+    let private abiEndpoints =
+        function
+        | ValueRange.Bounded(lower, upper) when lower <= upper ->
+            Ok(
+                Predicate.And
+                    [
+                        equalTerm Term.AbiLower (Term.Constant lower)
+                        equalTerm Term.AbiUpper (Term.Constant upper)
+                    ]
+            )
+        | ValueRange.Bounded _ -> Error "Foreign result coverage has an empty ABI enclosure"
+        | _ -> Error "Foreign result coverage has no established finite ABI enclosure"
 
     /// Pointer and other irrelevant actuals stay in Application provenance but
     /// are not invented as integer variables. Only endpoint actuals enter D.
@@ -1009,51 +1277,80 @@ module ForeignResultCoverage =
         else
             domains
             |> Result.bind (fun domains ->
-                (match abiRange with
-                 | ValueRange.Bounded _ -> enclosure Term.Result abiRange
-                 | _ -> Error "Foreign result coverage has no established finite ABI enclosure")
+                abiEndpoints abiRange
                 |> Result.bind (fun abi ->
-                    enclosure Term.Result resultRange
-                    |> Result.bind (fun result ->
-                        enclosure Term.Result destination
-                        |> Result.map (fun destination ->
+                    rangeEndpoints Term.ResultLower Term.ResultUpper resultRange
+                    |> Result.bind (fun resultEndpoints ->
+                        rangeEndpoints Term.DestinationLower Term.DestinationUpper destination
+                        |> Result.map (fun destinationEndpoints ->
                             let domain = Predicate.And domains
 
-                            let hypothesis =
+                            let endpoints =
+                                Predicate.And
+                                    [
+                                        equalTerm Term.HypothesisLower (bound lower)
+                                        equalTerm Term.HypothesisUpper (bound upper)
+                                        abi
+                                        resultEndpoints
+                                        destinationEndpoints
+                                    ]
+
+                            let resultBounds =
                                 Predicate.And
                                     [
                                         Predicate.LessOrEqual(bound lower, Term.Result)
                                         Predicate.LessOrEqual(Term.Result, bound upper)
+                                        Predicate.LessOrEqual(Term.HypothesisLower, Term.Result)
+                                        Predicate.LessOrEqual(Term.Result, Term.HypothesisUpper)
+                                        Predicate.LessOrEqual(Term.AbiLower, Term.Result)
+                                        Predicate.LessOrEqual(Term.Result, Term.AbiUpper)
                                     ]
 
-                            let premises = Predicate.And [ domain; hypothesis; abi ]
+                            let premises = Predicate.And [ domain; endpoints; resultBounds ]
                             // This must hold for every actual tuple in D. A single
                             // feasible tuple cannot hide a contradictory interval.
-                            let abiLower, abiUpper =
-                                match abiRange with
-                                | ValueRange.Bounded(lower, upper) -> Term.Constant lower, Term.Constant upper
-                                | _ -> invalidOp "Finite ABI enclosure was not retained"
+                            let argumentTotality =
+                                [
+                                    match lower with
+                                    | ForeignResultBound.Argument index ->
+                                        yield Predicate.LessOrEqual(Term.Argument index, Term.HypothesisUpper)
+                                    | _ -> ()
+                                    match upper with
+                                    | ForeignResultBound.Argument index ->
+                                        yield Predicate.LessOrEqual(Term.HypothesisLower, Term.Argument index)
+                                    | _ -> ()
+                                ]
 
                             let totality =
-                                Predicate.Implies(
-                                    domain,
-                                    Predicate.And
-                                        [
-                                            Predicate.LessOrEqual(bound lower, bound upper)
-                                            Predicate.LessOrEqual(bound lower, abiUpper)
-                                            Predicate.LessOrEqual(abiLower, bound upper)
-                                            Predicate.LessOrEqual(abiLower, abiUpper)
-                                        ]
+                                Predicate.And(
+                                    [
+                                        Predicate.LessOrEqual(Term.HypothesisLower, Term.HypothesisUpper)
+                                        Predicate.LessOrEqual(Term.HypothesisLower, Term.AbiUpper)
+                                        Predicate.LessOrEqual(Term.AbiLower, Term.HypothesisUpper)
+                                    ]
+                                    @ argumentTotality
                                 )
 
-                            let claim = Predicate.And [ result; destination ]
+                            let claim =
+                                Predicate.And
+                                    [
+                                        Predicate.LessOrEqual(Term.ResultLower, Term.Result)
+                                        Predicate.LessOrEqual(Term.Result, Term.ResultUpper)
+                                        Predicate.LessOrEqual(Term.DestinationLower, Term.Result)
+                                        Predicate.LessOrEqual(Term.Result, Term.DestinationUpper)
+                                    ]
+
+                            let participantRoles =
+                                (required |> List.map (fun index -> sprintf "argument_%d" index, argumentName index))
+                                @ baseParticipantRoles
 
                             {
                                 Arguments = required
+                                ParticipantRoles = participantRoles
                                 Premises = premises
                                 Totality = totality
                                 Claim = claim
-                                Conclusion = Predicate.And [ totality; Predicate.Implies(premises, claim) ]
+                                Conclusion = Predicate.And [ totality; claim ]
                             }))))
 
     let ofModel model =
@@ -1070,26 +1367,59 @@ module ForeignResultCoverage =
                 model.Destination
                 model.AbiRange
 
-    let argumentName index = sprintf "foreign_arg_%d" index
-
-    let private term =
+    let termName =
         function
         | Term.Constant value when value.Sign < 0 -> sprintf "(- %O)" (-value)
         | Term.Constant value -> string value
         | Term.Argument index -> argumentName index
         | Term.Result -> "foreign_result"
+        | Term.HypothesisLower -> "foreign_hypothesis_lower"
+        | Term.HypothesisUpper -> "foreign_hypothesis_upper"
+        | Term.AbiLower -> "foreign_abi_lower"
+        | Term.AbiUpper -> "foreign_abi_upper"
+        | Term.ResultLower -> "foreign_result_lower"
+        | Term.ResultUpper -> "foreign_result_upper"
+        | Term.DestinationLower -> "foreign_destination_lower"
+        | Term.DestinationUpper -> "foreign_destination_upper"
+
+    let declaredTerms projection =
+        (projection.Arguments |> List.map Term.Argument)
+        @ [
+            Term.HypothesisLower
+            Term.HypothesisUpper
+            Term.AbiLower
+            Term.AbiUpper
+            Term.ResultLower
+            Term.ResultUpper
+            Term.DestinationLower
+            Term.DestinationUpper
+            Term.Result
+        ]
 
     let rec smtLib =
         function
-        | Predicate.LessOrEqual(left, right) -> sprintf "(<= %s %s)" (term left) (term right)
+        | Predicate.LessOrEqual(left, right) -> sprintf "(<= %s %s)" (termName left) (termName right)
         | Predicate.And [] -> "true"
         | Predicate.And predicates -> predicates |> List.map smtLib |> String.concat " " |> sprintf "(and %s)"
         | Predicate.Implies(premise, conclusion) -> sprintf "(=> %s %s)" (smtLib premise) (smtLib conclusion)
 
     let declarations projection =
-        (projection.Arguments
-         |> List.map (fun index -> sprintf "(declare-fun %s () Int)" (argumentName index)))
-        @ [ "(declare-fun foreign_result () Int)" ]
+        declaredTerms projection
+        |> List.map (fun item -> sprintf "(declare-fun %s () Int)" (termName item))
+
+    let refutationPremises projection =
+        match projection.Premises with
+        | Predicate.And [ domain; endpoints; resultBounds ] ->
+            Predicate.And [ domain; endpoints; Predicate.Implies(projection.Totality, resultBounds) ]
+        | premises -> premises
+
+    let refutation identity projection =
+        declarations projection
+        @ [
+            sprintf "(assert %s)" (smtLib (refutationPremises projection))
+            sprintf "(assert (= %s %s))" identity (smtLib projection.Conclusion)
+            sprintf "(assert (not %s))" identity
+        ]
 
     let premisesQuery projection =
         [ "(set-logic QF_LIA)" ]
@@ -1101,6 +1431,89 @@ module ForeignResultCoverage =
     /// contributes no assumption to the integer premise-satisfiability check.
     let anchoredPremisesQuery identity projection =
         premisesQuery projection
+        |> fun query -> query.Replace("(check-sat)", sprintf "(declare-fun %s () Bool)\n(check-sat)" identity)
+
+    let rec conjuncts =
+        function
+        | Predicate.And [] -> []
+        | Predicate.And predicates -> predicates |> List.collect conjuncts
+        | other -> [ other ]
+
+    let private termVariables =
+        function
+        | Term.Constant _ -> Set.empty
+        | variable -> Set.singleton (termName variable)
+
+    let rec freeVariables =
+        function
+        | Predicate.LessOrEqual(left, right) -> Set.union (termVariables left) (termVariables right)
+        | Predicate.And predicates -> predicates |> List.map freeVariables |> Set.unionMany
+        | Predicate.Implies(premise, conclusion) -> Set.union (freeVariables premise) (freeVariables conclusion)
+
+    let participantRoles projection =
+        projection.ParticipantRoles
+
+    let participantVariables projection =
+        projection.ParticipantRoles
+        |> List.map snd
+        |> Set.ofList
+        |> Set.toList
+        |> List.sort
+
+    let missingParticipantVariables projection =
+        let premiseVars = freeVariables projection.Premises
+        let conclusionVars = freeVariables projection.Conclusion
+        let totalityVars = freeVariables projection.Totality
+        let claimVars = freeVariables projection.Claim
+        let totalityRequired =
+            Set.ofList (
+                (projection.Arguments |> List.map argumentName)
+                @ [
+                    "foreign_hypothesis_lower"
+                    "foreign_hypothesis_upper"
+                    "foreign_abi_lower"
+                    "foreign_abi_upper"
+                ]
+            )
+        let claimRequired =
+            Set.ofList
+                [
+                    "foreign_result_lower"
+                    "foreign_result_upper"
+                    "foreign_destination_lower"
+                    "foreign_destination_upper"
+                    "foreign_result"
+                ]
+        participantVariables projection
+        |> List.filter (fun name ->
+            not (premiseVars.Contains name && conclusionVars.Contains name)
+            || (totalityRequired.Contains name && not (totalityVars.Contains name))
+            || (claimRequired.Contains name && not (claimVars.Contains name)))
+
+    let anchoredNonVacuityQueries identity projection =
+        let participants = participantVariables projection |> String.concat ", "
+        conjuncts projection.Conclusion
+        |> List.mapi (fun index clause ->
+            let clauseText = smtLib clause
+            let query =
+                [ sprintf "; clause %d: %s" index clauseText
+                  sprintf "; participants: %s" participants
+                  "(set-logic QF_LIA)" ]
+                @ declarations projection
+                @ [ sprintf "(assert (not %s))" clauseText
+                    sprintf "(declare-fun %s () Bool)" identity
+                    "(check-sat)" ]
+                |> String.concat "\n"
+            index, clauseText, query)
+
+    let nonVacuityQuery projection =
+        [ "(set-logic QF_LIA)" ]
+        @ declarations projection
+        @ [ sprintf "(assert (not %s))" (smtLib projection.Conclusion); "(check-sat)" ]
+        |> String.concat "\n"
+
+    let anchoredNonVacuityQuery identity projection =
+        nonVacuityQuery projection
         |> fun query -> query.Replace("(check-sat)", sprintf "(declare-fun %s () Bool)\n(check-sat)" identity)
 
 /// Current source incidence and existing ledger citizens. Pending evidence is
@@ -1186,7 +1599,7 @@ type ObligationBody =
     /// Source-checked count/allocation incidence plus nonnegativity of that
     /// actual count over its finite domain. Arithmetic alone does not establish
     /// the incidence; bounds never stand for actual executed extents.
-    | SnapshotBorrowBound of count: NodeId * snapshot: NodeId * copy: NodeId * allocation: NodeId * minimum: bigint * maximum: bigint
+    | SnapshotBorrowBound of count: NodeId * snapshot: NodeId * copy: NodeId * allocation: NodeId * minimum: bigint * maximum: bigint * elementBytes: bigint * allocationCapacity: bigint
     /// For any successful read of r bytes, 1 <= r <= capacity, the trimmed copy
     /// of r - 1 bytes is within bound.
     | InputCopyBound of capacity: int64 * bound: int64
@@ -1206,6 +1619,38 @@ type ObligationBody =
     /// Source-plan correspondence only; the target artifact must realize it.
     | OptionalEntryArgumentConversion of OptionalEntryArgumentConversionModel
     | OptionalEntryAbsenceArgumentConversion of OptionalEntryAbsenceArgumentConversionModel
+
+[<RequireQualifiedAccess>]
+module ObligationBody =
+    /// Published participant roles named by an obligation body and the
+    /// formula variables that carry each role in its proof projection.
+    let participantRoles = function
+        | ObligationBody.SnapshotBorrowBound _ ->
+            SnapshotBorrowProof.participantRoles
+        | ObligationBody.ResourceConversion model ->
+            match ResourceProof.ofConversion model with
+            | Ok projection -> projection.ParticipantRoles
+            | Error _ -> ResourceProof.conversionParticipantRoles
+        | ObligationBody.ResourceCleanup model ->
+            match ResourceProof.ofCleanup model with
+            | Ok projection -> projection.ParticipantRoles
+            | Error _ -> ResourceProof.conversionParticipantRoles
+        | ObligationBody.OptionalEntryArgumentConversion model ->
+            match OptionalEntryArgumentProof.project model with
+            | Ok projection -> projection.ParticipantRoles
+            | Error _ -> [ "source_case", "optional_entry_case"; "formation", "optional_entry_formation" ]
+        | ObligationBody.OptionalEntryAbsenceArgumentConversion model ->
+            match OptionalEntryArgumentProof.projectAbsence model with
+            | Ok projection -> projection.ParticipantRoles
+            | Error _ ->
+                [ "source_case", "optional_entry_absence_case"
+                  "choice", "optional_entry_absence_choice"
+                  "absence", sprintf "optional_entry_absence_accepted_%d" (NodeId.value model.Absence) ]
+        | ObligationBody.ForeignResultCoverage model ->
+            match ForeignResultCoverage.ofModel model with
+            | Ok projection -> projection.ParticipantRoles
+            | Error _ -> ForeignResultCoverage.baseParticipantRoles
+        | _ -> []
 
 /// The obligation record carried by an Obligation node.
 type ObligationInfo = {

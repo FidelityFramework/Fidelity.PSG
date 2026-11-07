@@ -222,7 +222,7 @@ let ``snapshot header has independent version schema and fingerprint bytes`` () 
     // Pin the approved schema/shape pair independently of the generated values.
     // A changed published shape must earn a deliberate schema migration; merely
     // regenerating the codecs cannot update this oracle.
-    let prefix = Convert.FromHexString("4650534749445832020000002F00000034AD7546EDD6648652CE97A1529972CE456DA92490656AB31BE8682CF4D92C69")
+    let prefix = Convert.FromHexString("46505347494458320200000030000000F6D4A733B1700EB7D4C2BED18551E3D57835CE819EC3474F503EF831F3052874")
     Assert.Equal<byte>(prefix, bytes[..47])
     Assert.Equal(Revision.Schema, System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(12, 4)))
     Assert.Equal<byte>(Convert.FromHexString(BinaryGenerated.Fingerprint), bytes[16..47])
@@ -607,3 +607,202 @@ let ``leaf value budgets and nested depth refuse before reading owned ranges`` (
     let location : BinaryIndexed.Location = {Offset = 0UL; Length = uint64 bytes.Length}
     BinaryGenerated.read_Fidelity_PSG_TypeIdentity (BinaryIndexed.initialRead {limits with MaxDepth = 1} source location) |> exceeded "MaxDepth"
     Assert.False(nestedRead, "Nested directory read before depth was checked")
+
+[<Fact>]
+let ``snapshot borrow participant roles come from ObligationBody rather than premise variables`` () =
+    let body = ObligationBody.SnapshotBorrowBound(NodeId 1, NodeId 2, NodeId 3, NodeId 4, 2I, 3I, 1I, 3I)
+    let expectedRoles =
+        [ "count", "snapshot_count"
+          "snapshot", "snapshot_copy_extent"
+          "copy", "snapshot_copy_extent"
+          "allocation", "snapshot_allocation_capacity"
+          "minimum", "snapshot_count"
+          "maximum", "snapshot_count" ]
+    Assert.Equal<(string * string) list>(expectedRoles, ObligationBody.participantRoles body)
+    let baseProjection =
+        SnapshotBorrowProof.ofBounds (NodeId 1) (NodeId 2) (NodeId 3) (NodeId 4) 2I 3I 1I 3I |> take
+    Assert.Equal<(string * string) list>(expectedRoles, ResourceProof.participantRoles baseProjection)
+    let helperVar = ResourceProof.Expr.Variable "snapshot_helper"
+    let countVar = ResourceProof.Expr.Variable "snapshot_count"
+    let zero = ResourceProof.Expr.Integer 0I
+    let helperProjection =
+        { baseProjection with
+            Declarations = baseProjection.Declarations @ [ "snapshot_helper", ResourceProof.Sort.Integer ]
+            Premises =
+                ResourceProof.Expr.And
+                    [ baseProjection.Premises
+                      ResourceProof.Expr.Equal(helperVar, countVar)
+                      ResourceProof.Expr.LessOrEqual(zero, helperVar) ] }
+    Assert.Contains("snapshot_helper", ResourceProof.freeVariables helperProjection.Premises)
+    Assert.DoesNotContain("snapshot_helper", ResourceProof.freeVariables helperProjection.Conclusion)
+    Assert.Equal<string list>(
+        [ "snapshot_allocation_capacity"; "snapshot_copy_extent"; "snapshot_count" ],
+        ResourceProof.participantVariables helperProjection)
+    Assert.Empty(ResourceProof.missingParticipantVariables helperProjection)
+    let ignoredConclusion = { baseProjection with Conclusion = ResourceProof.Expr.LessOrEqual(zero, countVar) }
+    Assert.Equal<string list>(
+        [ "snapshot_allocation_capacity"; "snapshot_copy_extent" ],
+        ResourceProof.missingParticipantVariables ignoredConclusion)
+
+[<Fact>]
+let ``foreign result coverage models totality and claim over symbolic hypotheses and guards all conclusion clauses`` () =
+    let projection =
+        ForeignResultCoverage.project
+            (ForeignResultBound.Constant 0I)
+            (ForeignResultBound.Constant 1I)
+            []
+            (ValueRange.Bounded(0I, 10I))
+            (ValueRange.Bounded(0I, 10I))
+            (ValueRange.Bounded(0I, 10I))
+        |> take
+    Assert.Empty(ForeignResultCoverage.missingParticipantVariables projection)
+    let clauses = ForeignResultCoverage.anchoredNonVacuityQueries "foreign_const_bounds" projection
+    Assert.Equal(7, clauses.Length)
+    Assert.Equal<string list>(
+        [ "(<= foreign_hypothesis_lower foreign_hypothesis_upper)"
+          "(<= foreign_hypothesis_lower foreign_abi_upper)"
+          "(<= foreign_abi_lower foreign_hypothesis_upper)"
+          "(<= foreign_result_lower foreign_result)"
+          "(<= foreign_result foreign_result_upper)"
+          "(<= foreign_destination_lower foreign_result)"
+          "(<= foreign_result foreign_destination_upper)" ],
+        clauses |> List.map (fun (_, text, _) -> text))
+    match
+        ForeignResultCoverage.project
+            (ForeignResultBound.Constant 0I)
+            (ForeignResultBound.Constant 1I)
+            []
+            (ValueRange.Bounded(0I, 10I))
+            (ValueRange.Bounded(0I, 10I))
+            (ValueRange.Bounded(10I, 0I))
+    with
+    | Result.Error reason -> Assert.Equal("Foreign result coverage has an empty ABI enclosure", reason)
+    | Result.Ok _ -> failwith "Inverted ABI enclosure was accepted"
+    let droppedTotalityVar =
+        { projection with
+            Totality = ForeignResultCoverage.Predicate.LessOrEqual(ForeignResultCoverage.Term.HypothesisLower, ForeignResultCoverage.Term.HypothesisUpper)
+            Conclusion =
+                ForeignResultCoverage.Predicate.And
+                    [ ForeignResultCoverage.Predicate.LessOrEqual(ForeignResultCoverage.Term.HypothesisLower, ForeignResultCoverage.Term.HypothesisUpper)
+                      projection.Claim ] }
+    Assert.Equal<string list>(
+        [ "foreign_abi_lower"; "foreign_abi_upper" ],
+        ForeignResultCoverage.missingParticipantVariables droppedTotalityVar)
+
+[<Fact>]
+let ``resource conversion settles unit alignment structurally and guards non-unit alignment`` () =
+    let aligned8Model : ResourceConversionModel =
+        { Declaration = NodeId 10
+          Acquisition = NodeId 11
+          Import = NodeId 12
+          OptionType = TypeIdentity.Error "test_option"
+          HandleType = TypeIdentity.Error "test_handle"
+          Core = NodeId 13
+          PointerBits = 64
+          SelectedPointerBits = 64
+          HandleBytes = 8
+          HandleAlignment = 8
+          OptionBytes = 16
+          OptionAlignment = 8
+          PayloadOffset = 8
+          TagBits = 32
+          TagBytes = 4
+          CaseCount = 2
+          NoneCase = 0
+          SomeCase = 1
+          Arms =
+              [ { NativeNonNull = false; CaseOrdinal = 0; PayloadOrigin = None }
+                { NativeNonNull = true; CaseOrdinal = 1; PayloadOrigin = Some(NodeId 11) } ] }
+    let unitAlignedModel =
+        { aligned8Model with
+            HandleAlignment = 1
+            OptionAlignment = 1
+            PayloadOffset = 4
+            OptionBytes = 12 }
+    let unitProjection = ResourceProof.ofConversion unitAlignedModel |> take
+    Assert.Empty(ResourceProof.missingParticipantVariables unitProjection)
+    let unitClauses = ResourceProof.anchoredNonVacuityQueries "resource_unit_alignment" unitProjection
+    Assert.Equal(7, unitClauses.Length)
+    Assert.DoesNotContain(unitClauses, fun (_, text, _) -> text.Contains "(mod resource_payload_offset")
+
+    let aligned8Projection = ResourceProof.ofConversion aligned8Model |> take
+    Assert.Empty(ResourceProof.missingParticipantVariables aligned8Projection)
+    let aligned8Clauses = ResourceProof.anchoredNonVacuityQueries "resource_aligned_8" aligned8Projection
+    Assert.Equal(8, aligned8Clauses.Length)
+    let _, clause7Text, _ = aligned8Clauses[7]
+    Assert.Equal("(= (mod resource_payload_offset 8) 0)", clause7Text)
+
+    let makeCleanupModel (convModel: ResourceConversionModel) : ResourceCleanupModel =
+        { Acquisition = NodeId 11
+          Declaration = NodeId 10
+          Release = NodeId 14
+          Conversion = NodeId 15
+          ConversionModel = convModel
+          Entry = 0
+          Points =
+              [ { Label = 0; Site = NodeId 19; Context = []; Port = EvaluationPort.Entry; Event = None }
+                { Label = 1; Site = NodeId 19; Context = []; Port = EvaluationPort.OperandEntry 0; Event = None }
+                { Label = 2; Site = NodeId 11; Context = [0]; Port = EvaluationPort.Entry; Event = None }
+                { Label = 3; Site = NodeId 11; Context = [0]; Port = EvaluationPort.Exit; Event = Some ResourceFlowEvent.Acquisition }
+                { Label = 4; Site = NodeId 19; Context = []; Port = EvaluationPort.OperandExit 0; Event = None }
+                { Label = 5; Site = NodeId 19; Context = []; Port = EvaluationPort.OperandEntry 1; Event = None }
+                { Label = 6; Site = NodeId 20; Context = [1]; Port = EvaluationPort.Entry; Event = None }
+                { Label = 7; Site = NodeId 20; Context = [1]; Port = EvaluationPort.Exit; Event = Some(ResourceFlowEvent.Release(NodeId 11, NodeId 14)) }
+                { Label = 8; Site = NodeId 19; Context = []; Port = EvaluationPort.OperandExit 1; Event = None }
+                { Label = 9; Site = NodeId 19; Context = []; Port = EvaluationPort.Exit; Event = None } ]
+          Relations =
+              [ { Role = ResourceEvaluationRole.Root; Ordinal = 0; Sources = [NodeId 19]; Target = NodeId 19 }
+                { Role = ResourceEvaluationRole.Operand EvaluationAccess.Value; Ordinal = 0; Sources = [NodeId 19; NodeId 11]; Target = NodeId 19 }
+                { Role = ResourceEvaluationRole.Flow(EvaluationPort.Entry, EvaluationPort.OperandEntry 0, EvaluationTransfer.Continue); Ordinal = 0; Sources = [NodeId 19]; Target = NodeId 19 }
+                { Role = ResourceEvaluationRole.Flow(EvaluationPort.Entry, EvaluationPort.Exit, EvaluationTransfer.Continue); Ordinal = 0; Sources = [NodeId 11]; Target = NodeId 11 }
+                { Role = ResourceEvaluationRole.Flow(EvaluationPort.OperandExit 0, EvaluationPort.Exit, EvaluationTransfer.WhenCase 0); Ordinal = 1; Sources = [NodeId 19]; Target = NodeId 19 }
+                { Role = ResourceEvaluationRole.Flow(EvaluationPort.OperandExit 0, EvaluationPort.OperandEntry 1, EvaluationTransfer.WhenCase 1); Ordinal = 2; Sources = [NodeId 19]; Target = NodeId 19 }
+                { Role = ResourceEvaluationRole.Operand EvaluationAccess.Value; Ordinal = 1; Sources = [NodeId 19; NodeId 20]; Target = NodeId 19 }
+                { Role = ResourceEvaluationRole.Flow(EvaluationPort.Entry, EvaluationPort.Exit, EvaluationTransfer.Continue); Ordinal = 0; Sources = [NodeId 20]; Target = NodeId 20 }
+                { Role = ResourceEvaluationRole.Flow(EvaluationPort.OperandExit 1, EvaluationPort.Exit, EvaluationTransfer.Continue); Ordinal = 3; Sources = [NodeId 19]; Target = NodeId 19 } ]
+          Edges =
+              [ { From = 0; To = 1; Relation = 2; Connection = ResourceFlowConnection.Local; Transfer = EvaluationTransfer.Continue }
+                { From = 1; To = 2; Relation = 1; Connection = ResourceFlowConnection.OperandEntry; Transfer = EvaluationTransfer.Continue }
+                { From = 2; To = 3; Relation = 3; Connection = ResourceFlowConnection.Local; Transfer = EvaluationTransfer.Continue }
+                { From = 3; To = 4; Relation = 1; Connection = ResourceFlowConnection.OperandExit; Transfer = EvaluationTransfer.Continue }
+                { From = 4; To = 9; Relation = 4; Connection = ResourceFlowConnection.Local; Transfer = EvaluationTransfer.WhenCase 0 }
+                { From = 4; To = 5; Relation = 5; Connection = ResourceFlowConnection.Local; Transfer = EvaluationTransfer.WhenCase 1 }
+                { From = 5; To = 6; Relation = 6; Connection = ResourceFlowConnection.OperandEntry; Transfer = EvaluationTransfer.Continue }
+                { From = 6; To = 7; Relation = 7; Connection = ResourceFlowConnection.Local; Transfer = EvaluationTransfer.Continue }
+                { From = 7; To = 8; Relation = 6; Connection = ResourceFlowConnection.OperandExit; Transfer = EvaluationTransfer.Continue }
+                { From = 8; To = 9; Relation = 8; Connection = ResourceFlowConnection.Local; Transfer = EvaluationTransfer.Continue } ]
+          Cases =
+              [ { Site = NodeId 19
+                  Subject = NodeId 11
+                  Domain = [0; 1]
+                  Arms =
+                      [ { Ordinal = Some 0; Body = NodeId 21; BooleanResult = None }
+                        { Ordinal = Some 1; Body = NodeId 20; BooleanResult = None } ] } ]
+          LiteralGuards = []
+          Exits = [9] }
+
+    let cleanupUnitProjection = ResourceProof.ofCleanup (makeCleanupModel unitAlignedModel) |> take
+    Assert.Empty(ResourceProof.missingParticipantVariables cleanupUnitProjection)
+    Assert.Contains(("origin_11", "resource_origin_11"), cleanupUnitProjection.ParticipantRoles)
+    Assert.DoesNotContain(("origin_20", "resource_origin_20"), cleanupUnitProjection.ParticipantRoles)
+    Assert.DoesNotContain("resource_origin_20", cleanupUnitProjection.Declarations |> List.map fst)
+    Assert.DoesNotContain("resource_origin_20", ResourceProof.freeVariables cleanupUnitProjection.Conclusion)
+    let cleanupUnitClauses = ResourceProof.anchoredNonVacuityQueries "resource_cleanup_unit" cleanupUnitProjection
+    Assert.Equal(28, cleanupUnitClauses.Length)
+    Assert.Contains(cleanupUnitClauses, fun (_, text, _) -> text.Contains "(= resource_origin_11 11)")
+
+    let restoredReleaseOriginProjection =
+        { cleanupUnitProjection with
+            Declarations = cleanupUnitProjection.Declarations @ [ "resource_origin_20", ResourceProof.Sort.Integer ]
+            ParticipantRoles = cleanupUnitProjection.ParticipantRoles @ [ "origin_20", "resource_origin_20" ]
+            Conclusion =
+                ResourceProof.Expr.And(
+                    ResourceProof.conjuncts cleanupUnitProjection.Conclusion
+                    @ [ ResourceProof.Expr.Implies(
+                            ResourceProof.Expr.Variable "resource_nonnull",
+                            ResourceProof.Expr.Equal(
+                                ResourceProof.Expr.Variable "resource_origin_20",
+                                ResourceProof.Expr.Integer 11I)) ]) }
+    Assert.Equal<string list>(
+        [ "resource_origin_20" ],
+        ResourceProof.missingParticipantVariables restoredReleaseOriginProjection)
