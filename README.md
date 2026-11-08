@@ -8,7 +8,7 @@ Incremental consumers use source-authorized demanded scopes, retaining settled
 content and applying affected changes against an exact base. The retained compiler
 corpus is not a service payload. Scope selection and complete support validation
 belong to Baker; the contract provides data and structural checks. See the
-[scoped delivery contract](docs/Scoped_Publication.md).
+[scoped delivery contract](https://forge.spkez.dev/FidelityFramework/Fidelity.PSG/wiki/Scoped_Publication).
 
 ## Who produces a revision
 
@@ -62,7 +62,7 @@ The Clef Compiler Service, in the clef repository:
 
 The closure rule examines every position of a revision that holds an identity. The list of positions is generated from the compiled contract by `tools/GenerateIntegrity.fsx` into `src/Fidelity.PSG/IntegrityNamed.fs`. A test compares the file with the generator's output, so a contract type cannot change and leave a table unexamined.
 
-Each rule was measured against revisions the compiler service publishes before it was stated. The Alex repository's `docs/05_Tests.md` records the measurements.
+Each rule was measured against revisions the compiler service publishes before it was stated. The Alex wiki's [05_Tests](https://forge.spkez.dev/FidelityFramework/Alex/wiki/05_Tests) records the measurements.
 
 ## Layout
 
@@ -109,7 +109,7 @@ remain with the compiler and orchestrator.
 
 The host keeps source bytes stable and owns their lifetime. The optional
 `Fidelity.PSG.Hosting.MappedRevision` adapter opens a read-only mapping; the core
-contract opens no file. See [the image format and limits](docs/Binary_Images.md).
+contract opens no file. See [the image format and limits](https://forge.spkez.dev/FidelityFramework/Fidelity.PSG/wiki/Binary_Images).
 
 Node identity is preserved exactly. It remains the producer's counter value and
 is not yet stable across revisions; schema and producer names do not create a
