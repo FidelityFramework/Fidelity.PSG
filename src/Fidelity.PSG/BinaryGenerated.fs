@@ -7,9 +7,9 @@ module internal BinaryGenerated =
     [<Literal>]
     let Schema = 48
     [<Literal>]
-    let Fingerprint = "F6D4A733B1700EB7D4C2BED18551E3D57835CE819EC3474F503EF831F3052874"
+    let Fingerprint = "F4918BBB4E68141994CE4A478B6F1061EEDFB357DD2EC9D8E312BBB5330D1E68"
     [<Literal>]
-    let NamedTypes = 343
+    let NamedTypes = 344
     [<Literal>]
     let RevisionFields = 17
     [<Literal>]
@@ -66,6 +66,18 @@ module internal BinaryGenerated =
         return leaveWrite state
     }
 
+    and write_BAREWire_Descriptors_FixedArgument (state: WriteState) (value: global.BAREWire.Descriptors.FixedArgument) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        return!
+            match value with
+            | global.BAREWire.Descriptors.FixedArgument.``EntrySentinel``(a0, a1) -> result {
+                let! state = writeTag state 0
+                let! state = writeString state a0
+                let! state = writeI64 state a1
+                return leaveWrite state
+              }
+    }
+
     and write_BAREWire_Descriptors_ParameterInfo (state: WriteState) (value: global.BAREWire.Descriptors.ParameterInfo) : Result<WriteState, BinaryError> = result {
         let! state = enterWrite state
         let! state = writeString state value.``Name``
@@ -88,6 +100,11 @@ module internal BinaryGenerated =
               }
             | global.BAREWire.Descriptors.PassBy.``ReadOnlyReference`` -> result {
                 let! state = writeTag state 2
+                return leaveWrite state
+              }
+            | global.BAREWire.Descriptors.PassBy.``Fixed``(a0) -> result {
+                let! state = writeTag state 3
+                let! state = write_BAREWire_Descriptors_FixedArgument state a0
                 return leaveWrite state
               }
     }
@@ -7617,6 +7634,19 @@ module internal BinaryGenerated =
         return! finishRead ({ ``Identity`` = a0; ``Version`` = a1; ``Source`` = a2 } : global.BAREWire.Descriptors.ExternalExecutionHypothesis) state
     }
 
+    and read_BAREWire_Descriptors_FixedArgument (state: ReadState) : Result<global.BAREWire.Descriptors.FixedArgument * ReadState, BinaryError> = result {
+        let! state = enterReadCases 3 state
+        let! tag, state = readTag state
+        return!
+            match tag with
+            | 0 -> result {
+                let! a0, state = readString state
+                let! a1, state = readI64 state
+                return! finishRead (global.BAREWire.Descriptors.FixedArgument.``EntrySentinel``(a0, a1)) state
+              }
+            | _ -> malformed state "Unknown BAREWire.Descriptors.FixedArgument case"
+    }
+
     and read_BAREWire_Descriptors_ParameterInfo (state: ReadState) : Result<global.BAREWire.Descriptors.ParameterInfo * ReadState, BinaryError> = result {
         let! state = enterReadFields 3 state
         let! a0, state = readString state
@@ -7626,7 +7656,7 @@ module internal BinaryGenerated =
     }
 
     and read_BAREWire_Descriptors_PassBy (state: ReadState) : Result<global.BAREWire.Descriptors.PassBy * ReadState, BinaryError> = result {
-        let! state = enterReadCases 1 state
+        let! state = enterReadCases 2 state
         let! tag, state = readTag state
         return!
             match tag with
@@ -7638,6 +7668,10 @@ module internal BinaryGenerated =
               }
             | 2 -> result {
                 return! finishRead (global.BAREWire.Descriptors.PassBy.``ReadOnlyReference``) state
+              }
+            | 3 -> result {
+                let! a0, state = read_BAREWire_Descriptors_FixedArgument state
+                return! finishRead (global.BAREWire.Descriptors.PassBy.``Fixed``(a0)) state
               }
             | _ -> malformed state "Unknown BAREWire.Descriptors.PassBy case"
     }
