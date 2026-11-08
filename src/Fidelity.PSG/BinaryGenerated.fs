@@ -7,7 +7,7 @@ module internal BinaryGenerated =
     [<Literal>]
     let Schema = 48
     [<Literal>]
-    let Fingerprint = "F4918BBB4E68141994CE4A478B6F1061EEDFB357DD2EC9D8E312BBB5330D1E68"
+    let Fingerprint = "F6020053CE06392A0F2E9EA4F3AC97B749007D4B5FB2268A1C96853839350393"
     [<Literal>]
     let NamedTypes = 344
     [<Literal>]
@@ -73,7 +73,7 @@ module internal BinaryGenerated =
             | global.BAREWire.Descriptors.FixedArgument.``EntrySentinel``(a0, a1) -> result {
                 let! state = writeTag state 0
                 let! state = writeString state a0
-                let! state = writeI64 state a1
+                let! state = writeI32 state a1
                 return leaveWrite state
               }
     }
@@ -7641,7 +7641,7 @@ module internal BinaryGenerated =
             match tag with
             | 0 -> result {
                 let! a0, state = readString state
-                let! a1, state = readI64 state
+                let! a1, state = readI32 state
                 return! finishRead (global.BAREWire.Descriptors.FixedArgument.``EntrySentinel``(a0, a1)) state
               }
             | _ -> malformed state "Unknown BAREWire.Descriptors.FixedArgument case"

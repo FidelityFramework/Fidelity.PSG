@@ -4,7 +4,7 @@ open Fidelity.Data.JSON
 module internal JsonGenerated =
     open JsonRuntime
     [<Literal>]
-    let NamedTypes = 330
+    let NamedTypes = 331
     let rec write_BAREWire_Descriptors_CallConv (value: global.BAREWire.Descriptors.CallConv) : JsonValue =
         match value with
         | global.BAREWire.Descriptors.CallConv.``CDecl`` -> union "CDecl" []
@@ -23,6 +23,10 @@ module internal JsonGenerated =
     and write_BAREWire_Descriptors_ExternalExecutionHypothesis (value: global.BAREWire.Descriptors.ExternalExecutionHypothesis) : JsonValue =
         JsonValue.Object [("Identity", writeString value.``Identity``); ("Version", writeString value.``Version``); ("Source", writeString value.``Source``)]
 
+    and write_BAREWire_Descriptors_FixedArgument (value: global.BAREWire.Descriptors.FixedArgument) : JsonValue =
+        match value with
+        | global.BAREWire.Descriptors.FixedArgument.``EntrySentinel``(a0, a1) -> union "EntrySentinel" [("name", writeString a0); ("value", writeInt32 a1)]
+
     and write_BAREWire_Descriptors_ParameterInfo (value: global.BAREWire.Descriptors.ParameterInfo) : JsonValue =
         JsonValue.Object [("Name", writeString value.``Name``); ("Type", write_BAREWire_Descriptors_TypeRef value.``Type``); ("PassBy", write_BAREWire_Descriptors_PassBy value.``PassBy``)]
 
@@ -31,6 +35,7 @@ module internal JsonGenerated =
         | global.BAREWire.Descriptors.PassBy.``Value`` -> union "Value" []
         | global.BAREWire.Descriptors.PassBy.``Reference`` -> union "Reference" []
         | global.BAREWire.Descriptors.PassBy.``ReadOnlyReference`` -> union "ReadOnlyReference" []
+        | global.BAREWire.Descriptors.PassBy.``Fixed``(a0) -> union "Fixed" [("Item", write_BAREWire_Descriptors_FixedArgument a0)]
 
     and write_BAREWire_Descriptors_ResourceDescriptor (value: global.BAREWire.Descriptors.ResourceDescriptor) : JsonValue =
         JsonValue.Object [("Resource", write_BAREWire_Descriptors_ResourceProtocol value.``Resource``); ("Hypothesis", write_BAREWire_Descriptors_ExternalExecutionHypothesis value.``Hypothesis``)]
