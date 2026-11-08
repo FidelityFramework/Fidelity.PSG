@@ -4,6 +4,142 @@ open Xunit
 open Fidelity.PSG
 open Fidelity.PSG.Tests.Build
 
+// A closed call returns the same callable component constructed in its body.
+let private ordinaryResultReturnedWrite () =
+    let p role ordinal group number : Participant =
+        { Role = role; Ordinal = ordinal; Group = NodeId group; Node = NodeId number }
+    let fnType = TypeIdentity.Function(unitType, unitType)
+    let resultConstructor : ConstructorIdentity =
+        { Declaration = { Module = []; Name = "Result" }
+          Parameters = [TypeParamKind.Type; TypeParamKind.Type]; NativeKind = None }
+    let resultType = TypeIdentity.Application(resultConstructor, [fnType; boolType])
+    let typed number kind children ty = { node number kind children with Type = ty }
+    let nodes =
+        [ typed 1 (SemanticKind.Application(NodeId 3, [NodeId 4])) [3; 4] resultType
+          typed 2 (SemanticKind.UnionCase("Ok", 0, Some(NodeId 30))) [30] resultType
+          node 3 (SemanticKind.VarRef("make", Some(NodeId 7))) []
+          node 4 (SemanticKind.Literal NativeLiteral.Unit) []
+          typed 5 (SemanticKind.Lambda(["unit", unitType, NodeId 6], NodeId 2, [], Some "make", LambdaContext.RegularClosure)) [6; 2] (TypeIdentity.Function(unitType, resultType))
+          node 6 (SemanticKind.PatternBinding "unit") []
+          node 7 (SemanticKind.Binding("make", false, false, None)) [5]
+          typed 10 (SemanticKind.Lambda([], NodeId 11, [], Some "callback", LambdaContext.RegularClosure)) [11] fnType
+          { node 11 (SemanticKind.Literal NativeLiteral.Unit) [] with Parent = Some(NodeId 10) }
+          typed 30 (SemanticKind.Literal NativeLiteral.Unit) [] fnType ]
+    let initial = revision nodes
+    let contract : CallableContract =
+        { Identity = NodeId 100; Kind = CallableKind.OrdinaryFlatClosure; Convention = CallableConvention.Ordinary
+          ParameterTypes = []; OmittedParameters = []; ParameterRepresentations = []; ResultType = unitType
+          ResultRepresentation = ValueRepresentation.Scalar SettledSlot.Bool; EnvironmentBytes = None
+          SourcePremises = Map.empty; Participants = [p ParticipantRole.CallableContract 0 100 100] }
+    let carrier : CallableCarrier =
+        { Occurrence = NodeId 30; Kind = CallableKind.OrdinaryFlatClosure; Formation = NodeId 30
+          EnvironmentValue = None; Contract = Ok(NodeId 100); Lifetime = []; SourceType = fnType
+          Implementation = NodeId 10; Parameters = []; ParameterShapes = []; OmittedParameters = Set.empty
+          Result = NodeId 11; ResultShape = CallableValueShape.Data(NodeId 11); Environment = None }
+    let slot : CallableAggregateSlot =
+        { Identity = NodeId 101; AggregateType = resultType; Declaration = None; DeclarationFacts = []
+          Path = [CallableAggregatePathStep.UnionPayload(0, 0)]; SourceType = fnType; Contract = Ok(NodeId 100)
+          Participants = [p ParticipantRole.AggregateSlot 0 101 101; p ParticipantRole.CallableContract 0 101 100] }
+    let tag : CallableAggregateTag =
+        { Constructor = NodeId 2; TagRead = None; CaseOrdinal = 0; PayloadOrdinal = Some 0; Payload = Some(NodeId 30)
+          Participants = [p ParticipantRole.AggregateConstructor 0 2 2; p ParticipantRole.AggregatePayload 0 2 30] }
+    let alternative : CallableAggregateAlternative =
+        { Ordinal = 0; Carrier = NodeId 30; Formation = NodeId 30; EnvironmentValue = None
+          Contract = NodeId 100; Adapter = None; EnvironmentPlacement = None }
+    let parts group inputs =
+        [p ParticipantRole.AggregateValue 0 group group; p ParticipantRole.AggregateSource 0 group group
+         p ParticipantRole.AggregateSlot 0 group 101; p ParticipantRole.AggregateWrite 0 group 30
+         p ParticipantRole.CallableCarrier 0 group 30; p ParticipantRole.CallableFormation 0 group 30
+         p ParticipantRole.CallableContract 0 group 100] @
+        (inputs |> List.mapi (fun ordinal id -> p ParticipantRole.AggregateInput ordinal group (NodeId.value id)))
+    let sourceInputs = [NodeId 30]
+    let source : CallableAggregateValue =
+        { Occurrence = NodeId 2; Aggregate = NodeId 2; Slot = NodeId 101; Alternatives = [alternative]
+          Selector = Some {Lower = 0; UpperExclusive = 1; Storage = None; Slot = None; ByteOffset = None}
+          FormationInputs = sourceInputs; Value = Some(NodeId 30); SelectedAlternative = Some 0
+          Operation = CallableAggregateOperation.Construct; Frontier = None; Tag = Some tag; Selection = None
+          ResultRetirement = None; Bytes = 0; Alignment = 1; Participants = parts 2 sourceInputs }
+    let inputs = [NodeId 3; NodeId 4; NodeId 5; NodeId 6; NodeId 2; NodeId 2; NodeId 30]
+    let returned =
+        { source with Occurrence = NodeId 1; Aggregate = NodeId 1; Operation = CallableAggregateOperation.Result
+                      FormationInputs = inputs; ResultRetirement = Some(Error "not a boundary callback")
+                      Participants =
+                        parts 1 inputs @
+                            [p ParticipantRole.Site 0 1 1; p ParticipantRole.Path 0 1 3; p ParticipantRole.Path 1 1 7
+                             p ParticipantRole.CalleeArgument 0 1 4; p ParticipantRole.Callee 0 1 5
+                             p ParticipantRole.CallableImplementation 0 1 5; p ParticipantRole.CalleeParameter 0 1 6
+                             p ParticipantRole.CalleeBody 0 5 2; p ParticipantRole.AggregateConstructor 0 1 2
+                             p ParticipantRole.AggregatePayload 0 1 30] }
+    let name = CallableSymbolName.RootBinding "callback"
+    let declaration : CallableEmissionDeclaration =
+        { Lookup = NodeId 10; Implementation = NodeId 10; Parameters = []; Result = NodeId 11
+          Context = LambdaContext.RegularClosure; Captures = []; Name = name; Parent = None
+          Participants = Set.ofList [NodeId 10; NodeId 11] }
+    let representation =
+        ValueRepresentation.Union(["Ok", [ValueRepresentation.CallableComponent(NodeId 101, ValueRepresentation.Record([], Some([], 0, 1)))]; "Error", []], Some(1, 1, 1))
+    let callable =
+        { initial.Emission.Callable with
+            Contracts = Map.ofList [NodeId 100, contract]
+            Carriers = Map.ofList [NodeId 30, carrier]
+            AggregateSlots = Map.ofList [NodeId 101, slot]
+            AggregateValues = Map.ofList [NodeId 1, [returned]; NodeId 2, [source]]
+            Declarations = Map.ofList [NodeId 10, declaration]
+            Symbols = Map.ofList [NodeId 5, CallableSymbolName.Anonymous(NodeId 5); NodeId 10, name]
+            SignatureData = Map.ofList [NodeId 10, Set.singleton(NodeId 11)]
+            ClosedData = Set.singleton(NodeId 11) }
+    let account site values =
+        let participants = slot.Participants @ (values |> List.collect (fun (row: CallableAggregateValue) -> row.Participants @ tag.Participants)) @ contract.Participants
+        let sources =
+            participants |> List.map _.Node |> List.distinct |> List.choose (fun id ->
+                initial.Nodes.TryFind id |> Option.map (fun n -> {Node = id; Kind = n.Kind; Type = n.Type; Children = n.Children; Anchors = n.ObligationAnchors}))
+        { Occurrence = site; Slots = [slot]; Values = values; Carriers = [carrier]; Contracts = [contract]
+          Flows = []; Joins = []; Participants = participants; Sources = sources; Claims = []
+          Symbols = [NodeId 10, name] @ (if site = NodeId 1 then [NodeId 5, CallableSymbolName.Anonymous(NodeId 5)] else [])
+          Inactivity = []; MemoryPolicy = None } : CallableAggregateDependencyAccount
+    let callable = { callable with AggregateDependencies = Map.ofList [NodeId 1, account (NodeId 1) [returned; source]; NodeId 2, account (NodeId 2) [source]] }
+    let numeric =
+        { initial.Emission.Numeric with OccurrenceRepresentations = initial.Emission.Numeric.OccurrenceRepresentations.Add(NodeId 1, Ok representation).Add(NodeId 2, Ok representation) }
+    { initial with
+        Codata = { initial.Codata with CallableContracts = callable.Contracts; CallableCarriers = callable.Carriers
+                                       CallableAggregateSlots = callable.AggregateSlots; CallableAggregateValues = callable.AggregateValues
+                                       CallableAggregateDependencies = callable.AggregateDependencies }
+        Emission = { initial.Emission with Callable = callable; Numeric = numeric } }
+
+[<Fact>]
+let ``ordinary Result Ok returned write retains the exact construction`` () =
+    Assert.Empty(Integrity.check (ordinaryResultReturnedWrite ()))
+
+[<Theory>]
+[<InlineData("Error")>]
+[<InlineData("tag")>]
+let ``ordinary Result returned write rejects an Error construction or changed tag`` defect =
+    let held = ordinaryResultReturnedWrite ()
+    let changed =
+        if defect = "Error" then
+            let construction = {held.Nodes[NodeId 2] with Kind = SemanticKind.UnionCase("Error", 1, Some(NodeId 30))}
+            let c = held.Emission.Callable
+            let values =
+                c.AggregateValues |> Map.map (fun _ rows ->
+                    rows |> List.map (fun row -> {row with Tag = row.Tag |> Option.map (fun tag -> {tag with CaseOrdinal = 1})}))
+            let accounts =
+                c.AggregateDependencies |> Map.map (fun _ account ->
+                    {account with Values = account.Values |> List.map (fun row -> values[row.Occurrence] |> List.exactlyOne)
+                                  Sources = account.Sources |> List.map (fun source ->
+                                      if source.Node = NodeId 2 then {source with Kind = construction.Kind} else source)})
+            { held with Nodes = held.Nodes.Add(NodeId 2, construction)
+                        Codata = {held.Codata with CallableAggregateValues = values; CallableAggregateDependencies = accounts}
+                        Emission = {held.Emission with Callable = {c with AggregateValues = values; AggregateDependencies = accounts}} }
+        else
+            let c = held.Emission.Callable
+            let row = c.AggregateValues[NodeId 1] |> List.exactlyOne
+            let changed = {row with Tag = row.Tag |> Option.map (fun tag -> {tag with CaseOrdinal = 1})}
+            let values = c.AggregateValues.Add(NodeId 1, [changed])
+            {held with Codata = {held.Codata with CallableAggregateValues = values}
+                       Emission = {held.Emission with Callable = {c with AggregateValues = values}}}
+    Assert.Contains(Integrity.check changed, fun violation ->
+        violation.Part = "Emission.Callable.Aggregates.I5" && violation.Node = Some(NodeId 1) &&
+        violation.Reason = "The aggregate result differs from its exact closed application, return or original constructor.")
+
 /// The one violation of the revision, which the part given reports.
 let private only part (violations: IntegrityViolation list) =
     let violation = Assert.Single violations
