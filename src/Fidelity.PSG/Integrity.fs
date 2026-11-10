@@ -2486,12 +2486,46 @@ module Integrity =
                         let conditionalCurrent =
                             match choice with
                             | BoundaryOptionalEntryChoice.Direct _ -> true
-                            | BoundaryOptionalEntryChoice.Conditional(selection, whenTrue, whenFalse) ->
+                            | BoundaryOptionalEntryChoice.Conditional(selection, tagProjection, whenTrue, whenFalse) ->
                                 let callable = revision.Emission.Callable
                                 let selections = callable.AggregateValues.TryFind selection |> Option.defaultValue []
                                                  |> List.filter (fun row -> row.Operation = CallableAggregateOperation.Select)
+                                let registerIntType = function
+                                    | TypeIdentity.Numeric(
+                                        CarrierIdentity.Constructor {
+                                            Declaration = { Module = []; Name = "int" }
+                                            Parameters = []
+                                            NativeKind = Some(NTUKind.NTUint(NTUWidth.Resolved WidthDimension.Register))
+                                        },
+                                        dim) -> dim.Bases.IsEmpty && dim.Vars.IsEmpty
+                                    | TypeIdentity.Application(
+                                        {
+                                            Declaration = { Module = []; Name = "int" }
+                                            Parameters = []
+                                            NativeKind = Some(NTUKind.NTUint(NTUWidth.Resolved WidthDimension.Register))
+                                        },
+                                        []) -> true
+                                    | _ -> false
+                                let tagProjectionCurrent =
+                                    match revision.Nodes.TryFind tagProjection, revision.Nodes.TryFind operand.Actual with
+                                    | Some { Kind = SemanticKind.DUGetTag(tagTarget, unionType); Children = [tagChild]; Type = tagType; ValueRange = tagRange },
+                                      Some actualNode ->
+                                        tagTarget = operand.Actual &&
+                                        tagChild = operand.Actual &&
+                                        unionType = actualNode.Type &&
+                                        registerIntType tagType &&
+                                        tagRange = Some(ValueRange.Bounded(0I, 1I)) &&
+                                        call.Participants.Contains tagProjection &&
+                                        (revision.Nodes.TryFind call.Site |> Option.exists (fun siteNode -> List.contains tagProjection siteNode.Children)) &&
+                                        (revision.Emission.Numeric.Values.TryFind tagProjection
+                                         |> Option.exists (fun carrier ->
+                                             carrier.Site = tagProjection &&
+                                             carrier.SourceType = tagType &&
+                                             carrier.Range = ValueRange.Bounded(0I, 1I) &&
+                                             carrier.Participants.Contains operand.Actual))
+                                    | _ -> false
                                 match selections with
-                                | [selected] ->
+                                | [selected] when tagProjectionCurrent ->
                                     let actual = callable.AggregateValues.TryFind operand.Actual |> Option.defaultValue []
                                                  |> List.filter (fun row -> row.Slot = selected.Slot)
                                     let path =
@@ -2513,7 +2547,7 @@ module Integrity =
                                     | _ -> false
                                 | _ -> false
                         if not conditionalCurrent then
-                            yield defect "Emission.Boundary.Calls.OptionalEntry" call.Site "The conditional optional entry differs from its exact source selection, actual transport, arm order or claim identities."
+                            yield defect "Emission.Boundary.Calls.OptionalEntry" call.Site "The conditional optional entry differs from its exact source selection, option-tag projection, actual transport, arm order or claim identities."
                         for optional in BoundaryOptionalEntryChoice.leaves choice do
                           let part = "Emission.Boundary.Calls.OptionalEntry"
                           let callable = revision.Emission.Callable
@@ -2541,7 +2575,7 @@ module Integrity =
                                       selected |> List.exists (fun row ->
                                           let instance =
                                               match choice with
-                                              | BoundaryOptionalEntryChoice.Conditional(selection, _, _) ->
+                                              | BoundaryOptionalEntryChoice.Conditional(selection, _, _, _) ->
                                                   conditionalCurrent && row.Slot = construction.Slot &&
                                                   ((row.Operation = CallableAggregateOperation.Select && row.Occurrence = selection) ||
                                                    (row.Operation = CallableAggregateOperation.Transport && row.Aggregate = selection))
@@ -2892,6 +2926,11 @@ module Integrity =
                 match boundary.Imports.TryFind call.Import with
                 | None -> yield missingRow "Emission.Boundary.Calls.Import" "Emission.Boundary.Imports" call.Import
                 | Some imported ->
+                    let optionalProjections =
+                        call.Arguments |> List.choose (fun operand ->
+                            match operand.OptionalEntry with
+                            | Some (BoundaryOptionalEntryChoice.Conditional(_, tagProjection, _, _)) -> Some tagProjection
+                            | _ -> None)
                     match call.Entry with
                     | None ->
                         match revision.Nodes.TryFind call.Site with
@@ -2900,7 +2939,7 @@ module Integrity =
                                    Children = children
                                } when callee = call.Callee &&
                                       arguments = (call.Arguments |> List.map _.Actual) @ call.ErasedUnitArguments &&
-                                      children = callee :: arguments -> ()
+                                      children = callee :: arguments @ optionalProjections -> ()
                         | _ ->
                             yield
                                 defect
@@ -2918,7 +2957,7 @@ module Integrity =
                                    } ->
                                 pointer = call.Callee
                                 && arguments = actuals @ call.ErasedUnitArguments
-                                && children = intrinsic :: pointer :: arguments
+                                && children = intrinsic :: pointer :: arguments @ optionalProjections
                                 && (revision.Nodes.TryFind intrinsic
                                     |> Option.exists (fun node ->
                                         match node.Kind with

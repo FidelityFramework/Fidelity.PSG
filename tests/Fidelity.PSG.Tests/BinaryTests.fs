@@ -91,7 +91,7 @@ let ``optional entry binary retains exact absent and present source selection`` 
                                        Payload = (if present then None else Some(NodeId 67));
                                        Formation = (if present then None else Some(NodeId 68));
                                        Obligation = NodeId 69}
-            BoundaryOptionalEntryChoice.Conditional(NodeId 65, selected, other)
+            BoundaryOptionalEntryChoice.Conditional(NodeId 65, NodeId 70, selected, other)
         else BoundaryOptionalEntryChoice.Direct selected
     let operand : BoundaryOperand =
         {Actual = NodeId 63; Formal = NodeId 42; Abi = BoundaryScalar.Entry(NodeId 40)
@@ -222,7 +222,7 @@ let ``snapshot header has independent version schema and fingerprint bytes`` () 
     // Pin the approved schema/shape pair independently of the generated values.
     // A changed published shape must earn a deliberate schema migration; merely
     // regenerating the codecs cannot update this oracle.
-    let prefix = Convert.FromHexString("46505347494458320200000030000000F6020053CE06392A0F2E9EA4F3AC97B749007D4B5FB2268A1C96853839350393")
+    let prefix = Convert.FromHexString("465053474944583202000000310000008972130E9DF875421F76427CFBBE841B8A0436862AF08529973A68A74E30E352")
     Assert.Equal<byte>(prefix, bytes[..47])
     Assert.Equal(Revision.Schema, System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(12, 4)))
     Assert.Equal<byte>(Convert.FromHexString(BinaryGenerated.Fingerprint), bytes[16..47])

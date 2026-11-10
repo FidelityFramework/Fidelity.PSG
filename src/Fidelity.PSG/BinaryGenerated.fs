@@ -5,9 +5,9 @@ module internal BinaryGenerated =
     [<Literal>]
     let Format = 2u
     [<Literal>]
-    let Schema = 48
+    let Schema = 49
     [<Literal>]
-    let Fingerprint = "F6020053CE06392A0F2E9EA4F3AC97B749007D4B5FB2268A1C96853839350393"
+    let Fingerprint = "8972130E9DF875421F76427CFBBE841B8A0436862AF08529973A68A74E30E352"
     [<Literal>]
     let NamedTypes = 344
     [<Literal>]
@@ -734,11 +734,12 @@ module internal BinaryGenerated =
                 let! state = write_Fidelity_PSG_BoundaryOptionalEntry state a0
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.BoundaryOptionalEntryChoice.``Conditional``(a0, a1, a2) -> result {
+            | global.Fidelity.PSG.BoundaryOptionalEntryChoice.``Conditional``(a0, a1, a2, a3) -> result {
                 let! state = writeTag state 1
                 let! state = write_Fidelity_PSG_NodeId state a0
-                let! state = write_Fidelity_PSG_BoundaryOptionalEntry state a1
+                let! state = write_Fidelity_PSG_NodeId state a1
                 let! state = write_Fidelity_PSG_BoundaryOptionalEntry state a2
+                let! state = write_Fidelity_PSG_BoundaryOptionalEntry state a3
                 return leaveWrite state
               }
     }
@@ -8287,7 +8288,7 @@ module internal BinaryGenerated =
     }
 
     and read_Fidelity_PSG_BoundaryOptionalEntryChoice (state: ReadState) : Result<global.Fidelity.PSG.BoundaryOptionalEntryChoice * ReadState, BinaryError> = result {
-        let! state = enterReadCases 4 state
+        let! state = enterReadCases 5 state
         let! tag, state = readTag state
         return!
             match tag with
@@ -8297,9 +8298,10 @@ module internal BinaryGenerated =
               }
             | 1 -> result {
                 let! a0, state = read_Fidelity_PSG_NodeId state
-                let! a1, state = read_Fidelity_PSG_BoundaryOptionalEntry state
+                let! a1, state = read_Fidelity_PSG_NodeId state
                 let! a2, state = read_Fidelity_PSG_BoundaryOptionalEntry state
-                return! finishRead (global.Fidelity.PSG.BoundaryOptionalEntryChoice.``Conditional``(a0, a1, a2)) state
+                let! a3, state = read_Fidelity_PSG_BoundaryOptionalEntry state
+                return! finishRead (global.Fidelity.PSG.BoundaryOptionalEntryChoice.``Conditional``(a0, a1, a2, a3)) state
               }
             | _ -> malformed state "Unknown Fidelity.PSG.BoundaryOptionalEntryChoice case"
     }

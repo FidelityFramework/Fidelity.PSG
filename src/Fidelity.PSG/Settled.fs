@@ -204,12 +204,12 @@ type BoundaryOptionalEntry = {
 [<RequireQualifiedAccess>]
 type BoundaryOptionalEntryChoice =
     | Direct of BoundaryOptionalEntry
-    | Conditional of selection: NodeId * whenTrue: BoundaryOptionalEntry * whenFalse: BoundaryOptionalEntry
+    | Conditional of selection: NodeId * tagProjection: NodeId * whenTrue: BoundaryOptionalEntry * whenFalse: BoundaryOptionalEntry
 
 module BoundaryOptionalEntryChoice =
     let leaves = function
         | BoundaryOptionalEntryChoice.Direct entry -> [entry]
-        | BoundaryOptionalEntryChoice.Conditional(_, whenTrue, whenFalse) -> [whenTrue; whenFalse]
+        | BoundaryOptionalEntryChoice.Conditional(_, _, whenTrue, whenFalse) -> [whenTrue; whenFalse]
 
 type BoundaryOperand = {
     Actual: NodeId

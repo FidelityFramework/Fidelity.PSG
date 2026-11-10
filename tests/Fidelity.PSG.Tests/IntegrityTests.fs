@@ -2048,6 +2048,91 @@ let ``optional entry inventory retains absent and present selection identities``
     for identity in [9101; 9104; 9106] @ (if present then [9102; 9103] else []) do
         Assert.Contains(NodeId identity, named)
 
+[<Fact>]
+let ``conditional optional entry inventory retains selection and option tag projection identities`` () =
+    let call = boundaryCalleeFacts.Emission.Boundary.Calls[NodeId 1]
+    let whenTrue : BoundaryOptionalEntry =
+        {Construction = NodeId 9101; CaseOrdinal = 1; Payload = Some(NodeId 9102); Formation = Some(NodeId 9103)
+         Transport = Set.singleton(NodeId 9104); Obligation = NodeId 9106}
+    let whenFalse : BoundaryOptionalEntry =
+        {Construction = NodeId 9107; CaseOrdinal = 0; Payload = None; Formation = None
+         Transport = Set.singleton(NodeId 9108); Obligation = NodeId 9109}
+    let choice = BoundaryOptionalEntryChoice.Conditional(NodeId 9100, NodeId 9105, whenTrue, whenFalse)
+    let changed = {call with Arguments = [{call.Arguments.Head with OptionalEntry = Some choice}]}
+    let boundary = {boundaryCalleeFacts.Emission.Boundary with Calls = Map.ofList [call.Site, changed]}
+    let named = Integrity.named {boundaryCalleeFacts with Emission = {boundaryCalleeFacts.Emission with Boundary = boundary}}
+                |> List.collect snd |> Set.ofList
+    for identity in [9100; 9101; 9102; 9103; 9104; 9105; 9106; 9107; 9108; 9109] do
+        Assert.Contains(NodeId identity, named)
+
+[<Theory>]
+[<InlineData("valid")>]
+[<InlineData("missing-projection-node")>]
+[<InlineData("wrong-projection-target")>]
+[<InlineData("missing-call-child")>]
+[<InlineData("missing-call-participant")>]
+[<InlineData("missing-numeric-carrier")>]
+let ``conditional optional entry requires its exact DUGetTag option tag projection`` defect =
+    let call = boundaryCalleeFacts.Emission.Boundary.Calls[NodeId 1]
+    let whenTrue : BoundaryOptionalEntry =
+        {Construction = NodeId 3; CaseOrdinal = 1; Payload = Some(NodeId 3); Formation = Some(NodeId 3)
+         Transport = Set.ofList [NodeId 3]; Obligation = NodeId 404}
+    let whenFalse : BoundaryOptionalEntry =
+        {Construction = NodeId 4; CaseOrdinal = 0; Payload = None; Formation = None
+         Transport = Set.ofList [NodeId 4; NodeId 3]; Obligation = NodeId 405}
+    let held : CallableAggregateSelection = { Condition = NodeId 2; WhenTrue = NodeId 3; WhenFalse = NodeId 4 }
+    let selected : CallableAggregateValue =
+        { Occurrence = NodeId 3; Aggregate = NodeId 3; Slot = NodeId 101; Alternatives = []; Selector = None
+          FormationInputs = [NodeId 2; NodeId 3; NodeId 4]; Value = None; SelectedAlternative = None
+          Operation = CallableAggregateOperation.Select; Frontier = None; Tag = None; Selection = Some held
+          ResultRetirement = None; Bytes = 0; Alignment = 1; Participants = [] }
+    let condition = boundaryCalleeFacts.Nodes[NodeId 2]
+    let account : CallableAggregateDependencyAccount =
+        { Occurrence = NodeId 3; Slots = []; Values = [selected]
+          Sources = [{ Node = NodeId 2; Kind = condition.Kind; Type = condition.Type; Children = condition.Children; Anchors = [] }]
+          Carriers = []; Contracts = []; Flows = []; Joins = []; Claims = []; Symbols = []; Inactivity = []
+          MemoryPolicy = None; Participants = [] }
+    let callable =
+        { boundaryCalleeFacts.Emission.Callable with
+            AggregateValues = Map.ofList [NodeId 3, [selected]]
+            AggregateDependencies = Map.ofList [NodeId 3, account] }
+    let tagId = NodeId 99
+    let intType =
+        TypeIdentity.Application(
+            { Declaration = { Module = []; Name = "int" }
+              Parameters = []
+              NativeKind = Some(NTUKind.NTUint(NTUWidth.Resolved WidthDimension.Register)) },
+            [])
+    let actualType = boundaryCalleeFacts.Nodes[NodeId 3].Type
+    let tagNode =
+        { node 99 (SemanticKind.DUGetTag( (if defect = "wrong-projection-target" then NodeId 4 else NodeId 3), actualType )) [3] with
+            Type = intType; ValueRange = Some(ValueRange.Bounded(0I, 1I)) }
+    let callNode =
+        let baseCall = boundaryCalleeFacts.Nodes[NodeId 1]
+        if defect = "missing-call-child" then baseCall
+        else { baseCall with Children = baseCall.Children @ [tagId] }
+    let nodes =
+        let withCall = boundaryCalleeFacts.Nodes.Add(NodeId 1, callNode)
+        if defect = "missing-projection-node" then withCall else withCall.Add(tagId, tagNode)
+    let tagCarrier : ScalarCarrier =
+        { Site = tagId; SourceType = intType; Representation = boundaryCalleeFacts.Emission.Numeric.Values[NodeId 3].Representation
+          Declaration = Some(NodeId 64); Slot = SettledSlot.Integer(64, Some "int"); Range = ValueRange.Bounded(0I, 1I)
+          Participants = Set.ofList [tagId; NodeId 3]; Obligations = [] }
+    let numeric =
+        if defect = "missing-numeric-carrier" then boundaryCalleeFacts.Emission.Numeric
+        else { boundaryCalleeFacts.Emission.Numeric with Values = boundaryCalleeFacts.Emission.Numeric.Values.Add(tagId, tagCarrier) }
+    let choice = BoundaryOptionalEntryChoice.Conditional(NodeId 3, tagId, whenTrue, whenFalse)
+    let operand = { call.Arguments.Head with Abi = BoundaryScalar.Entry(NodeId 72); OptionalEntry = Some choice }
+    let participants = if defect = "missing-call-participant" then call.Participants else call.Participants.Add tagId
+    let changedCall = { call with Arguments = operand :: call.Arguments.Tail; Participants = participants }
+    let boundary = { boundaryCalleeFacts.Emission.Boundary with Calls = Map.ofList [call.Site, changedCall] }
+    let stated = { boundaryCalleeFacts with Nodes = nodes; Emission = { boundaryCalleeFacts.Emission with Callable = callable; Numeric = numeric; Boundary = boundary } }
+    let violations = Integrity.check stated
+    if defect = "valid" then
+        Assert.DoesNotContain(violations, fun v -> v.Part = "Emission.Boundary.Calls.OptionalEntry" && v.Reason.Contains("option-tag projection"))
+    else
+        Assert.Contains(violations, fun v -> v.Part = "Emission.Boundary.Calls.OptionalEntry" && v.Node = Some(NodeId 1) && v.Reason.Contains("option-tag projection"))
+
 [<Theory>]
 [<InlineData("empty")>]
 [<InlineData("blank")>]

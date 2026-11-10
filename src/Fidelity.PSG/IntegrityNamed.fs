@@ -276,7 +276,7 @@ module IntegrityNamed =
     and private idsOfBoundaryOptionalEntryChoice (value: Fidelity.PSG.BoundaryOptionalEntryChoice) : NodeId list =
         match value with
         | Fidelity.PSG.BoundaryOptionalEntryChoice.Direct(a0) -> (idsOfBoundaryOptionalEntry a0)
-        | Fidelity.PSG.BoundaryOptionalEntryChoice.Conditional(a0, a1, a2) -> [ a0 ] @ (idsOfBoundaryOptionalEntry a1) @ (idsOfBoundaryOptionalEntry a2)
+        | Fidelity.PSG.BoundaryOptionalEntryChoice.Conditional(a0, a1, a2, a3) -> [ a0 ] @ [ a1 ] @ (idsOfBoundaryOptionalEntry a2) @ (idsOfBoundaryOptionalEntry a3)
 
     and private idsOfBoundaryResourceAccess (value: Fidelity.PSG.BoundaryResourceAccess) : NodeId list =
         [ value.Site ]
