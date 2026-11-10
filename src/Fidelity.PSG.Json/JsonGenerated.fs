@@ -1547,6 +1547,7 @@ module internal JsonGenerated =
     and write_Fidelity_PSG_RuntimeModel (value: global.Fidelity.PSG.RuntimeModel) : JsonValue =
         match value with
         | global.Fidelity.PSG.RuntimeModel.``Libc`` -> union "Libc" []
+        | global.Fidelity.PSG.RuntimeModel.``Win32`` -> union "Win32" []
         | global.Fidelity.PSG.RuntimeModel.``Freestanding`` -> union "Freestanding" []
         | global.Fidelity.PSG.RuntimeModel.``Bare`` -> union "Bare" []
         | global.Fidelity.PSG.RuntimeModel.``ROCm`` -> union "ROCm" []

@@ -5,9 +5,9 @@ module internal BinaryGenerated =
     [<Literal>]
     let Format = 2u
     [<Literal>]
-    let Schema = 48
+    let Schema = 49
     [<Literal>]
-    let Fingerprint = "F6020053CE06392A0F2E9EA4F3AC97B749007D4B5FB2268A1C96853839350393"
+    let Fingerprint = "97DEDA083BA3518FCD9B6E30FAB7BEA1B25D3472BAD40BD25F693E17BEAAFCFC"
     [<Literal>]
     let NamedTypes = 344
     [<Literal>]
@@ -6134,20 +6134,24 @@ module internal BinaryGenerated =
                 let! state = writeTag state 0
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.RuntimeModel.``Freestanding`` -> result {
+            | global.Fidelity.PSG.RuntimeModel.``Win32`` -> result {
                 let! state = writeTag state 1
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.RuntimeModel.``Bare`` -> result {
+            | global.Fidelity.PSG.RuntimeModel.``Freestanding`` -> result {
                 let! state = writeTag state 2
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.RuntimeModel.``ROCm`` -> result {
+            | global.Fidelity.PSG.RuntimeModel.``Bare`` -> result {
                 let! state = writeTag state 3
                 return leaveWrite state
               }
-            | global.Fidelity.PSG.RuntimeModel.``XDNA`` -> result {
+            | global.Fidelity.PSG.RuntimeModel.``ROCm`` -> result {
                 let! state = writeTag state 4
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.RuntimeModel.``XDNA`` -> result {
+                let! state = writeTag state 5
                 return leaveWrite state
               }
     }
@@ -13182,15 +13186,18 @@ module internal BinaryGenerated =
                 return! finishRead (global.Fidelity.PSG.RuntimeModel.``Libc``) state
               }
             | 1 -> result {
-                return! finishRead (global.Fidelity.PSG.RuntimeModel.``Freestanding``) state
+                return! finishRead (global.Fidelity.PSG.RuntimeModel.``Win32``) state
               }
             | 2 -> result {
-                return! finishRead (global.Fidelity.PSG.RuntimeModel.``Bare``) state
+                return! finishRead (global.Fidelity.PSG.RuntimeModel.``Freestanding``) state
               }
             | 3 -> result {
-                return! finishRead (global.Fidelity.PSG.RuntimeModel.``ROCm``) state
+                return! finishRead (global.Fidelity.PSG.RuntimeModel.``Bare``) state
               }
             | 4 -> result {
+                return! finishRead (global.Fidelity.PSG.RuntimeModel.``ROCm``) state
+              }
+            | 5 -> result {
                 return! finishRead (global.Fidelity.PSG.RuntimeModel.``XDNA``) state
               }
             | _ -> malformed state "Unknown Fidelity.PSG.RuntimeModel case"
