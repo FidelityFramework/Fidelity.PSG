@@ -4,7 +4,7 @@ open Fidelity.Data.JSON
 module internal JsonGenerated =
     open JsonRuntime
     [<Literal>]
-    let NamedTypes = 331
+    let NamedTypes = 332
     let rec write_BAREWire_Descriptors_CallConv (value: global.BAREWire.Descriptors.CallConv) : JsonValue =
         match value with
         | global.BAREWire.Descriptors.CallConv.``CDecl`` -> union "CDecl" []
@@ -1007,6 +1007,9 @@ module internal JsonGenerated =
     and write_Fidelity_PSG_MemoryExtentWitness (value: global.Fidelity.PSG.MemoryExtentWitness) : JsonValue =
         JsonValue.Object [("Site", write_Fidelity_PSG_NodeId value.``Site``); ("Source", write_Fidelity_PSG_NodeId value.``Source``); ("Element", write_Fidelity_PSG_NumericRepresentation value.``Element``); ("ElementDeclaration", write_Fidelity_PSG_NodeId value.``ElementDeclaration``); ("Result", write_Fidelity_PSG_ScalarCarrier value.``Result``); ("Extent", write_Fidelity_PSG_BoundaryStringExtent value.``Extent``); ("IndexUnsigned", writeBool value.``IndexUnsigned``); ("Participants", (writeSet write_Fidelity_PSG_NodeId) value.``Participants``)]
 
+    and write_Fidelity_PSG_MemoryLocalScalarWitness (value: global.Fidelity.PSG.MemoryLocalScalarWitness) : JsonValue =
+        JsonValue.Object [("Site", write_Fidelity_PSG_NodeId value.``Site``); ("Initializer", write_Fidelity_PSG_NodeId value.``Initializer``); ("Element", write_Fidelity_PSG_SettledSlot value.``Element``); ("Bytes", writeInt32 value.``Bytes``); ("Alignment", writeInt32 value.``Alignment``); ("Residence", write_Fidelity_PSG_MemoryResidence value.``Residence``); ("Reads", (writeSet write_Fidelity_PSG_NodeId) value.``Reads``); ("Writes", (writeList (fun (v1_0, v1_1) -> JsonValue.Array [write_Fidelity_PSG_NodeId v1_0; write_Fidelity_PSG_NodeId v1_1])) value.``Writes``); ("Platform", write_Fidelity_PSG_NodeId value.``Platform``); ("Layout", write_Fidelity_PSG_NodeId value.``Layout``); ("Capacity", write_Fidelity_PSG_NodeId value.``Capacity``)]
+
     and write_Fidelity_PSG_MemoryPlace (value: global.Fidelity.PSG.MemoryPlace) : JsonValue =
         match value with
         | global.Fidelity.PSG.MemoryPlace.``MutableCell``(a0) -> union "MutableCell" [("binding", write_Fidelity_PSG_NodeId a0)]
@@ -1057,6 +1060,7 @@ module internal JsonGenerated =
 
     and write_Fidelity_PSG_MemoryWitnessOperation (value: global.Fidelity.PSG.MemoryWitnessOperation) : JsonValue =
         match value with
+        | global.Fidelity.PSG.MemoryWitnessOperation.``LocalScalar``(a0) -> union "LocalScalar" [("Item", write_Fidelity_PSG_MemoryLocalScalarWitness a0)]
         | global.Fidelity.PSG.MemoryWitnessOperation.``BufferExtent``(a0) -> union "BufferExtent" [("Item", write_Fidelity_PSG_MemoryExtentWitness a0)]
         | global.Fidelity.PSG.MemoryWitnessOperation.``ArrayExtent``(a0) -> union "ArrayExtent" [("Item", write_Fidelity_PSG_MemoryArrayExtentWitness a0)]
         | global.Fidelity.PSG.MemoryWitnessOperation.``ArrayAccess``(a0) -> union "ArrayAccess" [("Item", write_Fidelity_PSG_MemoryArrayAccessWitness a0)]
