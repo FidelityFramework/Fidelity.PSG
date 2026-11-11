@@ -280,6 +280,8 @@ type NumericRepresentation = {
 type RuntimeModel =
     /// C library available (CPU console apps)
     | Libc
+    /// Windows OS services without an implicit C runtime.
+    | Win32
     /// Direct syscalls only, no libc (CPU standalone)
     | Freestanding
     /// No OS, hardware target (FPGA, MCU)
