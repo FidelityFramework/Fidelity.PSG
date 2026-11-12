@@ -4,7 +4,7 @@ open Fidelity.Data.JSON
 module internal JsonGenerated =
     open JsonRuntime
     [<Literal>]
-    let NamedTypes = 332
+    let NamedTypes = 339
     let rec write_BAREWire_Descriptors_CallConv (value: global.BAREWire.Descriptors.CallConv) : JsonValue =
         match value with
         | global.BAREWire.Descriptors.CallConv.``CDecl`` -> union "CDecl" []
@@ -352,6 +352,10 @@ module internal JsonGenerated =
     and write_Fidelity_PSG_CallableFlowCall (value: global.Fidelity.PSG.CallableFlowCall) : JsonValue =
         JsonValue.Object [("Call", write_Fidelity_PSG_NodeId value.``Call``); ("Implementation", write_Fidelity_PSG_NodeId value.``Implementation``); ("Parameters", (writeList write_Fidelity_PSG_NodeId) value.``Parameters``); ("Arguments", (writeList write_Fidelity_PSG_NodeId) value.``Arguments``); ("Result", write_Fidelity_PSG_NodeId value.``Result``)]
 
+    and write_Fidelity_PSG_CallableInterfaceDigest (value: global.Fidelity.PSG.CallableInterfaceDigest) : JsonValue =
+        match value with
+        | global.Fidelity.PSG.CallableInterfaceDigest(a0) -> union "CallableInterfaceDigest" [("digest", writeString a0)]
+
     and write_Fidelity_PSG_CallableJoin (value: global.Fidelity.PSG.CallableJoin) : JsonValue =
         JsonValue.Object [("Occurrence", write_Fidelity_PSG_NodeId value.``Occurrence``); ("SourceType", write_Fidelity_PSG_TypeIdentity value.``SourceType``); ("Storage", write_Fidelity_PSG_NodeId value.``Storage``); ("Read", write_Fidelity_PSG_NodeId value.``Read``); ("Alternatives", (writeList write_Fidelity_PSG_NodeId) value.``Alternatives``)]
 
@@ -385,6 +389,10 @@ module internal JsonGenerated =
         | global.Fidelity.PSG.CallbackAbsenceInputRole.``HypothesisIdentity`` -> union "HypothesisIdentity" []
         | global.Fidelity.PSG.CallbackAbsenceInputRole.``HypothesisVersion`` -> union "HypothesisVersion" []
         | global.Fidelity.PSG.CallbackAbsenceInputRole.``HypothesisSource`` -> union "HypothesisSource" []
+
+    and write_Fidelity_PSG_CanonicalProofSupportDigest (value: global.Fidelity.PSG.CanonicalProofSupportDigest) : JsonValue =
+        match value with
+        | global.Fidelity.PSG.CanonicalProofSupportDigest(a0) -> union "CanonicalProofSupportDigest" [("digest", writeString a0)]
 
     and write_Fidelity_PSG_CaptureInfo (value: global.Fidelity.PSG.CaptureInfo) : JsonValue =
         JsonValue.Object [("Name", writeString value.``Name``); ("Type", write_Fidelity_PSG_TypeIdentity value.``Type``); ("IsMutable", writeBool value.``IsMutable``); ("SourceNodeId", (writeOption write_Fidelity_PSG_NodeId) value.``SourceNodeId``)]
@@ -1485,6 +1493,27 @@ module internal JsonGenerated =
     and write_Fidelity_PSG_ProjectMemoryPolicy (value: global.Fidelity.PSG.ProjectMemoryPolicy) : JsonValue =
         JsonValue.Object [("ProjectPath", writeString value.``ProjectPath``); ("SourceVersion", writeString value.``SourceVersion``); ("Model", writeString value.``Model``)]
 
+    and write_Fidelity_PSG_ProofSupportCensus (value: global.Fidelity.PSG.ProofSupportCensus) : JsonValue =
+        JsonValue.Object [("Identity", writeString value.``Identity``); ("Kind", write_Fidelity_PSG_ProofSupportCensusKind value.``Kind``); ("Entries", (writeSet writeString) value.``Entries``)]
+
+    and write_Fidelity_PSG_ProofSupportCensusKind (value: global.Fidelity.PSG.ProofSupportCensusKind) : JsonValue =
+        match value with
+        | global.Fidelity.PSG.ProofSupportCensusKind.``NumericInterface`` -> union "NumericInterface" []
+        | global.Fidelity.PSG.ProofSupportCensusKind.``PlatformLayout`` -> union "PlatformLayout" []
+        | global.Fidelity.PSG.ProofSupportCensusKind.``PlatformSpace`` -> union "PlatformSpace" []
+        | global.Fidelity.PSG.ProofSupportCensusKind.``BoundaryAbsence`` -> union "BoundaryAbsence" []
+        | global.Fidelity.PSG.ProofSupportCensusKind.``DomainUniqueness`` -> union "DomainUniqueness" []
+
+    and write_Fidelity_PSG_ProofSupportCoverage (value: global.Fidelity.PSG.ProofSupportCoverage) : JsonValue =
+        match value with
+        | global.Fidelity.PSG.ProofSupportCoverage.``Local``(a0, a1) -> union "Local" [("participants", (writeList write_Fidelity_PSG_ProofSupportParticipant) a0); ("censuses", (writeList write_Fidelity_PSG_ProofSupportCensus) a1)]
+        | global.Fidelity.PSG.ProofSupportCoverage.``Shared``(a0, a1, a2) -> union "Shared" [("sharedRegions", (writeSet writeString) a0); ("participants", (writeList write_Fidelity_PSG_ProofSupportParticipant) a1); ("censuses", (writeList write_Fidelity_PSG_ProofSupportCensus) a2)]
+        | global.Fidelity.PSG.ProofSupportCoverage.``Global``(a0, a1) -> union "Global" [("participants", (writeList write_Fidelity_PSG_ProofSupportParticipant) a0); ("censuses", (writeList write_Fidelity_PSG_ProofSupportCensus) a1)]
+        | global.Fidelity.PSG.ProofSupportCoverage.``Unclassified``(a0, a1) -> union "Unclassified" [("reason", writeString a0); ("supports", (writeSet writeString) a1)]
+
+    and write_Fidelity_PSG_ProofSupportParticipant (value: global.Fidelity.PSG.ProofSupportParticipant) : JsonValue =
+        JsonValue.Object [("Address", writeString value.``Address``); ("Role", write_Fidelity_PSG_ParticipantRole value.``Role``); ("Ordinal", writeInt32 value.``Ordinal``); ("Group", writeString value.``Group``)]
+
     and write_Fidelity_PSG_RecurrencePowerStep (value: global.Fidelity.PSG.RecurrencePowerStep) : JsonValue =
         JsonValue.Object [("Odd", writeBool value.``Odd``); ("Exponent", writeBigInteger value.``Exponent``); ("Matrix", (writeList (writeList writeBigInteger)) value.``Matrix``)]
 
@@ -1653,6 +1682,10 @@ module internal JsonGenerated =
 
     and write_Fidelity_PSG_SemanticNode (value: global.Fidelity.PSG.SemanticNode) : JsonValue =
         JsonValue.Object [("Id", write_Fidelity_PSG_NodeId value.``Id``); ("Kind", write_Fidelity_PSG_SemanticKind value.``Kind``); ("Range", write_Fidelity_PSG_SourceRange value.``Range``); ("Type", write_Fidelity_PSG_TypeIdentity value.``Type``); ("Children", (writeList write_Fidelity_PSG_NodeId) value.``Children``); ("Parent", (writeOption write_Fidelity_PSG_NodeId) value.``Parent``); ("IsReachable", writeBool value.``IsReachable``); ("EmissionStrategy", write_Fidelity_PSG_EmissionStrategy value.``EmissionStrategy``); ("ValueRange", (writeOption write_Fidelity_PSG_ValueRange) value.``ValueRange``); ("ObligationAnchors", (writeList writeString) value.``ObligationAnchors``)]
+
+    and write_Fidelity_PSG_SemanticRealizationDigest (value: global.Fidelity.PSG.SemanticRealizationDigest) : JsonValue =
+        match value with
+        | global.Fidelity.PSG.SemanticRealizationDigest(a0) -> union "SemanticRealizationDigest" [("digest", writeString a0)]
 
     and write_Fidelity_PSG_SequenceFamily (value: global.Fidelity.PSG.SequenceFamily) : JsonValue =
         JsonValue.Object [("Identity", write_Fidelity_PSG_NodeId value.``Identity``); ("ElementType", write_Fidelity_PSG_TypeIdentity value.``ElementType``); ("Participants", (writeSet write_Fidelity_PSG_NodeId) value.``Participants``); ("Members", (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_SequenceFamilyMember) value.``Members``); ("Bytes", writeInt32 value.``Bytes``); ("Alignment", writeInt32 value.``Alignment``); ("StateField", write_Fidelity_PSG_SettledField value.``StateField``); ("CurrentField", (writeOption write_Fidelity_PSG_SettledField) value.``CurrentField``); ("CurrentRepresentation", (writeOption (fun (v1_0, v1_1) -> JsonValue.Array [write_Fidelity_PSG_TypeIdentity v1_0; write_Fidelity_PSG_CaptureSlotKind v1_1])) value.``CurrentRepresentation``)]
@@ -1853,7 +1886,7 @@ module internal JsonGenerated =
         JsonValue.Object [("Ordinary", write_Fidelity_PSG_OrdinaryDemandProjection value.``Ordinary``); ("Callable", write_Fidelity_PSG_CallableEmissionProjection value.``Callable``); ("Storage", write_Fidelity_PSG_StorageWitnessProjection value.``Storage``); ("Boundary", write_Fidelity_PSG_BoundaryEmissionProjection value.``Boundary``); ("Numeric", write_Fidelity_PSG_NumericWitnessProjection value.``Numeric``); ("Memory", write_Fidelity_PSG_MemoryWitnessProjection value.``Memory``); ("Spatial", write_Fidelity_PSG_SpatialModuleProjection value.``Spatial``)]
 
     and write_Fidelity_PSG_WitnessRegion (value: global.Fidelity.PSG.WitnessRegion) : JsonValue =
-        JsonValue.Object [("Identity", writeString value.``Identity``); ("Flavor", write_Fidelity_PSG_WitnessRegionKind value.``Flavor``); ("Root", (writeOption write_Fidelity_PSG_NodeId) value.``Root``); ("Anchor", (writeOption write_Fidelity_PSG_NodeId) value.``Anchor``); ("Path", (writeList write_Fidelity_PSG_OccurrenceBreadcrumb) value.``Path``); ("Members", (writeSet write_Fidelity_PSG_NodeId) value.``Members``); ("Supports", (writeSet write_Fidelity_PSG_NodeId) value.``Supports``); ("OwnerSupport", write_Fidelity_PSG_SupportKey value.``OwnerSupport``); ("Fingerprint", writeString value.``Fingerprint``); ("Dependencies", (writeSet writeString) value.``Dependencies``)]
+        JsonValue.Object [("Identity", writeString value.``Identity``); ("Flavor", write_Fidelity_PSG_WitnessRegionKind value.``Flavor``); ("Root", (writeOption write_Fidelity_PSG_NodeId) value.``Root``); ("Anchor", (writeOption write_Fidelity_PSG_NodeId) value.``Anchor``); ("Path", (writeList write_Fidelity_PSG_OccurrenceBreadcrumb) value.``Path``); ("Members", (writeSet write_Fidelity_PSG_NodeId) value.``Members``); ("Supports", (writeSet write_Fidelity_PSG_NodeId) value.``Supports``); ("OwnerSupport", write_Fidelity_PSG_SupportKey value.``OwnerSupport``); ("CallableInterfaceDigest", write_Fidelity_PSG_CallableInterfaceDigest value.``CallableInterfaceDigest``); ("SemanticRealizationDigest", write_Fidelity_PSG_SemanticRealizationDigest value.``SemanticRealizationDigest``); ("CanonicalProofSupportDigest", write_Fidelity_PSG_CanonicalProofSupportDigest value.``CanonicalProofSupportDigest``); ("ProofSupportCoverage", write_Fidelity_PSG_ProofSupportCoverage value.``ProofSupportCoverage``); ("Dependencies", (writeSet writeString) value.``Dependencies``)]
 
     and write_Fidelity_PSG_WitnessRegionKind (value: global.Fidelity.PSG.WitnessRegionKind) : JsonValue =
         match value with

@@ -536,12 +536,163 @@ module Integrity =
     /// supports. The latter are covered by an explicit whole-owner policy and
     /// current source authorization; they never demand inactive body residency.
     let private regions (revision: Revision) =
+        let checkDigest regionId root part digestName expectedPrefix otherPrefixes raw =
+            if System.String.IsNullOrWhiteSpace raw then
+                None,
+                [ { Part = part; Node = root
+                    Reason = sprintf "[WSEG-002] Witness region '%s' has a missing or empty %s." regionId digestName } ]
+            else
+                match otherPrefixes |> List.tryFind (fun (prefix, _) -> raw.StartsWith(prefix, System.StringComparison.Ordinal)) with
+                | Some(_, foreignName) ->
+                    None,
+                    [ { Part = part; Node = root
+                        Reason = sprintf "[WSEG-003] Cross-digest substitution in witness region '%s': %s carries a %s domain payload." regionId digestName foreignName } ]
+                | None ->
+                    if not (raw.StartsWith(expectedPrefix, System.StringComparison.Ordinal)) then
+                        None,
+                        [ { Part = part; Node = root
+                            Reason = sprintf "[WSEG-004] Witness region '%s' %s lacks required domain prefix '%s'." regionId digestName expectedPrefix } ]
+                    else
+                        let payload = raw.Substring(expectedPrefix.Length)
+                        if System.String.IsNullOrWhiteSpace payload then
+                            None,
+                            [ { Part = part; Node = root
+                                Reason = sprintf "[WSEG-002] Witness region '%s' has an empty %s payload after domain prefix '%s'." regionId digestName expectedPrefix } ]
+                        else Some payload, []
+        let checkParticipants regionId root (participants: ProofSupportParticipant list) =
+            [ if participants |> List.exists (fun p -> System.String.IsNullOrWhiteSpace p.Address || System.String.IsNullOrWhiteSpace p.Group || p.Ordinal < 0) then
+                  yield { Part = "Codata.WitnessSegmentation.Regions.ProofSupportCoverage"; Node = root
+                          Reason = sprintf "[WSEG-006] Witness region '%s' has a proof-support participant with a blank canonical address/group or negative ordinal." regionId }
+              if (List.distinct participants).Length <> participants.Length then
+                  yield { Part = "Codata.WitnessSegmentation.Regions.ProofSupportCoverage"; Node = root
+                          Reason = sprintf "[WSEG-006] Witness region '%s' repeats an identical canonical proof-support participant row." regionId } ]
+        let checkCensuses regionId root (censuses: ProofSupportCensus list) =
+            [ for census in censuses do
+                  if System.String.IsNullOrWhiteSpace census.Identity then
+                      yield { Part = "Codata.WitnessSegmentation.Regions.ProofSupportCoverage"; Node = root
+                              Reason = sprintf "[WSEG-007] Witness region '%s' has a proof-support census row with a blank canonical identity." regionId }
+                  if census.Entries.IsEmpty || (census.Entries |> Set.exists System.String.IsNullOrWhiteSpace) then
+                      yield { Part = "Codata.WitnessSegmentation.Regions.ProofSupportCoverage"; Node = root
+                              Reason = sprintf "[WSEG-007] Witness region '%s' census '%s' cannot have an empty or blank canonical entry set." regionId census.Identity }
+              let censusKeys = censuses |> List.map (fun census -> census.Kind, census.Identity)
+              if (List.distinct censusKeys).Length <> censusKeys.Length then
+                  yield { Part = "Codata.WitnessSegmentation.Regions.ProofSupportCoverage"; Node = root
+                          Reason = sprintf "[WSEG-007] Witness region '%s' repeats a proof-support census dependency key." regionId } ]
         revision.Codata.WitnessSegmentation
         |> Option.toList
         |> List.collect (fun segmentation ->
             let identities = segmentation.Regions |> List.map _.Identity |> Set.ofList
+            let duplicateIdentities =
+                segmentation.Regions
+                |> List.groupBy _.Identity
+                |> List.choose (fun (id, rows) -> if rows.Length > 1 && not (System.String.IsNullOrWhiteSpace id) then Some id else None)
+                |> Set.ofList
             segmentation.Regions |> List.collect (fun region ->
-                [ for memberId in region.Members do
+                let regionLabel = if System.String.IsNullOrWhiteSpace region.Identity then "<blank>" else region.Identity
+                let interfacePayload, interfaceDefects =
+                    checkDigest
+                        regionLabel region.Root
+                        "Codata.WitnessSegmentation.Regions.CallableInterfaceDigest"
+                        "CallableInterfaceDigest"
+                        CallableInterfaceDigest.DomainPrefix
+                        [ SemanticRealizationDigest.DomainPrefix, "SemanticRealizationDigest"
+                          CanonicalProofSupportDigest.DomainPrefix, "CanonicalProofSupportDigest" ]
+                        (CallableInterfaceDigest.value region.CallableInterfaceDigest)
+                let realizationPayload, realizationDefects =
+                    checkDigest
+                        regionLabel region.Root
+                        "Codata.WitnessSegmentation.Regions.SemanticRealizationDigest"
+                        "SemanticRealizationDigest"
+                        SemanticRealizationDigest.DomainPrefix
+                        [ CallableInterfaceDigest.DomainPrefix, "CallableInterfaceDigest"
+                          CanonicalProofSupportDigest.DomainPrefix, "CanonicalProofSupportDigest" ]
+                        (SemanticRealizationDigest.value region.SemanticRealizationDigest)
+                let proofPayload, proofDefects =
+                    checkDigest
+                        regionLabel region.Root
+                        "Codata.WitnessSegmentation.Regions.CanonicalProofSupportDigest"
+                        "CanonicalProofSupportDigest"
+                        CanonicalProofSupportDigest.DomainPrefix
+                        [ CallableInterfaceDigest.DomainPrefix, "CallableInterfaceDigest"
+                          SemanticRealizationDigest.DomainPrefix, "SemanticRealizationDigest" ]
+                        (CanonicalProofSupportDigest.value region.CanonicalProofSupportDigest)
+                let substitutionPayloadDefects =
+                    [ match realizationPayload, proofPayload with
+                      | Some r, Some p when r = p ->
+                          yield { Part = "Codata.WitnessSegmentation.Regions.CanonicalProofSupportDigest"; Node = region.Root
+                                  Reason = sprintf "[WSEG-003] Cross-digest substitution in witness region '%s': CanonicalProofSupportDigest reuses the identical digest payload of SemanticRealizationDigest." regionLabel }
+                      | _ -> ()
+                      match interfacePayload, proofPayload with
+                      | Some i, Some p when i = p ->
+                          yield { Part = "Codata.WitnessSegmentation.Regions.CanonicalProofSupportDigest"; Node = region.Root
+                                  Reason = sprintf "[WSEG-003] Cross-digest substitution in witness region '%s': CanonicalProofSupportDigest reuses the identical digest payload of CallableInterfaceDigest." regionLabel }
+                      | _ -> ()
+                      match interfacePayload, realizationPayload with
+                      | Some i, Some r when i = r ->
+                          yield { Part = "Codata.WitnessSegmentation.Regions.SemanticRealizationDigest"; Node = region.Root
+                                  Reason = sprintf "[WSEG-003] Cross-digest substitution in witness region '%s': SemanticRealizationDigest reuses the identical digest payload of CallableInterfaceDigest." regionLabel }
+                      | _ -> () ]
+                let hasNumericMemberOp =
+                    revision.Emission.Numeric.Operations.Values
+                    |> Seq.exists (fun op -> region.Members.Contains op.Site)
+                let ownsConstrainedClaim =
+                    revision.CurrentClaims
+                    |> Map.exists (fun claimNode _ ->
+                        let constrained = revision.ObligationSources.TryFind claimNode |> Option.defaultValue [] |> List.concat
+                        not constrained.IsEmpty && (constrained |> List.forall region.Members.Contains))
+                let checkClassifiedRequirements (participants: ProofSupportParticipant list) (censuses: ProofSupportCensus list) =
+                    [ if hasNumericMemberOp && not (censuses |> List.exists (fun c -> c.Kind = ProofSupportCensusKind.NumericInterface)) then
+                          yield { Part = "Codata.WitnessSegmentation.Regions.ProofSupportCoverage"; Node = region.Root
+                                  Reason = sprintf "[WSEG-007] Witness region '%s' contains numeric operations in Emission.Numeric.Operations and lacks a NumericInterface census dependency row in ProofSupportCoverage." regionLabel }
+                      if ownsConstrainedClaim && participants.IsEmpty then
+                          yield { Part = "Codata.WitnessSegmentation.Regions.ProofSupportCoverage"; Node = region.Root
+                                  Reason = sprintf "[WSEG-006] Witness region '%s' owns constrained obligations in CurrentClaims and lacks canonical proof-support participants in ProofSupportCoverage." regionLabel } ]
+                let coverageDefects =
+                    match region.ProofSupportCoverage with
+                    | ProofSupportCoverage.Unclassified(reason, supports) ->
+                        [ if System.String.IsNullOrWhiteSpace reason then
+                              yield { Part = "Codata.WitnessSegmentation.Regions.ProofSupportCoverage"; Node = region.Root
+                                      Reason = sprintf "[WSEG-005] Unclassified proof-support coverage in witness region '%s' requires a nonempty classification reason." regionLabel }
+                          if supports.IsEmpty || (supports |> Set.exists System.String.IsNullOrWhiteSpace) then
+                              yield { Part = "Codata.WitnessSegmentation.Regions.ProofSupportCoverage"; Node = region.Root
+                                      Reason = sprintf "[WSEG-005] Unclassified proof-support coverage in witness region '%s' cannot claim an empty or blank support set." regionLabel } ]
+                    | ProofSupportCoverage.Local(participants, censuses) ->
+                        checkParticipants regionLabel region.Root participants @
+                        checkCensuses regionLabel region.Root censuses @
+                        checkClassifiedRequirements participants censuses
+                    | ProofSupportCoverage.Shared(sharedRegions, participants, censuses) ->
+                        [ if sharedRegions.IsEmpty || (sharedRegions |> Set.exists System.String.IsNullOrWhiteSpace) then
+                              yield { Part = "Codata.WitnessSegmentation.Regions.ProofSupportCoverage"; Node = region.Root
+                                      Reason = sprintf "[WSEG-008] Shared proof-support coverage in witness region '%s' requires a nonempty set of shared region identities." regionLabel }
+                          elif (Set.remove region.Identity sharedRegions).IsEmpty then
+                              yield { Part = "Codata.WitnessSegmentation.Regions.ProofSupportCoverage"; Node = region.Root
+                                      Reason = sprintf "[WSEG-008] Shared proof-support coverage in witness region '%s' must name at least one sibling region." regionLabel }
+                          for sharedRegion in sharedRegions do
+                              if not (System.String.IsNullOrWhiteSpace sharedRegion) && not (identities.Contains sharedRegion) then
+                                  yield { Part = "Codata.WitnessSegmentation.Regions.ProofSupportCoverage"; Node = region.Root
+                                          Reason = sprintf "[WSEG-008] Shared proof-support coverage in witness region '%s' names unknown region '%s'." regionLabel sharedRegion } ]
+                        @ checkParticipants regionLabel region.Root participants
+                        @ checkCensuses regionLabel region.Root censuses
+                        @ checkClassifiedRequirements participants censuses
+                    | ProofSupportCoverage.Global(participants, censuses) ->
+                        [ if censuses.IsEmpty then
+                              yield { Part = "Codata.WitnessSegmentation.Regions.ProofSupportCoverage"; Node = region.Root
+                                      Reason = sprintf "[WSEG-007] Global proof-support coverage in witness region '%s' requires at least one closed-world census dependency row." regionLabel } ]
+                        @ checkParticipants regionLabel region.Root participants
+                        @ checkCensuses regionLabel region.Root censuses
+                        @ checkClassifiedRequirements participants censuses
+                [ if System.String.IsNullOrWhiteSpace region.Identity then
+                      yield { Part = "Codata.WitnessSegmentation.Regions.Identity"; Node = region.Root
+                              Reason = "[WSEG-001] A witness region requires a nonempty canonical identity." }
+                  elif duplicateIdentities.Contains region.Identity then
+                      yield { Part = "Codata.WitnessSegmentation.Regions.Identity"; Node = region.Root
+                              Reason = sprintf "[WSEG-001] Duplicate witness region identity '%s' in WitnessSegmentation." region.Identity }
+                  yield! interfaceDefects
+                  yield! realizationDefects
+                  yield! proofDefects
+                  yield! substitutionPayloadDefects
+                  yield! coverageDefects
+                  for memberId in region.Members do
                       if not (revision.Nodes.ContainsKey memberId) then yield missingBody "Codata.WitnessSegmentation.Regions.Members" memberId
                   match region.OwnerSupport with
                   | SupportKey.WholeOwningAnalysisRegion identity when not (System.String.IsNullOrWhiteSpace identity) -> ()

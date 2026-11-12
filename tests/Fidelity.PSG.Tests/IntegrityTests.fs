@@ -991,7 +991,11 @@ let ``whole revision branch authority and scalar reuse scopes cannot overlap`` n
         { Identity = "scalar-data-control"; Flavor = WitnessRegionKind.ScalarCallable
           Root = Some(NodeId 1); Anchor = None; Path = []; Members = Set.ofList [NodeId 1; NodeId 2]
           Supports = Set.ofList [NodeId 1; NodeId 2]; OwnerSupport = SupportKey.WholeOwningAnalysisRegion "fixture-owner"
-          Fingerprint = "stored-data"; Dependencies = Set.empty }
+          CallableInterfaceDigest = CallableInterfaceDigest "callable-interface:scalar-data-control-ci"
+          SemanticRealizationDigest = SemanticRealizationDigest "semantic-realization:scalar-data-control-sr"
+          CanonicalProofSupportDigest = CanonicalProofSupportDigest "proof-support:scalar-data-control-ps"
+          ProofSupportCoverage = ProofSupportCoverage.Local([], [])
+          Dependencies = Set.empty }
     let revision = withBranchAuthority authority original
     let revision = { revision with Codata = { revision.Codata with WitnessSegmentation = Some { Version = 1; Regions = [scalar] } } }
     if nonempty then
@@ -1059,7 +1063,12 @@ let private scopedFacts : Revision =
     let region : WitnessRegion =
         { Identity = "live-common"; Flavor = WitnessRegionKind.Common; Root = None; Anchor = Some container
           Path = [frame]; Members = Set.singleton site; Supports = Set.ofList [site; NodeId 8000]
-          OwnerSupport = SupportKey.WholeOwningAnalysisRegion "current-source-owner"; Fingerprint = "settled-rows"; Dependencies = Set.empty }
+          OwnerSupport = SupportKey.WholeOwningAnalysisRegion "current-source-owner"
+          CallableInterfaceDigest = CallableInterfaceDigest "callable-interface:live-common-ci"
+          SemanticRealizationDigest = SemanticRealizationDigest "semantic-realization:live-common-sr"
+          CanonicalProofSupportDigest = CanonicalProofSupportDigest "proof-support:live-common-ps"
+          ProofSupportCoverage = ProofSupportCoverage.Unclassified("common-whole-revision-envelope", Set.singleton "owner:current-source-owner")
+          Dependencies = Set.empty }
     { initial with
         SourceReadings = source; Emission = { initial.Emission with Callable = callable; Numeric = numeric }
         CurrentClaims = Map.ofList [claim, info]; Obligations = [info]
@@ -2323,3 +2332,288 @@ let ``MMIO stored operation site must equal its held map key`` () =
     let violation = Integrity.check stated |> only "Foreign.Mmio.Site"
     Assert.Equal(Some(NodeId 1), violation.Node)
     Assert.Equal("The MMIO operation is filed under a different site identity.", violation.Reason)
+
+let private separatedWitnessRegionsFixture : Revision =
+    let literal id parent =
+        { node id (SemanticKind.Literal(NativeLiteral.Bool true)) [] with Parent = Some(NodeId parent); Type = boolType }
+    let binding id name child =
+        { node id (SemanticKind.Binding(name, false, false, None)) [child] with Type = boolType }
+    let baseRevision =
+        revision [
+            binding 1 "localFn" 2; literal 2 1
+            binding 3 "sharedFn" 4; literal 4 3
+            binding 5 "globalFn" 6; literal 6 5
+            binding 7 "commonTop" 8; literal 8 7 ]
+    let localParticipant : ProofSupportParticipant =
+        { Address = "module:App/binding:localFn/0"; Role = ParticipantRole.Site; Ordinal = 0; Group = "module:App/binding:localFn/0" }
+    let sharedParticipant : ProofSupportParticipant =
+        { Address = "module:App/binding:sharedFn/0"; Role = ParticipantRole.Callee; Ordinal = 0; Group = "module:App/binding:localFn/0" }
+    let globalParticipant : ProofSupportParticipant =
+        { Address = "module:App/binding:globalFn/0"; Role = ParticipantRole.RepresentationDeclaration; Ordinal = 0; Group = "module:App/binding:globalFn/0" }
+    let censuses : ProofSupportCensus list =
+        [ { Identity = "numericInterface:int32-comparison"; Kind = ProofSupportCensusKind.NumericInterface; Entries = Set.ofList ["Alloy.Core.Int32.compare"; "Alloy.Core.Int32.zero"] }
+          { Identity = "platform:register-layout"; Kind = ProofSupportCensusKind.PlatformLayout; Entries = Set.singleton "x86_64:lp64" }
+          { Identity = "platform:default-space"; Kind = ProofSupportCensusKind.PlatformSpace; Entries = Set.singleton "address-space:0" }
+          { Identity = "boundary:callback-absence"; Kind = ProofSupportCensusKind.BoundaryAbsence; Entries = Set.singleton "Foreign.none" }
+          { Identity = "domain:uniqueness"; Kind = ProofSupportCensusKind.DomainUniqueness; Entries = Set.singleton "module:App" } ]
+    let claimInfo : ObligationInfo =
+        { Id = "local-claim"; Kind = "range"; Logic = "QF_LIA"; Statement = "local range"; Source = "fixture"; Refs = []
+          Body = ObligationBody.IntegerLiteralRange(1I, 0I, 2I) }
+    let localRegion : WitnessRegion =
+        { Identity = "callable:App:localFn"; Flavor = WitnessRegionKind.ScalarCallable
+          Root = Some(NodeId 1); Anchor = Some(NodeId 1); Path = []
+          Members = Set.ofList [NodeId 1; NodeId 2]; Supports = Set.ofList [NodeId 1; NodeId 2]
+          OwnerSupport = SupportKey.WholeOwningAnalysisRegion "owner:localFn"
+          CallableInterfaceDigest = CallableInterfaceDigest "callable-interface:localFn-sig-v1"
+          SemanticRealizationDigest = SemanticRealizationDigest "semantic-realization:localFn-body-v1"
+          CanonicalProofSupportDigest = CanonicalProofSupportDigest "proof-support:localFn-obligations-v1"
+          ProofSupportCoverage = ProofSupportCoverage.Local([localParticipant], [])
+          Dependencies = Set.empty }
+    let sharedRegion : WitnessRegion =
+        { Identity = "callable:App:sharedFn"; Flavor = WitnessRegionKind.ScalarCallable
+          Root = Some(NodeId 3); Anchor = Some(NodeId 3); Path = []
+          Members = Set.ofList [NodeId 3; NodeId 4]; Supports = Set.ofList [NodeId 1; NodeId 2; NodeId 3; NodeId 4]
+          OwnerSupport = SupportKey.WholeOwningAnalysisRegion "owner:sharedFn"
+          CallableInterfaceDigest = CallableInterfaceDigest "callable-interface:sharedFn-sig-v1"
+          SemanticRealizationDigest = SemanticRealizationDigest "semantic-realization:sharedFn-body-v1"
+          CanonicalProofSupportDigest = CanonicalProofSupportDigest "proof-support:sharedFn-obligations-v1"
+          ProofSupportCoverage = ProofSupportCoverage.Shared(Set.ofList ["callable:App:localFn"; "callable:App:sharedFn"], [sharedParticipant], [])
+          Dependencies = Set.singleton "callable:App:localFn" }
+    let globalRegion : WitnessRegion =
+        { Identity = "callable:App:globalFn"; Flavor = WitnessRegionKind.ScalarCallable
+          Root = Some(NodeId 5); Anchor = Some(NodeId 5); Path = []
+          Members = Set.ofList [NodeId 5; NodeId 6]; Supports = Set.ofList [NodeId 5; NodeId 6]
+          OwnerSupport = SupportKey.WholeOwningAnalysisRegion "owner:globalFn"
+          CallableInterfaceDigest = CallableInterfaceDigest "callable-interface:globalFn-sig-v1"
+          SemanticRealizationDigest = SemanticRealizationDigest "semantic-realization:globalFn-body-v1"
+          CanonicalProofSupportDigest = CanonicalProofSupportDigest "proof-support:globalFn-obligations-v1"
+          ProofSupportCoverage = ProofSupportCoverage.Global([globalParticipant], censuses)
+          Dependencies = Set.empty }
+    let commonRegion : WitnessRegion =
+        { Identity = "common"; Flavor = WitnessRegionKind.Common
+          Root = None; Anchor = None; Path = []
+          Members = Set.ofList [NodeId 7; NodeId 8]; Supports = Set.ofList [NodeId 1; NodeId 2; NodeId 3; NodeId 4; NodeId 5; NodeId 6; NodeId 7; NodeId 8]
+          OwnerSupport = SupportKey.WholeOwningAnalysisRegion "owner:whole-revision"
+          CallableInterfaceDigest = CallableInterfaceDigest "callable-interface:common-envelope-ci-v1"
+          SemanticRealizationDigest = SemanticRealizationDigest "semantic-realization:common-envelope-sr-v1"
+          CanonicalProofSupportDigest = CanonicalProofSupportDigest "proof-support:common-envelope-ps-v1"
+          ProofSupportCoverage = ProofSupportCoverage.Unclassified("common-whole-revision-envelope", Set.ofList ["owner:whole-revision"; "module:App"])
+          Dependencies = Set.ofList ["callable:App:localFn"; "callable:App:sharedFn"; "callable:App:globalFn"] }
+    { baseRevision with
+        CurrentClaims = Map.ofList [NodeId 2, claimInfo]
+        Obligations = [claimInfo]
+        ObligationSources = Map.ofList [NodeId 2, [[NodeId 1; NodeId 2]]]
+        Codata = { baseRevision.Codata with WitnessSegmentation = Some { Version = 1; Regions = [localRegion; sharedRegion; globalRegion; commonRegion] } } }
+
+let private updateRegion identity (change: WitnessRegion -> WitnessRegion) (stated: Revision) : Revision =
+    let segmentation = stated.Codata.WitnessSegmentation.Value
+    let updated = segmentation.Regions |> List.map (fun region -> if region.Identity = identity then change region else region)
+    { stated with Codata = { stated.Codata with WitnessSegmentation = Some { segmentation with Regions = updated } } }
+
+[<Fact>]
+let ``witness segmentation accepts separated digests across scalar callable and common coverage scopes`` () =
+    Assert.Empty(Integrity.check separatedWitnessRegionsFixture)
+
+[<Theory>]
+[<InlineData("callable", "")>]
+[<InlineData("callable", "   ")>]
+[<InlineData("callable", "callable-interface:")>]
+[<InlineData("callable", "callable-interface:   ")>]
+[<InlineData("realization", "")>]
+[<InlineData("realization", "   ")>]
+[<InlineData("realization", "semantic-realization:")>]
+[<InlineData("proof", "")>]
+[<InlineData("proof", "   ")>]
+[<InlineData("proof", "proof-support:")>]
+let ``witness region refuses missing empty or whitespace digests`` slot raw =
+    let part, changed =
+        match slot with
+        | "callable" ->
+            "Codata.WitnessSegmentation.Regions.CallableInterfaceDigest",
+            updateRegion "callable:App:localFn" (fun r -> { r with CallableInterfaceDigest = CallableInterfaceDigest raw }) separatedWitnessRegionsFixture
+        | "realization" ->
+            "Codata.WitnessSegmentation.Regions.SemanticRealizationDigest",
+            updateRegion "callable:App:localFn" (fun r -> { r with SemanticRealizationDigest = SemanticRealizationDigest raw }) separatedWitnessRegionsFixture
+        | _ ->
+            "Codata.WitnessSegmentation.Regions.CanonicalProofSupportDigest",
+            updateRegion "callable:App:localFn" (fun r -> { r with CanonicalProofSupportDigest = CanonicalProofSupportDigest raw }) separatedWitnessRegionsFixture
+    let violation = only part (Integrity.check changed)
+    Assert.Equal(Some(NodeId 1), violation.Node)
+    Assert.Contains("[WSEG-002]", violation.Reason)
+
+[<Theory>]
+[<InlineData("callable", "semantic-realization:localFn-body-v1", "SemanticRealizationDigest")>]
+[<InlineData("callable", "proof-support:localFn-obligations-v1", "CanonicalProofSupportDigest")>]
+[<InlineData("realization", "callable-interface:localFn-sig-v1", "CallableInterfaceDigest")>]
+[<InlineData("realization", "proof-support:localFn-obligations-v1", "CanonicalProofSupportDigest")>]
+[<InlineData("proof", "callable-interface:localFn-sig-v1", "CallableInterfaceDigest")>]
+[<InlineData("proof", "semantic-realization:localFn-body-v1", "SemanticRealizationDigest")>]
+let ``witness region refuses cross digest domain substitution`` slot substituted foreignName =
+    let part, changed =
+        match slot with
+        | "callable" ->
+            "Codata.WitnessSegmentation.Regions.CallableInterfaceDigest",
+            updateRegion "callable:App:localFn" (fun r -> { r with CallableInterfaceDigest = CallableInterfaceDigest substituted }) separatedWitnessRegionsFixture
+        | "realization" ->
+            "Codata.WitnessSegmentation.Regions.SemanticRealizationDigest",
+            updateRegion "callable:App:localFn" (fun r -> { r with SemanticRealizationDigest = SemanticRealizationDigest substituted }) separatedWitnessRegionsFixture
+        | _ ->
+            "Codata.WitnessSegmentation.Regions.CanonicalProofSupportDigest",
+            updateRegion "callable:App:localFn" (fun r -> { r with CanonicalProofSupportDigest = CanonicalProofSupportDigest substituted }) separatedWitnessRegionsFixture
+    let violation = only part (Integrity.check changed)
+    Assert.Equal(Some(NodeId 1), violation.Node)
+    Assert.Contains("[WSEG-003]", violation.Reason)
+    Assert.Contains(foreignName, violation.Reason)
+
+[<Theory>]
+[<InlineData("realization-into-proof")>]
+[<InlineData("interface-into-proof")>]
+[<InlineData("interface-into-realization")>]
+let ``witness region refuses cross digest inner payload reuse`` substitution =
+    let part, changed =
+        match substitution with
+        | "realization-into-proof" ->
+            "Codata.WitnessSegmentation.Regions.CanonicalProofSupportDigest",
+            updateRegion "callable:App:localFn" (fun r ->
+                { r with CanonicalProofSupportDigest = CanonicalProofSupportDigest "proof-support:localFn-body-v1" }) separatedWitnessRegionsFixture
+        | "interface-into-proof" ->
+            "Codata.WitnessSegmentation.Regions.CanonicalProofSupportDigest",
+            updateRegion "callable:App:localFn" (fun r ->
+                { r with CanonicalProofSupportDigest = CanonicalProofSupportDigest "proof-support:localFn-sig-v1" }) separatedWitnessRegionsFixture
+        | _ ->
+            "Codata.WitnessSegmentation.Regions.SemanticRealizationDigest",
+            updateRegion "callable:App:localFn" (fun r ->
+                { r with SemanticRealizationDigest = SemanticRealizationDigest "semantic-realization:localFn-sig-v1" }) separatedWitnessRegionsFixture
+    let violation = only part (Integrity.check changed)
+    Assert.Equal(Some(NodeId 1), violation.Node)
+    Assert.Contains("[WSEG-003]", violation.Reason)
+
+[<Theory>]
+[<InlineData("callable")>]
+[<InlineData("realization")>]
+[<InlineData("proof")>]
+let ``witness region refuses unprefixed raw digest strings`` slot =
+    let part, changed =
+        match slot with
+        | "callable" ->
+            "Codata.WitnessSegmentation.Regions.CallableInterfaceDigest",
+            updateRegion "callable:App:localFn" (fun r -> { r with CallableInterfaceDigest = CallableInterfaceDigest "unprefixed-hash" }) separatedWitnessRegionsFixture
+        | "realization" ->
+            "Codata.WitnessSegmentation.Regions.SemanticRealizationDigest",
+            updateRegion "callable:App:localFn" (fun r -> { r with SemanticRealizationDigest = SemanticRealizationDigest "unprefixed-hash" }) separatedWitnessRegionsFixture
+        | _ ->
+            "Codata.WitnessSegmentation.Regions.CanonicalProofSupportDigest",
+            updateRegion "callable:App:localFn" (fun r -> { r with CanonicalProofSupportDigest = CanonicalProofSupportDigest "unprefixed-hash" }) separatedWitnessRegionsFixture
+    let violation = only part (Integrity.check changed)
+    Assert.Contains("[WSEG-004]", violation.Reason)
+
+[<Theory>]
+[<InlineData("empty-supports")>]
+[<InlineData("blank-support-entry")>]
+[<InlineData("blank-reason")>]
+let ``unclassified proof support coverage refuses empty supports or blank reason`` defectKind =
+    let coverage =
+        match defectKind with
+        | "empty-supports" -> ProofSupportCoverage.Unclassified("common-whole-revision-envelope", Set.empty)
+        | "blank-support-entry" -> ProofSupportCoverage.Unclassified("common-whole-revision-envelope", Set.singleton "   ")
+        | _ -> ProofSupportCoverage.Unclassified("   ", Set.singleton "owner:whole-revision")
+    let changed = updateRegion "common" (fun r -> { r with ProofSupportCoverage = coverage }) separatedWitnessRegionsFixture
+    let violation = only "Codata.WitnessSegmentation.Regions.ProofSupportCoverage" (Integrity.check changed)
+    Assert.Equal(None, violation.Node)
+    Assert.Contains("[WSEG-005]", violation.Reason)
+
+[<Fact>]
+let ``dropping a required numeric interface census dependency row fails integrity with coded diagnostic`` () =
+    let numericCensus : ProofSupportCensus =
+        { Identity = "numericInterface:int32-add"; Kind = ProofSupportCensusKind.NumericInterface
+          Entries = Set.singleton "Alloy.Core.Int32.op_Addition" }
+    let participant : ProofSupportParticipant =
+        { Address = "module:App/binding:add/0"; Role = ParticipantRole.Site; Ordinal = 0; Group = "module:App/binding:add/0" }
+    let validRegion : WitnessRegion =
+        { Identity = "callable:App:numericAdd"; Flavor = WitnessRegionKind.ScalarCallable
+          Root = Some(NodeId 1); Anchor = Some(NodeId 1); Path = []
+          Members = Set.ofList [NodeId 1; NodeId 2; NodeId 3; NodeId 4]
+          Supports = Set.ofList [NodeId 1; NodeId 2; NodeId 3; NodeId 4; NodeId 64; NodeId 404; NodeId 8000]
+          OwnerSupport = SupportKey.WholeOwningAnalysisRegion "owner:numericAdd"
+          CallableInterfaceDigest = CallableInterfaceDigest "callable-interface:numericAdd-sig"
+          SemanticRealizationDigest = SemanticRealizationDigest "semantic-realization:numericAdd-body"
+          CanonicalProofSupportDigest = CanonicalProofSupportDigest "proof-support:numericAdd-proof"
+          ProofSupportCoverage = ProofSupportCoverage.Global([participant], [numericCensus])
+          Dependencies = Set.empty }
+    let withRegion region =
+        { numericOperationFacts with
+            Codata = { numericOperationFacts.Codata with WitnessSegmentation = Some { Version = 1; Regions = [region] } } }
+    Assert.Empty(Integrity.check (withRegion validRegion))
+    let platformOnly : ProofSupportCensus =
+        { Identity = "platform:widths"; Kind = ProofSupportCensusKind.PlatformLayout; Entries = Set.singleton "lp64" }
+    let droppedNumericCensus =
+        { validRegion with ProofSupportCoverage = ProofSupportCoverage.Global([participant], [platformOnly]) }
+    let violation = only "Codata.WitnessSegmentation.Regions.ProofSupportCoverage" (Integrity.check (withRegion droppedNumericCensus))
+    Assert.Equal(Some(NodeId 1), violation.Node)
+    Assert.Contains("[WSEG-007]", violation.Reason)
+    Assert.Contains("NumericInterface", violation.Reason)
+
+[<Theory>]
+[<InlineData("global-empty-censuses")>]
+[<InlineData("census-blank-id")>]
+[<InlineData("census-empty-entries")>]
+[<InlineData("participant-blank-address")>]
+[<InlineData("participant-negative-ordinal")>]
+[<InlineData("owned-claim-missing-participants")>]
+[<InlineData("shared-empty-regions")>]
+[<InlineData("shared-self-only")>]
+[<InlineData("shared-unknown-sibling")>]
+let ``proof support coverage refuses malformed census participant and shared scope accounts`` caseName =
+    let expectedCode, changed =
+        match caseName with
+        | "global-empty-censuses" ->
+            "[WSEG-007]",
+            updateRegion "callable:App:globalFn" (fun r -> { r with ProofSupportCoverage = ProofSupportCoverage.Global([], []) }) separatedWitnessRegionsFixture
+        | "census-blank-id" ->
+            let bad : ProofSupportCensus = { Identity = "  "; Kind = ProofSupportCensusKind.PlatformLayout; Entries = Set.singleton "lp64" }
+            "[WSEG-007]",
+            updateRegion "callable:App:globalFn" (fun r -> { r with ProofSupportCoverage = ProofSupportCoverage.Global([], [bad]) }) separatedWitnessRegionsFixture
+        | "census-empty-entries" ->
+            let bad : ProofSupportCensus = { Identity = "platform:widths"; Kind = ProofSupportCensusKind.PlatformLayout; Entries = Set.empty }
+            "[WSEG-007]",
+            updateRegion "callable:App:globalFn" (fun r -> { r with ProofSupportCoverage = ProofSupportCoverage.Global([], [bad]) }) separatedWitnessRegionsFixture
+        | "participant-blank-address" ->
+            let bad : ProofSupportParticipant = { Address = ""; Role = ParticipantRole.Site; Ordinal = 0; Group = "g" }
+            let keep : ProofSupportParticipant = { Address = "module:App/binding:localFn/0"; Role = ParticipantRole.Site; Ordinal = 0; Group = "g" }
+            "[WSEG-006]",
+            updateRegion "callable:App:localFn" (fun r -> { r with ProofSupportCoverage = ProofSupportCoverage.Local([keep; bad], []) }) separatedWitnessRegionsFixture
+        | "participant-negative-ordinal" ->
+            let bad : ProofSupportParticipant = { Address = "module:App/binding:localFn/0"; Role = ParticipantRole.Site; Ordinal = -1; Group = "g" }
+            "[WSEG-006]",
+            updateRegion "callable:App:localFn" (fun r -> { r with ProofSupportCoverage = ProofSupportCoverage.Local([bad], []) }) separatedWitnessRegionsFixture
+        | "owned-claim-missing-participants" ->
+            "[WSEG-006]",
+            updateRegion "callable:App:localFn" (fun r -> { r with ProofSupportCoverage = ProofSupportCoverage.Local([], []) }) separatedWitnessRegionsFixture
+        | "shared-empty-regions" ->
+            "[WSEG-008]",
+            updateRegion "callable:App:sharedFn" (fun r -> { r with ProofSupportCoverage = ProofSupportCoverage.Shared(Set.empty, [], []) }) separatedWitnessRegionsFixture
+        | "shared-self-only" ->
+            "[WSEG-008]",
+            updateRegion "callable:App:sharedFn" (fun r -> { r with ProofSupportCoverage = ProofSupportCoverage.Shared(Set.singleton "callable:App:sharedFn", [], []) }) separatedWitnessRegionsFixture
+        | _ ->
+            "[WSEG-008]",
+            updateRegion "callable:App:sharedFn" (fun r -> { r with ProofSupportCoverage = ProofSupportCoverage.Shared(Set.ofList ["callable:App:sharedFn"; "callable:App:ghost"], [], []) }) separatedWitnessRegionsFixture
+    let violation = only "Codata.WitnessSegmentation.Regions.ProofSupportCoverage" (Integrity.check changed)
+    Assert.Contains(expectedCode, violation.Reason)
+
+[<Fact>]
+let ``witness segmentation refuses blank and duplicate region identities`` () =
+    let blanked =
+        let segmentation = separatedWitnessRegionsFixture.Codata.WitnessSegmentation.Value
+        let regions = segmentation.Regions |> List.map (fun r ->
+            if r.Identity = "common" then { r with Identity = "   " } else r)
+        { separatedWitnessRegionsFixture with Codata = { separatedWitnessRegionsFixture.Codata with WitnessSegmentation = Some { segmentation with Regions = regions } } }
+    let blankViolation = only "Codata.WitnessSegmentation.Regions.Identity" (Integrity.check blanked)
+    Assert.Contains("[WSEG-001]", blankViolation.Reason)
+    let duplicated =
+        let segmentation = separatedWitnessRegionsFixture.Codata.WitnessSegmentation.Value
+        let target = segmentation.Regions |> List.find (fun r -> r.Identity = "callable:App:globalFn")
+        { separatedWitnessRegionsFixture with Codata = { separatedWitnessRegionsFixture.Codata with WitnessSegmentation = Some { segmentation with Regions = segmentation.Regions @ [target] } } }
+    let dupViolations = Integrity.check duplicated |> List.filter (fun v -> v.Part = "Codata.WitnessSegmentation.Regions.Identity")
+    Assert.Equal(2, dupViolations.Length)
+    Assert.All(dupViolations, fun v -> Assert.Contains("[WSEG-001]", v.Reason))

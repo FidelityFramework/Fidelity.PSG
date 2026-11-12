@@ -222,7 +222,7 @@ let ``snapshot header has independent version schema and fingerprint bytes`` () 
     // Pin the approved schema/shape pair independently of the generated values.
     // A changed published shape must earn a deliberate schema migration; merely
     // regenerating the codecs cannot update this oracle.
-    let prefix = Convert.FromHexString("4650534749445832020000003300000084B6FDD37BC6C0526E7DB94B517F592DD4F567141A67327776314DEB20E636F3")
+    let prefix = Convert.FromHexString("4650534749445832020000003400000058CC0513FCF3033AA9B29DF6713DB8A43C8369847085C71A7631D7616D6A8448")
     Assert.Equal<byte>(prefix, bytes[..47])
     Assert.Equal(Revision.Schema, System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(12, 4)))
     Assert.Equal<byte>(Convert.FromHexString(BinaryGenerated.Fingerprint), bytes[16..47])
@@ -806,3 +806,90 @@ let ``resource conversion settles unit alignment structurally and guards non-uni
     Assert.Equal<string list>(
         [ "resource_origin_20" ],
         ResourceProof.missingParticipantVariables restoredReleaseOriginProjection)
+
+[<Fact>]
+let ``binary codec roundtrips separated witness region digests and proof support coverage bit for bit`` () =
+    let literal id parent =
+        { Build.node id (SemanticKind.Literal(NativeLiteral.Bool true)) [] with Parent = Some(NodeId parent); Type = Build.boolType }
+    let binding id name child =
+        { Build.node id (SemanticKind.Binding(name, false, false, None)) [child] with Type = Build.boolType }
+    let baseRevision =
+        Build.revision [
+            binding 1 "alpha" 2; literal 2 1
+            binding 3 "beta" 4; literal 4 3
+            binding 5 "gamma" 6; literal 6 5
+            binding 7 "entry" 8; literal 8 7 ]
+    let pLocal : ProofSupportParticipant =
+        { Address = "module:Codec/binding:alpha/0"; Role = ParticipantRole.Site; Ordinal = 0; Group = "module:Codec/binding:alpha/0" }
+    let pShared : ProofSupportParticipant =
+        { Address = "module:Codec/binding:beta/1"; Role = ParticipantRole.CalleeArgument; Ordinal = 1; Group = "module:Codec/binding:alpha/0" }
+    let pGlobal : ProofSupportParticipant =
+        { Address = "module:Codec/binding:gamma/0"; Role = ParticipantRole.RepresentationDeclaration; Ordinal = 0; Group = "module:Codec/binding:gamma/0" }
+    let censuses : ProofSupportCensus list =
+        [ { Identity = "numericInterface:cmp"; Kind = ProofSupportCensusKind.NumericInterface; Entries = Set.ofList ["Alloy.Int32.cmp"; "Alloy.Int32.eq"] }
+          { Identity = "platform:abi"; Kind = ProofSupportCensusKind.PlatformLayout; Entries = Set.singleton "sysv-x86_64" } ]
+    let regions : WitnessRegion list =
+        [ { Identity = "callable:Codec:alpha"; Flavor = WitnessRegionKind.ScalarCallable
+            Root = Some(NodeId 1); Anchor = Some(NodeId 1); Path = []
+            Members = Set.ofList [NodeId 1; NodeId 2]; Supports = Set.ofList [NodeId 1; NodeId 2]
+            OwnerSupport = SupportKey.WholeOwningAnalysisRegion "owner:alpha"
+            CallableInterfaceDigest = CallableInterfaceDigest "callable-interface:sha256:1111aaaa"
+            SemanticRealizationDigest = SemanticRealizationDigest "semantic-realization:sha256:2222bbbb"
+            CanonicalProofSupportDigest = CanonicalProofSupportDigest "proof-support:sha256:3333cccc"
+            ProofSupportCoverage = ProofSupportCoverage.Local([pLocal], [])
+            Dependencies = Set.empty }
+          { Identity = "callable:Codec:beta"; Flavor = WitnessRegionKind.ScalarCallable
+            Root = Some(NodeId 3); Anchor = Some(NodeId 3); Path = []
+            Members = Set.ofList [NodeId 3; NodeId 4]; Supports = Set.ofList [NodeId 1; NodeId 2; NodeId 3; NodeId 4]
+            OwnerSupport = SupportKey.WholeOwningAnalysisRegion "owner:beta"
+            CallableInterfaceDigest = CallableInterfaceDigest "callable-interface:sha256:4444dddd"
+            SemanticRealizationDigest = SemanticRealizationDigest "semantic-realization:sha256:5555eeee"
+            CanonicalProofSupportDigest = CanonicalProofSupportDigest "proof-support:sha256:6666ffff"
+            ProofSupportCoverage = ProofSupportCoverage.Shared(Set.ofList ["callable:Codec:alpha"; "callable:Codec:beta"], [pShared], [])
+            Dependencies = Set.singleton "callable:Codec:alpha" }
+          { Identity = "callable:Codec:gamma"; Flavor = WitnessRegionKind.ScalarCallable
+            Root = Some(NodeId 5); Anchor = Some(NodeId 5); Path = []
+            Members = Set.ofList [NodeId 5; NodeId 6]; Supports = Set.ofList [NodeId 5; NodeId 6]
+            OwnerSupport = SupportKey.WholeOwningAnalysisRegion "owner:gamma"
+            CallableInterfaceDigest = CallableInterfaceDigest "callable-interface:sha256:77770000"
+            SemanticRealizationDigest = SemanticRealizationDigest "semantic-realization:sha256:88881111"
+            CanonicalProofSupportDigest = CanonicalProofSupportDigest "proof-support:sha256:99992222"
+            ProofSupportCoverage = ProofSupportCoverage.Global([pGlobal], censuses)
+            Dependencies = Set.empty }
+          { Identity = "common"; Flavor = WitnessRegionKind.Common
+            Root = None; Anchor = None; Path = []
+            Members = Set.ofList [NodeId 7; NodeId 8]; Supports = Set.ofList [NodeId 1; NodeId 2; NodeId 3; NodeId 4; NodeId 5; NodeId 6; NodeId 7; NodeId 8]
+            OwnerSupport = SupportKey.WholeOwningAnalysisRegion "owner:common"
+            CallableInterfaceDigest = CallableInterfaceDigest "callable-interface:sha256:aaaa3333"
+            SemanticRealizationDigest = SemanticRealizationDigest "semantic-realization:sha256:bbbb4444"
+            CanonicalProofSupportDigest = CanonicalProofSupportDigest "proof-support:sha256:cccc5555"
+            ProofSupportCoverage = ProofSupportCoverage.Unclassified("common-whole-revision-envelope", Set.ofList ["owner:common"; "module:Codec"])
+            Dependencies = Set.ofList ["callable:Codec:alpha"; "callable:Codec:beta"; "callable:Codec:gamma"] } ]
+    let expected =
+        { baseRevision with
+            Codata = { baseRevision.Codata with WitnessSegmentation = Some { Version = 1; Regions = regions } } }
+    let bytes = Binary.encode limits expected |> take
+    let roundtripped = Binary.decode limits bytes |> take
+    let reencoded = Binary.encode limits roundtripped |> take
+    Assert.Equal<byte array>(bytes, reencoded)
+    Assert.Equal<WitnessSegmentation option>(expected.Codata.WitnessSegmentation, roundtripped.Codata.WitnessSegmentation)
+    let substituted =
+        let badRegions = regions |> List.map (fun r ->
+            if r.Identity = "callable:Codec:alpha" then
+                { r with CanonicalProofSupportDigest = CanonicalProofSupportDigest "semantic-realization:sha256:2222bbbb" }
+            else r)
+        { expected with Codata = { expected.Codata with WitnessSegmentation = Some { Version = 1; Regions = badRegions } } }
+    match Binary.encode limits substituted with
+    | Result.Error(BinaryError.InvalidRevision failures) ->
+        Assert.Contains(failures, fun v -> v.Part = "Codata.WitnessSegmentation.Regions.CanonicalProofSupportDigest" && v.Reason.Contains("[WSEG-003]"))
+    | other -> failwithf "Expected cross-digest substitution binary encode refusal, got: %A" other
+    let emptyUnclassified =
+        let badRegions = regions |> List.map (fun r ->
+            if r.Identity = "common" then
+                { r with ProofSupportCoverage = ProofSupportCoverage.Unclassified("common-whole-revision-envelope", Set.empty) }
+            else r)
+        { expected with Codata = { expected.Codata with WitnessSegmentation = Some { Version = 1; Regions = badRegions } } }
+    match Binary.encode limits emptyUnclassified with
+    | Result.Error(BinaryError.InvalidRevision failures) ->
+        Assert.Contains(failures, fun v -> v.Part = "Codata.WitnessSegmentation.Regions.ProofSupportCoverage" && v.Reason.Contains("[WSEG-005]"))
+    | other -> failwithf "Expected empty-support unclassified binary encode refusal, got: %A" other

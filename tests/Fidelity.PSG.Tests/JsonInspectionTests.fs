@@ -298,3 +298,44 @@ let ``inspection refuses a partial view whose complete graph has invalid relatio
     match Inspection.read view with
     | Error(BinaryError.InvalidRevision failures) -> Assert.NotEmpty failures
     | other -> failwithf "Inspection admitted or repaired a corrupt graph: %A" other
+
+[<Fact>]
+let ``inspection retains separated witness region digests and proof support coverage`` () =
+    let participant : ProofSupportParticipant =
+        { Address = "module:Inspect/binding:fn/0"; Role = ParticipantRole.Site; Ordinal = 0; Group = "module:Inspect/binding:fn/0" }
+    let census : ProofSupportCensus =
+        { Identity = "numericInterface:inspect"; Kind = ProofSupportCensusKind.NumericInterface; Entries = Set.singleton "Alloy.Int64.add" }
+    let scalarRegion : WitnessRegion =
+        { Identity = "callable:Inspect:fn"; Flavor = WitnessRegionKind.ScalarCallable
+          Root = Some(NodeId 1); Anchor = Some(NodeId 1); Path = []
+          Members = Set.ofList [NodeId 1; NodeId 2]; Supports = Set.ofList [NodeId 1; NodeId 2]
+          OwnerSupport = SupportKey.WholeOwningAnalysisRegion "owner:fn"
+          CallableInterfaceDigest = CallableInterfaceDigest "callable-interface:inspect-ci"
+          SemanticRealizationDigest = SemanticRealizationDigest "semantic-realization:inspect-sr"
+          CanonicalProofSupportDigest = CanonicalProofSupportDigest "proof-support:inspect-ps"
+          ProofSupportCoverage = ProofSupportCoverage.Global([participant], [census])
+          Dependencies = Set.empty }
+    let commonRegion : WitnessRegion =
+        { Identity = "common"; Flavor = WitnessRegionKind.Common
+          Root = None; Anchor = None; Path = []
+          Members = Set.empty; Supports = Set.ofList [NodeId 1; NodeId 2]
+          OwnerSupport = SupportKey.WholeOwningAnalysisRegion "owner:common"
+          CallableInterfaceDigest = CallableInterfaceDigest "callable-interface:inspect-common-ci"
+          SemanticRealizationDigest = SemanticRealizationDigest "semantic-realization:inspect-common-sr"
+          CanonicalProofSupportDigest = CanonicalProofSupportDigest "proof-support:inspect-common-ps"
+          ProofSupportCoverage = ProofSupportCoverage.Unclassified("common-whole-revision-envelope", Set.singleton "owner:common")
+          Dependencies = Set.singleton "callable:Inspect:fn" }
+    let revision =
+        { Build.bindingWithLiteral with
+            Codata = { Build.bindingWithLiteral.Codata with WitnessSegmentation = Some { Version = 1; Regions = [scalarRegion; commonRegion] } } }
+    let limits : Binary.Limits = { MaxBytes = 4 * 1024 * 1024; MaxCollectionLength = 10000; MaxDepth = 128; MaxStringBytes = 1024 * 1024; MaxBigIntegerBytes = 4096; MaxValues = 1000000 }
+    let bytes = Binary.encode limits revision |> take
+    let view = Binary.openSource limits (BAREWire.Memory.ByteSource.ofArray bytes) |> take
+    let inspected = Inspection.read view |> take |> properties
+    check typeof<Revision> (box revision) inspected["Revision"]
+    let text = Inspection.render false view |> take
+    Assert.Contains("callable-interface:inspect-ci", text)
+    Assert.Contains("semantic-realization:inspect-sr", text)
+    Assert.Contains("proof-support:inspect-ps", text)
+    Assert.Contains("numericInterface:inspect", text)
+    Assert.Contains("common-whole-revision-envelope", text)

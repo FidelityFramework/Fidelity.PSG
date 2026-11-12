@@ -5,11 +5,11 @@ module internal BinaryGenerated =
     [<Literal>]
     let Format = 2u
     [<Literal>]
-    let Schema = 51
+    let Schema = 52
     [<Literal>]
-    let Fingerprint = "84B6FDD37BC6C0526E7DB94B517F592DD4F567141A67327776314DEB20E636F3"
+    let Fingerprint = "58CC0513FCF3033AA9B29DF6713DB8A43C8369847085C71A7631D7616D6A8448"
     [<Literal>]
-    let NamedTypes = 345
+    let NamedTypes = 352
     [<Literal>]
     let RevisionFields = 17
     [<Literal>]
@@ -1420,6 +1420,17 @@ module internal BinaryGenerated =
         return leaveWrite state
     }
 
+    and write_Fidelity_PSG_CallableInterfaceDigest (state: WriteState) (value: global.Fidelity.PSG.CallableInterfaceDigest) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        return!
+            match value with
+            | global.Fidelity.PSG.CallableInterfaceDigest(a0) -> result {
+                let! state = writeTag state 0
+                let! state = writeString state a0
+                return leaveWrite state
+              }
+    }
+
     and write_Fidelity_PSG_CallableJoin (state: WriteState) (value: global.Fidelity.PSG.CallableJoin) : Result<WriteState, BinaryError> = result {
         let! state = enterWrite state
         let! state = write_Fidelity_PSG_NodeId state value.``Occurrence``
@@ -1532,6 +1543,17 @@ module internal BinaryGenerated =
               }
             | global.Fidelity.PSG.CallbackAbsenceInputRole.``HypothesisSource`` -> result {
                 let! state = writeTag state 5
+                return leaveWrite state
+              }
+    }
+
+    and write_Fidelity_PSG_CanonicalProofSupportDigest (state: WriteState) (value: global.Fidelity.PSG.CanonicalProofSupportDigest) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        return!
+            match value with
+            | global.Fidelity.PSG.CanonicalProofSupportDigest(a0) -> result {
+                let! state = writeTag state 0
+                let! state = writeString state a0
                 return leaveWrite state
               }
     }
@@ -5911,6 +5933,80 @@ module internal BinaryGenerated =
         return leaveWrite state
     }
 
+    and write_Fidelity_PSG_ProofSupportCensus (state: WriteState) (value: global.Fidelity.PSG.ProofSupportCensus) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = writeString state value.``Identity``
+        let! state = write_Fidelity_PSG_ProofSupportCensusKind state value.``Kind``
+        let! state = (writeSet writeString) state value.``Entries``
+        return leaveWrite state
+    }
+
+    and write_Fidelity_PSG_ProofSupportCensusKind (state: WriteState) (value: global.Fidelity.PSG.ProofSupportCensusKind) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        return!
+            match value with
+            | global.Fidelity.PSG.ProofSupportCensusKind.``NumericInterface`` -> result {
+                let! state = writeTag state 0
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.ProofSupportCensusKind.``PlatformLayout`` -> result {
+                let! state = writeTag state 1
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.ProofSupportCensusKind.``PlatformSpace`` -> result {
+                let! state = writeTag state 2
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.ProofSupportCensusKind.``BoundaryAbsence`` -> result {
+                let! state = writeTag state 3
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.ProofSupportCensusKind.``DomainUniqueness`` -> result {
+                let! state = writeTag state 4
+                return leaveWrite state
+              }
+    }
+
+    and write_Fidelity_PSG_ProofSupportCoverage (state: WriteState) (value: global.Fidelity.PSG.ProofSupportCoverage) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        return!
+            match value with
+            | global.Fidelity.PSG.ProofSupportCoverage.``Local``(a0, a1) -> result {
+                let! state = writeTag state 0
+                let! state = (writeList write_Fidelity_PSG_ProofSupportParticipant) state a0
+                let! state = (writeList write_Fidelity_PSG_ProofSupportCensus) state a1
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.ProofSupportCoverage.``Shared``(a0, a1, a2) -> result {
+                let! state = writeTag state 1
+                let! state = (writeSet writeString) state a0
+                let! state = (writeList write_Fidelity_PSG_ProofSupportParticipant) state a1
+                let! state = (writeList write_Fidelity_PSG_ProofSupportCensus) state a2
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.ProofSupportCoverage.``Global``(a0, a1) -> result {
+                let! state = writeTag state 2
+                let! state = (writeList write_Fidelity_PSG_ProofSupportParticipant) state a0
+                let! state = (writeList write_Fidelity_PSG_ProofSupportCensus) state a1
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.ProofSupportCoverage.``Unclassified``(a0, a1) -> result {
+                let! state = writeTag state 3
+                let! state = writeString state a0
+                let! state = (writeSet writeString) state a1
+                return leaveWrite state
+              }
+    }
+
+    and write_Fidelity_PSG_ProofSupportParticipant (state: WriteState) (value: global.Fidelity.PSG.ProofSupportParticipant) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = writeString state value.``Address``
+        let! state = write_Fidelity_PSG_ParticipantRole state value.``Role``
+        let! state = writeI32 state value.``Ordinal``
+        let! state = writeString state value.``Group``
+        return leaveWrite state
+    }
+
     and write_Fidelity_PSG_RecurrencePowerStep (state: WriteState) (value: global.Fidelity.PSG.RecurrencePowerStep) : Result<WriteState, BinaryError> = result {
         let! state = enterWrite state
         let! state = writeBool state value.``Odd``
@@ -6762,6 +6858,17 @@ module internal BinaryGenerated =
         return leaveWrite state
     }
 
+    and write_Fidelity_PSG_SemanticRealizationDigest (state: WriteState) (value: global.Fidelity.PSG.SemanticRealizationDigest) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        return!
+            match value with
+            | global.Fidelity.PSG.SemanticRealizationDigest(a0) -> result {
+                let! state = writeTag state 0
+                let! state = writeString state a0
+                return leaveWrite state
+              }
+    }
+
     and write_Fidelity_PSG_SequenceFamily (state: WriteState) (value: global.Fidelity.PSG.SequenceFamily) : Result<WriteState, BinaryError> = result {
         let! state = enterWrite state
         let! state = write_Fidelity_PSG_NodeId state value.``Identity``
@@ -7572,7 +7679,10 @@ module internal BinaryGenerated =
         let! state = (writeSet write_Fidelity_PSG_NodeId) state value.``Members``
         let! state = (writeSet write_Fidelity_PSG_NodeId) state value.``Supports``
         let! state = write_Fidelity_PSG_SupportKey state value.``OwnerSupport``
-        let! state = writeString state value.``Fingerprint``
+        let! state = write_Fidelity_PSG_CallableInterfaceDigest state value.``CallableInterfaceDigest``
+        let! state = write_Fidelity_PSG_SemanticRealizationDigest state value.``SemanticRealizationDigest``
+        let! state = write_Fidelity_PSG_CanonicalProofSupportDigest state value.``CanonicalProofSupportDigest``
+        let! state = write_Fidelity_PSG_ProofSupportCoverage state value.``ProofSupportCoverage``
         let! state = (writeSet writeString) state value.``Dependencies``
         return leaveWrite state
     }
@@ -8999,6 +9109,18 @@ module internal BinaryGenerated =
         return! finishRead ({ ``Call`` = a0; ``Implementation`` = a1; ``Parameters`` = a2; ``Arguments`` = a3; ``Result`` = a4 } : global.Fidelity.PSG.CallableFlowCall) state
     }
 
+    and read_Fidelity_PSG_CallableInterfaceDigest (state: ReadState) : Result<global.Fidelity.PSG.CallableInterfaceDigest * ReadState, BinaryError> = result {
+        let! state = enterReadCases 2 state
+        let! tag, state = readTag state
+        return!
+            match tag with
+            | 0 -> result {
+                let! a0, state = readString state
+                return! finishRead (global.Fidelity.PSG.CallableInterfaceDigest(a0)) state
+              }
+            | _ -> malformed state "Unknown Fidelity.PSG.CallableInterfaceDigest case"
+    }
+
     and read_Fidelity_PSG_CallableJoin (state: ReadState) : Result<global.Fidelity.PSG.CallableJoin * ReadState, BinaryError> = result {
         let! state = enterReadFields 5 state
         let! a0, state = read_Fidelity_PSG_NodeId state
@@ -9105,6 +9227,18 @@ module internal BinaryGenerated =
                 return! finishRead (global.Fidelity.PSG.CallbackAbsenceInputRole.``HypothesisSource``) state
               }
             | _ -> malformed state "Unknown Fidelity.PSG.CallbackAbsenceInputRole case"
+    }
+
+    and read_Fidelity_PSG_CanonicalProofSupportDigest (state: ReadState) : Result<global.Fidelity.PSG.CanonicalProofSupportDigest * ReadState, BinaryError> = result {
+        let! state = enterReadCases 2 state
+        let! tag, state = readTag state
+        return!
+            match tag with
+            | 0 -> result {
+                let! a0, state = readString state
+                return! finishRead (global.Fidelity.PSG.CanonicalProofSupportDigest(a0)) state
+              }
+            | _ -> malformed state "Unknown Fidelity.PSG.CanonicalProofSupportDigest case"
     }
 
     and read_Fidelity_PSG_CaptureInfo (state: ReadState) : Result<global.Fidelity.PSG.CaptureInfo * ReadState, BinaryError> = result {
@@ -12989,6 +13123,75 @@ module internal BinaryGenerated =
         return! finishRead ({ ``ProjectPath`` = a0; ``SourceVersion`` = a1; ``Model`` = a2 } : global.Fidelity.PSG.ProjectMemoryPolicy) state
     }
 
+    and read_Fidelity_PSG_ProofSupportCensus (state: ReadState) : Result<global.Fidelity.PSG.ProofSupportCensus * ReadState, BinaryError> = result {
+        let! state = enterReadFields 3 state
+        let! a0, state = readString state
+        let! a1, state = read_Fidelity_PSG_ProofSupportCensusKind state
+        let! a2, state = (readSet readString) state
+        return! finishRead ({ ``Identity`` = a0; ``Kind`` = a1; ``Entries`` = a2 } : global.Fidelity.PSG.ProofSupportCensus) state
+    }
+
+    and read_Fidelity_PSG_ProofSupportCensusKind (state: ReadState) : Result<global.Fidelity.PSG.ProofSupportCensusKind * ReadState, BinaryError> = result {
+        let! state = enterReadCases 1 state
+        let! tag, state = readTag state
+        return!
+            match tag with
+            | 0 -> result {
+                return! finishRead (global.Fidelity.PSG.ProofSupportCensusKind.``NumericInterface``) state
+              }
+            | 1 -> result {
+                return! finishRead (global.Fidelity.PSG.ProofSupportCensusKind.``PlatformLayout``) state
+              }
+            | 2 -> result {
+                return! finishRead (global.Fidelity.PSG.ProofSupportCensusKind.``PlatformSpace``) state
+              }
+            | 3 -> result {
+                return! finishRead (global.Fidelity.PSG.ProofSupportCensusKind.``BoundaryAbsence``) state
+              }
+            | 4 -> result {
+                return! finishRead (global.Fidelity.PSG.ProofSupportCensusKind.``DomainUniqueness``) state
+              }
+            | _ -> malformed state "Unknown Fidelity.PSG.ProofSupportCensusKind case"
+    }
+
+    and read_Fidelity_PSG_ProofSupportCoverage (state: ReadState) : Result<global.Fidelity.PSG.ProofSupportCoverage * ReadState, BinaryError> = result {
+        let! state = enterReadCases 4 state
+        let! tag, state = readTag state
+        return!
+            match tag with
+            | 0 -> result {
+                let! a0, state = (readList read_Fidelity_PSG_ProofSupportParticipant) state
+                let! a1, state = (readList read_Fidelity_PSG_ProofSupportCensus) state
+                return! finishRead (global.Fidelity.PSG.ProofSupportCoverage.``Local``(a0, a1)) state
+              }
+            | 1 -> result {
+                let! a0, state = (readSet readString) state
+                let! a1, state = (readList read_Fidelity_PSG_ProofSupportParticipant) state
+                let! a2, state = (readList read_Fidelity_PSG_ProofSupportCensus) state
+                return! finishRead (global.Fidelity.PSG.ProofSupportCoverage.``Shared``(a0, a1, a2)) state
+              }
+            | 2 -> result {
+                let! a0, state = (readList read_Fidelity_PSG_ProofSupportParticipant) state
+                let! a1, state = (readList read_Fidelity_PSG_ProofSupportCensus) state
+                return! finishRead (global.Fidelity.PSG.ProofSupportCoverage.``Global``(a0, a1)) state
+              }
+            | 3 -> result {
+                let! a0, state = readString state
+                let! a1, state = (readSet readString) state
+                return! finishRead (global.Fidelity.PSG.ProofSupportCoverage.``Unclassified``(a0, a1)) state
+              }
+            | _ -> malformed state "Unknown Fidelity.PSG.ProofSupportCoverage case"
+    }
+
+    and read_Fidelity_PSG_ProofSupportParticipant (state: ReadState) : Result<global.Fidelity.PSG.ProofSupportParticipant * ReadState, BinaryError> = result {
+        let! state = enterReadFields 4 state
+        let! a0, state = readString state
+        let! a1, state = read_Fidelity_PSG_ParticipantRole state
+        let! a2, state = readI32 state
+        let! a3, state = readString state
+        return! finishRead ({ ``Address`` = a0; ``Role`` = a1; ``Ordinal`` = a2; ``Group`` = a3 } : global.Fidelity.PSG.ProofSupportParticipant) state
+    }
+
     and read_Fidelity_PSG_RecurrencePowerStep (state: ReadState) : Result<global.Fidelity.PSG.RecurrencePowerStep * ReadState, BinaryError> = result {
         let! state = enterReadFields 3 state
         let! a0, state = readBool state
@@ -13749,6 +13952,18 @@ module internal BinaryGenerated =
         return! finishRead ({ ``Id`` = a0; ``Kind`` = a1; ``Range`` = a2; ``Type`` = a3; ``Children`` = a4; ``Parent`` = a5; ``IsReachable`` = a6; ``EmissionStrategy`` = a7; ``ValueRange`` = a8; ``ObligationAnchors`` = a9 } : global.Fidelity.PSG.SemanticNode) state
     }
 
+    and read_Fidelity_PSG_SemanticRealizationDigest (state: ReadState) : Result<global.Fidelity.PSG.SemanticRealizationDigest * ReadState, BinaryError> = result {
+        let! state = enterReadCases 2 state
+        let! tag, state = readTag state
+        return!
+            match tag with
+            | 0 -> result {
+                let! a0, state = readString state
+                return! finishRead (global.Fidelity.PSG.SemanticRealizationDigest(a0)) state
+              }
+            | _ -> malformed state "Unknown Fidelity.PSG.SemanticRealizationDigest case"
+    }
+
     and read_Fidelity_PSG_SequenceFamily (state: ReadState) : Result<global.Fidelity.PSG.SequenceFamily * ReadState, BinaryError> = result {
         let! state = enterReadFields 9 state
         let! a0, state = read_Fidelity_PSG_NodeId state
@@ -14493,7 +14708,7 @@ module internal BinaryGenerated =
     }
 
     and read_Fidelity_PSG_WitnessRegion (state: ReadState) : Result<global.Fidelity.PSG.WitnessRegion * ReadState, BinaryError> = result {
-        let! state = enterReadFields 10 state
+        let! state = enterReadFields 13 state
         let! a0, state = readString state
         let! a1, state = read_Fidelity_PSG_WitnessRegionKind state
         let! a2, state = (readOption read_Fidelity_PSG_NodeId) state
@@ -14502,9 +14717,12 @@ module internal BinaryGenerated =
         let! a5, state = (readSet read_Fidelity_PSG_NodeId) state
         let! a6, state = (readSet read_Fidelity_PSG_NodeId) state
         let! a7, state = read_Fidelity_PSG_SupportKey state
-        let! a8, state = readString state
-        let! a9, state = (readSet readString) state
-        return! finishRead ({ ``Identity`` = a0; ``Flavor`` = a1; ``Root`` = a2; ``Anchor`` = a3; ``Path`` = a4; ``Members`` = a5; ``Supports`` = a6; ``OwnerSupport`` = a7; ``Fingerprint`` = a8; ``Dependencies`` = a9 } : global.Fidelity.PSG.WitnessRegion) state
+        let! a8, state = read_Fidelity_PSG_CallableInterfaceDigest state
+        let! a9, state = read_Fidelity_PSG_SemanticRealizationDigest state
+        let! a10, state = read_Fidelity_PSG_CanonicalProofSupportDigest state
+        let! a11, state = read_Fidelity_PSG_ProofSupportCoverage state
+        let! a12, state = (readSet readString) state
+        return! finishRead ({ ``Identity`` = a0; ``Flavor`` = a1; ``Root`` = a2; ``Anchor`` = a3; ``Path`` = a4; ``Members`` = a5; ``Supports`` = a6; ``OwnerSupport`` = a7; ``CallableInterfaceDigest`` = a8; ``SemanticRealizationDigest`` = a9; ``CanonicalProofSupportDigest`` = a10; ``ProofSupportCoverage`` = a11; ``Dependencies`` = a12 } : global.Fidelity.PSG.WitnessRegion) state
     }
 
     and read_Fidelity_PSG_WitnessRegionKind (state: ReadState) : Result<global.Fidelity.PSG.WitnessRegionKind * ReadState, BinaryError> = result {
