@@ -1267,6 +1267,16 @@ module IntegrityNamed =
         @ (idsOfBoundaryStringExtent value.Extent)
         @ (value.Participants |> Set.toList |> List.collect (fun v0 -> [ v0 ]))
 
+    and private idsOfMemoryLocalScalarWitness (value: Fidelity.PSG.MemoryLocalScalarWitness) : NodeId list =
+        [ value.Site ]
+        @ [ value.Initializer ]
+        @ (idsOfMemoryResidence value.Residence)
+        @ (value.Reads |> Set.toList |> List.collect (fun v0 -> [ v0 ]))
+        @ (value.Writes |> List.collect (fun v0 -> (let (t1_0, t1_1) = v0 in [ t1_0 ] @ [ t1_1 ])))
+        @ [ value.Platform ]
+        @ [ value.Layout ]
+        @ [ value.Capacity ]
+
     and private idsOfMemoryPlace (value: Fidelity.PSG.MemoryPlace) : NodeId list =
         match value with
         | Fidelity.PSG.MemoryPlace.MutableCell(a0) -> [ a0 ]
@@ -1332,6 +1342,7 @@ module IntegrityNamed =
 
     and private idsOfMemoryWitnessOperation (value: Fidelity.PSG.MemoryWitnessOperation) : NodeId list =
         match value with
+        | Fidelity.PSG.MemoryWitnessOperation.LocalScalar(a0) -> (idsOfMemoryLocalScalarWitness a0)
         | Fidelity.PSG.MemoryWitnessOperation.BufferExtent(a0) -> (idsOfMemoryExtentWitness a0)
         | Fidelity.PSG.MemoryWitnessOperation.ArrayExtent(a0) -> (idsOfMemoryArrayExtentWitness a0)
         | Fidelity.PSG.MemoryWitnessOperation.ArrayAccess(a0) -> (idsOfMemoryArrayAccessWitness a0)

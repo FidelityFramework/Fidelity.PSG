@@ -6,6 +6,11 @@
 *.fsx text diff=fsharp
 *.fsproj text
 
+# Generator drift checks compare exact output, independent of checkout OS.
+**/BinaryGenerated.fs text eol=lf
+**/IntegrityNamed.fs text eol=lf
+**/JsonGenerated.fs text eol=lf
+
 # Solution files
 *.slnx text
 *.sln text

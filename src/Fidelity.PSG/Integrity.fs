@@ -937,6 +937,7 @@ module Integrity =
                   | MemoryWitnessOperation.ArrayExtent row -> row.Site
                   | MemoryWitnessOperation.ArrayAccess row -> row.Site
                   | MemoryWitnessOperation.ArrayLiteral row -> row.Site
+                  | MemoryWitnessOperation.LocalScalar row -> row.Site
                   | MemoryWitnessOperation.ArrayAllocation row -> row.Site
                   | MemoryWitnessOperation.Address row -> row.Site
                   | MemoryWitnessOperation.StringView row -> row.Site
@@ -957,6 +958,34 @@ module Integrity =
                   yield! body "Emission.Memory.Operations.ArrayExtent.Source" row.Source
                   yield! scalarRow revision "Emission.Memory.Operations.ArrayExtent.Result" row.Site row.Result
               | MemoryWitnessOperation.ArrayAccess row -> yield! access "Emission.Memory.Operations.ArrayAccess" row
+              | MemoryWitnessOperation.LocalScalar row ->
+                  let part = "Emission.Memory.Operations.LocalScalar"
+                  if not (revision.Nodes.TryFind row.Site |> Option.exists (fun node ->
+                      match node.Kind,node.Children with SemanticKind.Binding(_,true,_,_),[initial] -> initial=row.Initializer | _ -> false)) then
+                      yield defect (part + ".Initializer") row.Site "The local scalar does not name its actual cell initializer."
+                  yield! body (part + ".Initializer") row.Initializer
+                  yield! residence (part + ".Residence") row.Residence
+                  if (match row.Residence with MemoryResidence.Stack _ -> false | _ -> true) then
+                      yield defect (part + ".Residence") row.Site "A local scalar requires its source stack activation."
+                  if row.Bytes <= 0 || row.Alignment <= 0 then
+                      yield defect (part + ".Layout") row.Site "A local scalar requires a positive extent and alignment."
+                  if revision.CurrentClaims.TryFind row.Layout |> Option.map _.Body <>
+                     Some(ObligationBody.ContinuationLayout([0,row.Bytes,row.Alignment],row.Bytes,row.Alignment)) then
+                      yield defect (part + ".Layout") row.Site "The layout claim differs from the local scalar."
+                  if not (revision.CurrentClaims.TryFind row.Capacity |> Option.exists (fun claim ->
+                      match claim.Body with ObligationBody.CapacityFits(bytes,capacity) -> bytes=int64 row.Bytes && bytes<=capacity | _ -> false)) then
+                      yield defect (part + ".Capacity") row.Site "The local scalar lacks its current capacity claim."
+                  if revision.Emission.Numeric.Values.TryFind row.Site |> Option.map _.Slot <> Some row.Element then
+                      yield defect (part + ".Element") row.Site "The local scalar differs from its source carrier."
+                  for read in row.Reads do
+                      yield! body (part + ".Read") read
+                      if not (revision.Nodes.TryFind read |> Option.exists (fun node -> match node.Kind with SemanticKind.VarRef(_,Some binding) -> binding=row.Site | _ -> false)) then
+                          yield defect (part + ".Read") read "The scalar read names another binding."
+                  for site,value in row.Writes do
+                      yield! body (part + ".Write") site
+                      yield! body (part + ".Value") value
+                      if not (revision.Nodes.TryFind site |> Option.exists (fun node -> match node.Kind with SemanticKind.Set(target,actual) -> row.Reads.Contains target && actual=value | _ -> false)) then
+                          yield defect (part + ".Write") site "The scalar write differs from its binding or value."
               | MemoryWitnessOperation.ArrayLiteral row ->
                   if (match row.Residence with MemoryResidence.Heap _ -> true | _ -> false) then
                       yield defect "Emission.Memory.Operations.ArrayLiteral.Residence" row.Site "Heap residence requires the exact checked-result snapshot account, not an array literal."
