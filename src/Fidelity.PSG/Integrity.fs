@@ -60,7 +60,8 @@ module Integrity =
             match boundary.Imports.TryFind row.Import,boundary.CallbackInvocations.TryFind row.Invocation with
             | Some imported,Some invocation ->
                 (imported.Parameters |> List.tryItem row.Parameter) = Some(row.Formal,BoundaryScalar.Entry row.Invocation) &&
-                invocation.Import=row.Import && invocation.Parameter=row.Parameter && invocation.Formal=row.Formal && invocation.Extent=BoundaryCallbackExtent.DuringCall &&
+                invocation.Import=row.Import && invocation.Parameter=row.Parameter && invocation.Formal=row.Formal &&
+                (match invocation.Extent with BoundaryCallbackExtent.DuringCall | BoundaryCallbackExtent.Retained _ -> true | BoundaryCallbackExtent.ProcessExit _ -> false) &&
                 invocation.Contract.Binding=row.Contract.Binding && row.Contract.Parameter=row.Parameter && invocation.Contract.Hypothesis.Identity<>row.Contract.Hypothesis.Identity &&
                 (match imported.SourceTypes.TryFind row.Formal with Some(TypeIdentity.Application(option,[TypeIdentity.Application(entry,[_])])) -> option.Declaration.Module=[] && option.Declaration.Name="option" && entry.NativeKind=Some NTUKind.NTUfnptr | _->false)
             | _ -> false
@@ -82,6 +83,82 @@ module Integrity =
         literal CallbackAbsenceInputRole.HypothesisVersion "string" [row.Contract.Hypothesis.Version] [] &&
         literal CallbackAbsenceInputRole.HypothesisSource "string" [row.Contract.Hypothesis.Source] []
 
+    let private bufferAbsenceAccountCurrent (boundary: BoundaryEmissionProjection) (row: BoundaryBufferAbsence) =
+        let facts = row.DeclarationFacts
+        let field record name =
+            facts.TryFind record |> Option.bind (fun fact ->
+                if fact.Form = "record" && fact.Text.Length = fact.References.Length && fact.Children = fact.References && fact.Numbers.IsEmpty then
+                    List.zip fact.Text fact.References |> List.filter (fst >> (=) name) |> function [_, id] -> Some id | _ -> None
+                else None)
+        let pathCurrent (path: NodeId list) =
+            not path.IsEmpty && (path |> List.forall facts.ContainsKey) &&
+            (path |> List.pairwise |> List.forall (fun (before, after) ->
+                match facts.TryFind before with
+                | Some fact when fact.Form = "quotation" || fact.Form = "annotation" || fact.Form = "reference" || fact.Form = "binding" ->
+                    fact.References = [after] && (fact.Form <> "binding" || fact.Numbers = [0I; 0I])
+                | _ -> false))
+        let roles =
+            [ BufferAbsenceInputRole.Binding; BufferAbsenceInputRole.Parameter; BufferAbsenceInputRole.Hypothesis
+              BufferAbsenceInputRole.HypothesisIdentity; BufferAbsenceInputRole.HypothesisVersion; BufferAbsenceInputRole.HypothesisSource ]
+        let inputs = Map.ofList row.Inputs
+        let hypothesis = field row.Record "Hypothesis"
+        let root = function
+            | BufferAbsenceInputRole.Binding -> field row.Record "Binding"
+            | BufferAbsenceInputRole.Parameter -> field row.Record "Parameter"
+            | BufferAbsenceInputRole.Hypothesis -> hypothesis
+            | BufferAbsenceInputRole.HypothesisIdentity -> hypothesis |> Option.bind (fun id -> field id "Identity")
+            | BufferAbsenceInputRole.HypothesisVersion -> hypothesis |> Option.bind (fun id -> field id "Version")
+            | BufferAbsenceInputRole.HypothesisSource -> hypothesis |> Option.bind (fun id -> field id "Source")
+        let literal role form texts numbers =
+            inputs.TryFind role |> Option.bind List.tryLast |> Option.bind facts.TryFind
+            |> Option.exists (fun fact -> fact.Form = form && fact.Text = texts && fact.Numbers = numbers && fact.References.IsEmpty && fact.Children.IsEmpty)
+        let nominal = facts.TryFind row.Record |> Option.exists (fun fact ->
+            match fact.SourceType with
+            | TypeIdentity.Application(constructor, []) ->
+                constructor.Declaration.Module = ["BAREWire"; "Descriptors"] &&
+                (constructor.Declaration.Name = "BufferAbsenceContract" || constructor.Declaration.Name = "Descriptors.BufferAbsenceContract") &&
+                constructor.Parameters = [] && constructor.NativeKind = None
+            | _ -> false)
+        let immutable = facts.TryFind row.DescriptorBinding |> Option.exists (fun fact ->
+            fact.Form = "binding" && fact.Numbers = [0I; 0I] && fact.Children = (row.SourcePath |> List.tryHead |> Option.toList))
+        let quote = facts.TryFind row.Quote |> Option.exists (fun fact -> fact.Form = "quotation")
+        let receiver =
+            match boundary.Imports.TryFind row.Import with
+            | Some imported ->
+                match imported.Parameters |> List.tryItem row.Parameter with
+                | Some(formal, BoundaryScalar.ReadOnlyBytes declId) when formal = row.Formal && declId = row.BufferDeclaration ->
+                    boundary.ReadOnlyBufferDeclarations.TryFind declId |> Option.exists (fun decl ->
+                        decl.Parameter = row.Parameter &&
+                        decl.Contract.Binding = row.Contract.Binding &&
+                        row.Contract.Parameter = row.Parameter &&
+                        decl.Contract.Hypothesis.Identity <> row.Contract.Hypothesis.Identity)
+                | Some(formal, BoundaryScalar.WritableBytes declId) when formal = row.Formal && declId = row.BufferDeclaration ->
+                    boundary.WritableBufferDeclarations.TryFind declId |> Option.exists (fun decl ->
+                        decl.Parameter = row.Parameter &&
+                        decl.Contract.Binding = row.Contract.Binding &&
+                        row.Contract.Parameter = row.Parameter &&
+                        decl.Contract.Hypothesis.Identity <> row.Contract.Hypothesis.Identity)
+                | _ -> false
+            | None -> false
+        let rec closure seen pending =
+            match pending with
+            | [] -> Some seen
+            | id :: rest when Set.contains id seen -> closure seen rest
+            | id :: rest -> facts.TryFind id |> Option.bind (fun fact -> closure (Set.add id seen) (fact.References @ fact.Children @ rest))
+        nominal && immutable && quote && receiver && pathCurrent row.SourcePath && List.tryLast row.SourcePath = Some row.Record && List.contains row.Quote row.SourcePath &&
+        List.map fst row.Inputs = roles &&
+        (row.Inputs |> List.forall (fun (role, path) -> pathCurrent path && List.tryHead path = root role)) &&
+        (closure Set.empty [row.DescriptorBinding] = Some(facts |> Map.keys |> Set.ofSeq)) &&
+        (facts.TryFind row.Record |> Option.exists (fun fact -> fact.Text = ["Binding"; "Parameter"; "Hypothesis"])) &&
+        (hypothesis |> Option.bind facts.TryFind |> Option.exists (fun fact -> fact.Text = ["Identity"; "Version"; "Source"])) &&
+        ([row.Contract.Hypothesis.Identity; row.Contract.Hypothesis.Version; row.Contract.Hypothesis.Source] |> List.forall (System.String.IsNullOrWhiteSpace >> not)) &&
+        literal BufferAbsenceInputRole.Binding "string" [row.Contract.Binding] [] &&
+        (inputs.TryFind BufferAbsenceInputRole.Parameter |> Option.bind List.tryLast |> Option.bind facts.TryFind |> Option.exists (fun fact ->
+            (fact.Form = "integer" || fact.Form = "unsigned-integer") && fact.Numbers = [bigint row.Parameter] && fact.References.IsEmpty && fact.Children.IsEmpty)) &&
+        literal BufferAbsenceInputRole.HypothesisIdentity "string" [row.Contract.Hypothesis.Identity] [] &&
+        literal BufferAbsenceInputRole.HypothesisVersion "string" [row.Contract.Hypothesis.Version] [] &&
+        literal BufferAbsenceInputRole.HypothesisSource "string" [row.Contract.Hypothesis.Source] []
+
     /// The stored entry selects a code ABI witness, never another optional
     /// operand's activation. Sharing is restricted to the complete optional
     /// during-call use inventory; ordinary and process-exit uses stay exact.
@@ -97,7 +174,8 @@ module Integrity =
                     | [selected] ->
                         match boundary.CallbackInvocations.TryFind identity,revision.CurrentClaims.TryFind selected.Obligation with
                         | Some invocation,Some {Body=ObligationBody.OptionalEntryArgumentConversion model} ->
-                            invocation.Extent=BoundaryCallbackExtent.DuringCall && invocation.Import=call.Import && invocation.Parameter=ordinal &&
+                            (match invocation.Extent with BoundaryCallbackExtent.DuringCall | BoundaryCallbackExtent.Retained _ -> true | BoundaryCallbackExtent.ProcessExit _ -> false) &&
+                            invocation.Import=call.Import && invocation.Parameter=ordinal &&
                             model.Call=call.Site && model.Parameter=ordinal && model.Actual=operand.Actual &&
                             model.Formation=entry.Formation && model.Invocation=identity
                         | _ -> false
@@ -105,7 +183,9 @@ module Integrity =
                 | _ -> false))
         match boundary.CallbackInvocations.TryFind entry.Invocation with
         | Some witness ->
-            entry.Registrations.IsEmpty && receiving.Extent=BoundaryCallbackExtent.DuringCall && witness.Extent=BoundaryCallbackExtent.DuringCall &&
+            entry.Registrations.IsEmpty &&
+            (match receiving.Extent with BoundaryCallbackExtent.DuringCall | BoundaryCallbackExtent.Retained _ -> true | BoundaryCallbackExtent.ProcessExit _ -> false) &&
+            witness.Extent = receiving.Extent &&
             receiving.Signature=witness.Signature && witness.Signature.CallingConvention="CDecl" &&
             (entry.Invocation=receiving.Identity || optionalOnly)
         | _ -> false
@@ -2165,10 +2245,11 @@ module Integrity =
                     (boundary.Imports.TryFind call.Import |> Option.exists(fun imported ->
                         let field name=boundaryRecordFields imported.DeclarationFacts imported.Identity |> Option.bind(Map.tryFind name) |> Option.bind imported.DeclarationFacts.TryFind
                         let profile=
-                            match row.Parameter,row.CountParameter,(imported.Parameters |> List.map snd),imported.Result with
-                            | 0,1,[BoundaryScalar.WritableBytes declaration;BoundaryScalar.Integer(64,false)],(None | Some(BoundaryScalar.Integer(64,true))) -> declaration=row.Declaration
-                            | 1,2,[BoundaryScalar.Integer(32,true);BoundaryScalar.WritableBytes declaration;BoundaryScalar.Integer(64,false)],Some(BoundaryScalar.Integer(64,true)) -> declaration=row.Declaration
-                            | _ -> false
+                            let parameters=imported.Parameters |> List.map snd
+                            row.Parameter>=0 && row.CountParameter>=0 && row.Parameter<>row.CountParameter &&
+                            List.tryItem row.Parameter parameters=Some(BoundaryScalar.WritableBytes row.Declaration) &&
+                            (match List.tryItem row.CountParameter parameters with Some(BoundaryScalar.Integer _)->true | _->false) &&
+                            (match imported.Result with None | Some(BoundaryScalar.Integer(64,true))->true | _->false)
                         imported.Binding=declaration.Declaration && imported.Identity=declaration.Descriptor && resultAccount call imported &&
                         profile && (call.Arguments |> List.map(fun argument->argument.Formal,argument.Abi))=imported.Parameters &&
                         (imported.Parameters |> List.map fst)=declaration.Formals &&
@@ -2220,6 +2301,497 @@ module Integrity =
              if not bounds then yield defect "Emission.Boundary.WritableBufferUses.Bounds" site boundsReason
              if not claims then yield defect "Emission.Boundary.WritableBufferUses.Claims" site "The writable use lacks its exact current required count/storage proof citizens and source hypothesis."
              if not support then yield defect "Emission.Boundary.WritableBufferUses.Participants" site "The writable use lost its current source, byte format or proof support."]
+
+        let factText (facts: Map<NodeId, BoundaryDeclarationFact>) id =
+            facts.TryFind id |> Option.bind (fun fact ->
+                if fact.Form = "string" && fact.References.IsEmpty && fact.Children.IsEmpty then List.tryExactlyOne fact.Text else None)
+        let factNumber (facts: Map<NodeId, BoundaryDeclarationFact>) id =
+            facts.TryFind id |> Option.bind (fun fact ->
+                if (fact.Form = "integer" || fact.Form = "unsigned-integer") && fact.References.IsEmpty && fact.Children.IsEmpty then List.tryExactlyOne fact.Numbers else None)
+        let factCase (facts: Map<NodeId, BoundaryDeclarationFact>) name id =
+            facts.TryFind id |> Option.bind (fun fact ->
+                if (fact.Form = "case" || fact.Form = "settled-case") && fact.Text = [name] && fact.References = fact.Children then Some fact.References else None)
+        let factInteger (facts: Map<NodeId, BoundaryDeclarationFact>) id =
+            factCase facts "Integer" id |> Option.bind List.tryExactlyOne |> Option.bind facts.TryFind |> Option.bind (fun pair ->
+                match pair.Form, pair.References with
+                | "tuple", [sign; bits] when pair.Children = pair.References ->
+                    factNumber facts bits |> Option.bind (fun bits ->
+                        if bits <= 0I then None
+                        elif factCase facts "Unsigned" sign = Some [] then Some(false, bits)
+                        elif factCase facts "Signed" sign = Some [] then Some(true, bits) else None)
+                | _ -> None)
+        let factPointer (facts: Map<NodeId, BoundaryDeclarationFact>) id =
+            factCase facts "Pointer" id |> Option.bind List.tryExactlyOne |> Option.bind (factNumber facts) |> Option.filter (fun w -> w > 0I)
+        let resourceReleaseMatches (facts: Map<NodeId, BoundaryDeclarationFact>) (recId: NodeId) (release: BAREWire.Descriptors.ResourceRelease) =
+            boundaryRecordFields facts recId
+            |> Option.exists (fun fields ->
+                (fields.TryFind "Binding" |> Option.bind (factText facts) = Some release.Binding) &&
+                (fields.TryFind "Parameter" |> Option.bind (factNumber facts) = Some(bigint release.Parameter)))
+        let factArrayMatches (facts: Map<NodeId, BoundaryDeclarationFact>) (arrayFactId: NodeId) expected (itemMatches: NodeId -> 'a -> bool) =
+            facts.TryFind arrayFactId
+            |> Option.exists (fun arr ->
+                arr.Form = "array" && arr.Children = arr.References &&
+                arr.References.Length = List.length expected &&
+                (arr.References, expected) ||> List.forall2 itemMatches)
+        let retentionReleaseMatches (facts: Map<NodeId, BoundaryDeclarationFact>) (itemId: NodeId) (expected: BAREWire.Descriptors.RetentionRelease) =
+            match expected with
+            | BAREWire.Descriptors.RetentionRelease.Redefinition keys ->
+                factCase facts "Redefinition" itemId
+                |> Option.bind List.tryExactlyOne
+                |> Option.exists (fun arrId ->
+                    factArrayMatches facts arrId (Array.toList keys) (fun refId k -> factNumber facts refId = Some(bigint k)))
+            | BAREWire.Descriptors.RetentionRelease.OwnerRelease release ->
+                factCase facts "OwnerRelease" itemId
+                |> Option.bind List.tryExactlyOne
+                |> Option.exists (fun recId -> resourceReleaseMatches facts recId release)
+        let retentionReleasesMatch (facts: Map<NodeId, BoundaryDeclarationFact>) (arrayFactId: NodeId) (releases: BAREWire.Descriptors.RetentionRelease array) =
+            factArrayMatches facts arrayFactId (Array.toList releases) (retentionReleaseMatches facts)
+        let borrowInvalidationMatches (facts: Map<NodeId, BoundaryDeclarationFact>) (itemId: NodeId) (expected: BAREWire.Descriptors.BorrowInvalidation) =
+            match expected with
+            | BAREWire.Descriptors.BorrowInvalidation.AnyOwnerCall ->
+                factCase facts "AnyOwnerCall" itemId = Some []
+            | BAREWire.Descriptors.BorrowInvalidation.OwnerCall release ->
+                factCase facts "OwnerCall" itemId
+                |> Option.bind List.tryExactlyOne
+                |> Option.exists (fun recId -> resourceReleaseMatches facts recId release)
+        let importMatchesBinding (imported: BoundaryImport) (expectedBinding: string) =
+            let facts = imported.DeclarationFacts
+            match boundaryContext revision facts imported.Binding, facts.TryFind imported.Binding with
+            | Some(_, header), Some declaration ->
+                declaration.Text |> List.tryHead |> Option.exists (fun name -> header.Name + "." + name = expectedBinding)
+            | _ -> false
+        let hasHypothesis (facts: Map<NodeId, BoundaryDeclarationFact>) (quoteId: NodeId) (hypothesis: BAREWire.Descriptors.ExternalExecutionHypothesis) =
+            boundaryQuotedRecordFields facts quoteId
+            |> Option.bind (Map.tryFind "Hypothesis")
+            |> Option.exists (fun hypId ->
+                boundaryRecordFields facts hypId |> Option.exists (fun fields ->
+                    ["Identity", hypothesis.Identity; "Version", hypothesis.Version; "Source", hypothesis.Source]
+                    |> List.forall (fun (name, value) ->
+                        not (System.String.IsNullOrWhiteSpace value) &&
+                        (fields.TryFind name |> Option.bind (factText facts) = Some value))))
+        let hasSiblingFunctionDescriptor (facts: Map<NodeId, BoundaryDeclarationFact>) (declarationId: NodeId) (descriptorId: NodeId) =
+            facts.TryFind descriptorId |> Option.bind (fun descriptor -> descriptor.Parent) |> Option.bind (fun quote ->
+                boundaryQuoteBinding facts quote |> Option.filter (fun (_, owner) ->
+                    boundaryQuotedRecordFields facts quote |> Option.isSome &&
+                    facts.TryFind declarationId |> Option.exists (fun declaration ->
+                        declaration.Text |> List.tryHead |> Option.exists (fun name -> owner.Text = [name + "Descriptor"] && owner.Parent = declaration.Parent))))
+            |> Option.isSome
+        let descriptorParamRefs (facts: Map<NodeId, BoundaryDeclarationFact>) (descriptorId: NodeId) =
+            boundaryRecordFields facts descriptorId
+            |> Option.bind (Map.tryFind "Parameters")
+            |> Option.bind facts.TryFind
+            |> Option.filter (fun fact -> fact.Form = "array" && fact.References = fact.Children && not fact.References.IsEmpty)
+            |> Option.map _.References
+        let isFixedParam (facts: Map<NodeId, BoundaryDeclarationFact>) (paramId: NodeId) =
+            boundaryRecordFields facts paramId
+            |> Option.bind (Map.tryFind "PassBy")
+            |> Option.bind (factCase facts "Fixed")
+            |> Option.isSome
+        let nonFixedFormalIndex (facts: Map<NodeId, BoundaryDeclarationFact>) (descriptorId: NodeId) (nativeOrdinal: int) =
+            descriptorParamRefs facts descriptorId
+            |> Option.bind (fun paramRefs ->
+                paramRefs
+                |> List.indexed
+                |> List.filter (fun (_, p) -> not (isFixedParam facts p))
+                |> List.tryFindIndex (fun (idx, _) -> idx = nativeOrdinal))
+        let isCHandleType (nullable: bool) (ty: TypeIdentity) =
+            let isPtrHandle = function
+                | TypeIdentity.Application(ctor, [_]) -> ctor.NativeKind = Some NTUKind.NTUptr
+                | _ -> false
+            if not nullable then isPtrHandle ty
+            else
+                match ty with
+                | TypeIdentity.Application(opt, [inner]) ->
+                    (opt.Declaration.Name = "option" || opt.Declaration.Name = "Option") && isPtrHandle inner
+                | _ -> false
+        let rec unwrapEntryFnType = function
+            | TypeIdentity.Application(opt, [inner])
+                when opt.Declaration.Name = "option" || opt.Declaration.Name = "Option" ->
+                unwrapEntryFnType inner
+            | TypeIdentity.Application(entry, [fnTy]) when entry.NativeKind = Some NTUKind.NTUfnptr ->
+                Some fnTy
+            | _ -> None
+        let rec callbackDomainTypes = function
+            | TypeIdentity.Function(TypeIdentity.Tuple(_, domains), _) -> domains
+            | TypeIdentity.Function(domain, range) -> domain :: callbackDomainTypes range
+            | _ -> []
+        let isBorrowedCHandleFormal (imp: BoundaryImport) (formal: NodeId) (nullable: bool) =
+            imp.DeclarationFacts.ContainsKey formal &&
+            (imp.SourceTypes.TryFind formal |> Option.exists (isCHandleType nullable))
+        let isBorrowedCallbackCHandle (imp: BoundaryImport) (formal: NodeId) (ordinal: int) (nullable: bool) =
+            imp.DeclarationFacts.ContainsKey formal &&
+            (imp.SourceTypes.TryFind formal
+             |> Option.bind unwrapEntryFnType
+             |> Option.map callbackDomainTypes
+             |> Option.bind (List.tryItem ordinal)
+             |> Option.exists (isCHandleType nullable))
+        let closedFactSupport (facts: Map<NodeId, BoundaryDeclarationFact>) (contextIds: Set<NodeId>) =
+            facts |> Map.forall (fun _ fact ->
+                (fact.References @ fact.Children |> List.forall facts.ContainsKey) &&
+                (fact.Parent |> Option.forall (fun parent -> facts.ContainsKey parent || contextIds.Contains parent)))
+        let currentClaimWithBody (citizen: NodeId) (kind: string) predicate =
+            match revision.CurrentClaims.TryFind citizen with
+            | Some info when info.Kind = kind && List.contains info revision.Obligations -> predicate info.Body
+            | _ -> false
+        let hasEstablishedParticipants (evidence: ParticipantEvidence) (required: (ParticipantRole * NodeId) list) =
+            match evidence with
+            | ParticipantEvidence.Established rows ->
+                not rows.IsEmpty &&
+                (required |> List.forall (fun (role, node) -> rows |> List.exists (fun p -> p.Role = role && p.Node = node)))
+            | ParticipantEvidence.Pending _ -> false
+
+        let readOnlyDeclaration (key: NodeId) (row: BoundaryReadOnlyBufferDeclaration) =
+            let facts = row.DeclarationFacts
+            let field name id = boundaryRecordFields facts id |> Option.bind (Map.tryFind name)
+            let own name = boundaryQuotedRecordFields facts row.Identity |> Option.bind (Map.tryFind name)
+            let extentMatch =
+                match row.Contract.Extent, row.CountParameter, row.CountFormal with
+                | BAREWire.Descriptors.ReadOnlyBufferExtent.ExplicitCount countParam, Some cParam, Some cFormal ->
+                    countParam = cParam && cParam >= 0 && cParam <> row.Parameter &&
+                    (nonFixedFormalIndex facts row.Descriptor cParam |> Option.bind (fun fi -> List.tryItem fi row.Formals) = Some cFormal) &&
+                    (own "Extent" |> Option.bind (factCase facts "ExplicitCount") |> Option.bind List.tryExactlyOne |> Option.bind (factNumber facts) = Some(bigint countParam))
+                | BAREWire.Descriptors.ReadOnlyBufferExtent.UncountedNulTerminated, None, None ->
+                    row.Contract.Retention = BAREWire.Descriptors.BufferRetention.DuringCall &&
+                    (own "Extent" |> Option.bind (factCase facts "UncountedNulTerminated") = Some [])
+                | _ -> false
+            let contentMatch =
+                match row.Contract.Content with
+                | BAREWire.Descriptors.BorrowedContent.Utf8Text -> own "Content" |> Option.bind (factCase facts "Utf8Text") = Some []
+                | BAREWire.Descriptors.BorrowedContent.RawBytes -> own "Content" |> Option.bind (factCase facts "RawBytes") = Some []
+            let retentionMatch =
+                match row.Contract.Retention with
+                | BAREWire.Descriptors.BufferRetention.DuringCall ->
+                    own "Retention" |> Option.bind (factCase facts "DuringCall") = Some []
+                | BAREWire.Descriptors.BufferRetention.RetainedUntil(owner, releases) ->
+                    owner <> row.Parameter && not (Array.isEmpty releases) &&
+                    (nonFixedFormalIndex facts row.Descriptor owner |> Option.bind (fun fi -> List.tryItem fi row.Formals)
+                     |> Option.exists (fun f -> f <> row.BufferFormal)) &&
+                    (own "Retention" |> Option.bind (factCase facts "RetainedUntil") |> Option.bind List.tryExactlyOne |> Option.bind facts.TryFind
+                     |> Option.exists (fun tuple ->
+                         tuple.Form = "tuple" && tuple.References.Length = 2 && tuple.Children = tuple.References &&
+                         factNumber facts tuple.References.[0] = Some(bigint owner) &&
+                         retentionReleasesMatch facts tuple.References.[1] releases))
+            let contract =
+                key = row.Identity && boundaryQuoteBinding facts row.Identity |> Option.isSome &&
+                row.Contract.Parameter = row.Parameter &&
+                own "Binding" |> Option.bind (factText facts) = Some row.Contract.Binding &&
+                own "Parameter" |> Option.bind (factNumber facts) = Some(bigint row.Parameter) &&
+                hasHypothesis facts row.Identity row.Contract.Hypothesis &&
+                extentMatch && contentMatch && retentionMatch
+            let context = boundaryContext revision facts row.Declaration
+            let contextMatches = context |> Option.exists (fun (_, header) ->
+                facts.TryFind row.Declaration |> Option.exists (fun declaration ->
+                    declaration.Text |> List.tryHead |> Option.exists (fun name -> row.Contract.Binding = header.Name + "." + name)))
+            let incidence = boundaryBindingValue facts row.Declaration |> Option.exists (fun (implementation, lambda) ->
+                lambda.Form = "lambda" && lambda.References = row.Formals @ [row.Body] && lambda.Children = lambda.References &&
+                lambda.Numbers = [bigint row.Formals.Length; 0I; 0I] && lambda.Text.Length = row.Formals.Length + 1 &&
+                lambda.References |> List.forall (fun child -> facts.TryFind child |> Option.exists (fun fact -> fact.Parent = Some implementation)))
+            let parameters =
+                descriptorParamRefs facts row.Descriptor |> Option.filter (fun refs ->
+                    row.Parameter >= 0 && row.Parameter < refs.Length &&
+                    (row.CountParameter |> Option.forall (fun cp -> cp >= 0 && cp <> row.Parameter && cp < refs.Length)) &&
+                    (refs |> List.filter (isFixedParam facts >> not)).Length = row.Formals.Length)
+            let bufferAbiOk p =
+                let isPointerValue =
+                    field "Type" p |> Option.bind (factPointer facts) |> Option.isSome &&
+                    field "PassBy" p |> Option.bind (factCase facts "Value") = Some []
+                let isReadOnlyU8Ref =
+                    field "Type" p |> Option.bind (factInteger facts) = Some(false, 8I) &&
+                    field "PassBy" p |> Option.bind (factCase facts "ReadOnlyReference") = Some []
+                isPointerValue || isReadOnlyU8Ref
+            let ordinals =
+                match parameters with
+                | Some paramRefs ->
+                    row.Parameter >= 0 && (List.distinct row.Formals).Length = row.Formals.Length &&
+                    (nonFixedFormalIndex facts row.Descriptor row.Parameter |> Option.bind (fun fi -> List.tryItem fi row.Formals) = Some row.BufferFormal) &&
+                    (List.tryItem row.Parameter paramRefs |> Option.exists bufferAbiOk) &&
+                    (match row.CountParameter, row.CountFormal with
+                     | None, None -> true
+                     | Some cp, Some cf ->
+                         cf <> row.BufferFormal &&
+                         (nonFixedFormalIndex facts row.Descriptor cp |> Option.bind (fun fi -> List.tryItem fi row.Formals) = Some cf)
+                     | _ -> false)
+                | None -> false
+            let countAbiOk =
+                match parameters, row.CountParameter with
+                | None, _ -> false
+                | Some _, None -> true
+                | Some paramRefs, Some cp ->
+                    List.tryItem cp paramRefs |> Option.exists (fun p ->
+                        not (isFixedParam facts p) &&
+                        field "Type" p |> Option.bind (factInteger facts) |> Option.isSome &&
+                        field "PassBy" p |> Option.bind (factCase facts "Value") = Some [])
+            let contextIds = context |> Option.map fst |> Option.toList |> Set.ofList
+            let requiredNodes = row.Identity :: row.Declaration :: row.Body :: row.Descriptor :: row.Formals
+            let requiredRoles =
+                [ ParticipantRole.ReadOnlyBufferDeclaration, row.Identity
+                  ParticipantRole.ReadOnlyBufferFormal, row.BufferFormal ] @
+                (row.CountFormal |> Option.toList |> List.map (fun cf -> ParticipantRole.ReadOnlyBufferFormal, cf))
+            [ if not contract then
+                  yield defect "Emission.Boundary.ReadOnlyBufferDeclarations.Contract" key "The read-only buffer declaration differs from its immutable quotation or versioned hypothesis."
+              if not contextMatches || not (hasSiblingFunctionDescriptor facts row.Declaration row.Descriptor) then
+                  yield defect "Emission.Boundary.ReadOnlyBufferDeclarations.Declaration" key "The read-only buffer descriptor differs from its exact qualified extern and sibling FunctionDescriptor."
+              if not incidence || not ordinals || not countAbiOk then
+                  yield defect "Emission.Boundary.ReadOnlyBufferDeclarations.Ordinals" key "The read-only buffer native ordinals differ from the complete original formal vector."
+              if not (closedFactSupport facts contextIds) ||
+                 (requiredNodes |> List.exists (facts.ContainsKey >> not)) ||
+                 not (hasEstablishedParticipants row.Participants requiredRoles) then
+                  yield defect "Emission.Boundary.ReadOnlyBufferDeclarations.Participants" key "The read-only buffer declaration lost its exact immutable source support." ]
+
+        let readOnlyUse ((site, ordinal): NodeId * int) (row: BoundaryReadOnlyBufferUse) =
+            let original = boundary.ReadOnlyBufferDeclarations.TryFind row.Declaration
+            let call = boundary.Calls.TryFind site
+            let account =
+                match original, call with
+                | Some declaration, Some call ->
+                    row.Call = site && row.Parameter = ordinal && row.Parameter = declaration.Parameter &&
+                    row.Copies = 0 && call.Entry.IsNone && call.Resource.IsNone &&
+                    not (boundary.WritableBufferUses.ContainsKey(site, ordinal)) &&
+                    (nonFixedFormalIndex declaration.DeclarationFacts declaration.Descriptor ordinal
+                     |> Option.bind (fun fi -> List.tryItem fi call.Arguments)
+                     |> Option.exists (fun argument ->
+                        argument.Actual = row.Buffer && argument.Formal = declaration.BufferFormal &&
+                        argument.Abi = BoundaryScalar.ReadOnlyBytes row.Declaration && argument.Adaptation.IsNone)) &&
+                    (boundary.Imports.TryFind call.Import |> Option.exists (fun imported ->
+                        imported.Binding = declaration.Declaration && imported.Identity = declaration.Descriptor &&
+                        (call.Arguments |> List.map (fun a -> a.Formal, a.Abi)) = imported.Parameters &&
+                        (imported.Parameters |> List.map fst) = declaration.Formals))
+                | _ -> false
+            let crossingOk =
+                match original, call, row.Crossing with
+                | Some declaration, Some call, BoundaryReadOnlyBufferCrossing.ExplicitZeroCopy(countParam, countNode, extentCapacity, extentCoverage) ->
+                    match declaration.Contract.Extent, declaration.CountParameter, declaration.CountFormal with
+                    | BAREWire.Descriptors.ReadOnlyBufferExtent.ExplicitCount expectedParam, Some cp, Some countFormal when expectedParam = countParam && cp = countParam ->
+                        let countArgOk =
+                            nonFixedFormalIndex declaration.DeclarationFacts declaration.Descriptor countParam
+                            |> Option.bind (fun fi -> List.tryItem fi call.Arguments)
+                            |> Option.exists (fun argument ->
+                                argument.Actual = countNode && argument.Formal = countFormal &&
+                                match argument.Abi with BoundaryScalar.Integer _ -> true | _ -> false)
+                        let rangeOk =
+                            match revision.Emission.Numeric.Values.TryFind countNode with
+                            | Some carrier ->
+                                match carrier.Range with
+                                | ValueRange.Bounded(lo, hi) ->
+                                    lo >= 0I && lo <= hi && hi <= extentCapacity &&
+                                    currentClaimWithBody extentCoverage "foreign-readonly-buffer-extent" (function
+                                        | ObligationBody.ZeroCopyBufferExtent model ->
+                                            model.Call = site && model.Declaration = row.Declaration && model.Parameter = ordinal &&
+                                            model.CountParameter = countParam && model.Buffer = row.Buffer && model.Count = countNode &&
+                                            model.MinimumCount = lo && model.MaximumCount = hi && model.ExtentCapacity = extentCapacity &&
+                                            model.ElementBytes > 0 && model.CountCoverage = extentCoverage
+                                        | _ -> false)
+                                | _ -> false
+                            | None -> false
+                        countArgOk && rangeOk
+                    | _ -> false
+                | Some declaration, Some _, BoundaryReadOnlyBufferCrossing.StaticImageNulBorrowed(poolEntry, staticOrigin, byteLength, terminationProof) ->
+                    declaration.Contract.Extent = BAREWire.Descriptors.ReadOnlyBufferExtent.UncountedNulTerminated &&
+                    declaration.Contract.Retention = BAREWire.Descriptors.BufferRetention.DuringCall &&
+                    byteLength >= 0I &&
+                    (match revision.StaticStringPool with
+                     | Some pool when poolEntry >= 0 && poolEntry < pool.Entries.Length ->
+                         let entry = pool.Entries.[poolEntry]
+                         let bytesOk =
+                             entry.Offset >= 0 && entry.Length >= 0 && entry.StorageLength >= entry.Length + 1 &&
+                             entry.Offset + entry.StorageLength <= pool.Bytes.Length &&
+                             bigint entry.Length = byteLength &&
+                             (seq { for i in entry.Offset .. entry.Offset + entry.Length - 1 -> pool.Bytes.[i] } |> Seq.forall (fun b -> b <> 0uy)) &&
+                             pool.Bytes.[entry.Offset + entry.Length] = 0uy
+                         bytesOk && List.contains staticOrigin entry.NodeIds
+                     | _ -> false) &&
+                    currentClaimWithBody terminationProof "foreign-uncounted-path-termination" (function
+                        | ObligationBody.UncountedPathTermination model ->
+                            model.Call = site && model.Declaration = row.Declaration && model.Parameter = ordinal &&
+                            model.Source = row.Buffer && model.Mode = UncountedPathStagingMode.StaticImageZeroCopy poolEntry &&
+                            model.ByteLength = byteLength && model.RequiresNoInteriorNul && model.RequiresTrailingNul
+                        | _ -> false)
+                | Some declaration, Some _, BoundaryReadOnlyBufferCrossing.CallScopedNulStaged(stagingBuffer, capacity, byteLength, terminationProof) ->
+                    declaration.Contract.Extent = BAREWire.Descriptors.ReadOnlyBufferExtent.UncountedNulTerminated &&
+                    declaration.Contract.Retention = BAREWire.Descriptors.BufferRetention.DuringCall &&
+                    byteLength >= 0I && bigint capacity = byteLength + 1I && stagingBuffer <> row.Buffer &&
+                    currentClaimWithBody terminationProof "foreign-uncounted-path-termination" (function
+                        | ObligationBody.UncountedPathTermination model ->
+                            model.Call = site && model.Declaration = row.Declaration && model.Parameter = ordinal &&
+                            model.Source = row.Buffer && model.Mode = UncountedPathStagingMode.CallScopedStaged(stagingBuffer, capacity) &&
+                            model.ByteLength = byteLength && model.RequiresNoInteriorNul && model.RequiresTrailingNul
+                        | _ -> false)
+                | _ -> false
+            let retentionOk =
+                match original with
+                | Some declaration ->
+                    currentClaimWithBody row.RetentionProof "foreign-buffer-retention-domination" (function
+                        | ObligationBody.BufferRetentionDomination model ->
+                            model.Call = site && model.Declaration = row.Declaration &&
+                            model.Buffer = row.Buffer && model.Residence = row.Residence && model.AcquireOrder >= 0 &&
+                            match declaration.Contract.Retention, model.Mode with
+                            | BAREWire.Descriptors.BufferRetention.DuringCall, BufferRetentionMode.DuringCall ->
+                                row.Retirements.IsEmpty && model.RetirementOrders.IsEmpty
+                            | BAREWire.Descriptors.BufferRetention.RetainedUntil(ownerParam, releases), BufferRetentionMode.RetainedUntilOwner(mOwner, mCount) ->
+                                ownerParam = mOwner && not (Array.isEmpty releases) &&
+                                not row.Retirements.IsEmpty && mCount = row.Retirements.Length &&
+                                model.RetirementOrders.Length = row.Retirements.Length &&
+                                (model.RetirementOrders |> List.forall (fun r -> r > model.AcquireOrder))
+                            | _ -> false
+                        | _ -> false)
+                | None -> false
+            let requiredParticipants =
+                [ ParticipantRole.ReadOnlyBufferCall, site
+                  ParticipantRole.ReadOnlyBufferDeclaration, row.Declaration
+                  ParticipantRole.ReadOnlyBufferActual, row.Buffer
+                  ParticipantRole.ReadOnlyBufferResidence, row.Residence ] @
+                (row.Retirements |> List.map (fun r -> ParticipantRole.ReadOnlyBufferRetirement, r))
+            [ if not account then
+                  yield defect "Emission.Boundary.ReadOnlyBufferUses.Account" site "The read-only buffer use differs from its exact direct call, zero-copy requirement, or declaration."
+              if not crossingOk then
+                  yield defect "Emission.Boundary.ReadOnlyBufferUses.Crossing" site "The read-only buffer crossing failed its explicit-count extent or zero-interior-NUL termination contract."
+              if not retentionOk then
+                  yield defect "Emission.Boundary.ReadOnlyBufferUses.Retention" site "The read-only buffer retention failed storage residence domination or retirement proof."
+              if not (hasEstablishedParticipants row.Participants requiredParticipants) then
+                  yield defect "Emission.Boundary.ReadOnlyBufferUses.Participants" site "The read-only buffer use lacks established participant evidence." ]
+
+        let borrowedViewDeclaration (key: NodeId) (row: BoundaryBorrowedResultViewDeclaration) =
+            let facts = row.DeclarationFacts
+            let own name = boundaryQuotedRecordFields facts row.Identity |> Option.bind (Map.tryFind name)
+            let contentMatch =
+                match row.Contract.Content with
+                | BAREWire.Descriptors.BorrowedContent.Utf8Text -> own "Content" |> Option.bind (factCase facts "Utf8Text") = Some []
+                | BAREWire.Descriptors.BorrowedContent.RawBytes -> own "Content" |> Option.bind (factCase facts "RawBytes") = Some []
+            let extentMatch =
+                match row.Contract.Extent with
+                | BAREWire.Descriptors.BorrowedExtent.NulTerminated ->
+                    own "Extent" |> Option.bind (factCase facts "NulTerminated") = Some []
+                | BAREWire.Descriptors.BorrowedExtent.CompanionCall(binding, args) ->
+                    own "Extent" |> Option.bind (factCase facts "CompanionCall")
+                    |> Option.exists (function
+                        | [bindingRef; argsArrayRef] ->
+                            factText facts bindingRef = Some binding &&
+                            factArrayMatches facts argsArrayRef (Array.toList args) (fun refId argOrd -> factNumber facts refId = Some(bigint argOrd))
+                        | _ -> false)
+            let invalidatedByMatch =
+                not (Array.isEmpty row.Contract.InvalidatedBy) &&
+                (own "InvalidatedBy" |> Option.exists (fun arrId ->
+                    factArrayMatches facts arrId (Array.toList row.Contract.InvalidatedBy) (borrowInvalidationMatches facts)))
+            let contract =
+                key = row.Identity && boundaryQuoteBinding facts row.Identity |> Option.isSome &&
+                row.Contract.Owner = row.OwnerParameter &&
+                own "Binding" |> Option.bind (factText facts) = Some row.Contract.Binding &&
+                own "Owner" |> Option.bind (factNumber facts) = Some(bigint row.OwnerParameter) &&
+                hasHypothesis facts row.Identity row.Contract.Hypothesis &&
+                contentMatch && extentMatch && invalidatedByMatch
+            let context = boundaryContext revision facts row.Declaration
+            let contextMatches = context |> Option.exists (fun (_, header) ->
+                facts.TryFind row.Declaration |> Option.exists (fun declaration ->
+                    declaration.Text |> List.tryHead |> Option.exists (fun name -> row.Contract.Binding = header.Name + "." + name)))
+            let ordinals =
+                (List.distinct row.Formals).Length = row.Formals.Length &&
+                (descriptorParamRefs facts row.Descriptor |> Option.exists (fun refs ->
+                    (refs |> List.filter (isFixedParam facts >> not)).Length = row.Formals.Length)) &&
+                (nonFixedFormalIndex facts row.Descriptor row.OwnerParameter
+                 |> Option.bind (fun fi -> List.tryItem fi row.Formals) = Some row.OwnerFormal)
+            let contextIds = context |> Option.map fst |> Option.toList |> Set.ofList
+            let requiredNodes = row.Identity :: row.Declaration :: row.Body :: row.Descriptor :: row.Formals
+            [ if not contract then
+                  yield defect "Emission.Boundary.BorrowedResultViewDeclarations.Contract" key "The borrowed result view declaration differs from its immutable quotation or versioned hypothesis."
+              if not contextMatches || not (hasSiblingFunctionDescriptor facts row.Declaration row.Descriptor) then
+                  yield defect "Emission.Boundary.BorrowedResultViewDeclarations.Declaration" key "The borrowed result view declaration differs from its exact qualified extern and sibling FunctionDescriptor."
+              if not ordinals then
+                  yield defect "Emission.Boundary.BorrowedResultViewDeclarations.Ordinals" key "The borrowed result view owner ordinal disagrees with the formal parameter vector."
+              if not (closedFactSupport facts contextIds) ||
+                 (requiredNodes |> List.exists (facts.ContainsKey >> not)) ||
+                 not (hasEstablishedParticipants row.Participants [ ParticipantRole.BorrowedResultViewDeclaration, row.Identity; ParticipantRole.BorrowedResultViewOwner, row.OwnerFormal ]) then
+                  yield defect "Emission.Boundary.BorrowedResultViewDeclarations.Participants" key "The borrowed result view declaration lost its exact immutable source support." ]
+
+        let borrowedViewUse (key: NodeId) (row: BoundaryBorrowedResultViewUse) =
+            let original = boundary.BorrowedResultViewDeclarations.TryFind row.Declaration
+            let call = boundary.Calls.TryFind row.Call
+            let account =
+                key = row.Call && row.NullToNoneBoundary &&
+                match original, call with
+                | Some declaration, Some call ->
+                    (nonFixedFormalIndex declaration.DeclarationFacts declaration.Descriptor declaration.OwnerParameter
+                     |> Option.bind (fun fi -> List.tryItem fi call.Arguments)
+                     |> Option.exists (fun arg -> arg.Actual = row.Owner && arg.Formal = declaration.OwnerFormal)) &&
+                    (boundary.Imports.TryFind call.Import |> Option.exists (fun imported ->
+                        imported.Binding = declaration.Declaration && imported.Identity = declaration.Descriptor)) &&
+                    (match declaration.Contract.Extent with
+                     | BAREWire.Descriptors.BorrowedExtent.CompanionCall(binding, args) ->
+                         match row.CompanionCall |> Option.bind boundary.Calls.TryFind with
+                         | Some compCall ->
+                             compCall.Site <> call.Site &&
+                             (boundary.Imports.TryFind compCall.Import |> Option.exists (fun compImport -> importMatchesBinding compImport binding)) &&
+                             compCall.Arguments.Length = args.Length &&
+                             row.CompanionArguments.Length = args.Length &&
+                             (List.zip3 (Array.toList args) row.CompanionArguments compCall.Arguments
+                              |> List.forall (fun (argOrd, compArgId, compOperand) ->
+                                  compOperand.Actual = compArgId &&
+                                  (nonFixedFormalIndex declaration.DeclarationFacts declaration.Descriptor argOrd
+                                   |> Option.bind (fun fi -> List.tryItem fi call.Arguments)
+                                   |> Option.exists (fun borrowArg -> borrowArg.Actual = compArgId))))
+                         | None -> false
+                     | BAREWire.Descriptors.BorrowedExtent.NulTerminated ->
+                         row.CompanionCall.IsNone && row.CompanionArguments.IsEmpty)
+                | _ -> false
+            let frontierOk =
+                row.CallOrder >= 0 && not row.Invalidations.IsEmpty &&
+                row.Invalidations.Length = row.InvalidationOrders.Length &&
+                row.Reads.Length = row.ReadOrders.Length &&
+                (row.InvalidationOrders |> List.forall (fun inv -> inv > row.CallOrder)) &&
+                (row.ReadOrders |> List.forall (fun rd -> rd >= row.CallOrder && (row.InvalidationOrders |> List.forall (fun inv -> rd < inv)))) &&
+                currentClaimWithBody row.ScopeProof "foreign-borrowed-view-scope" (function
+                    | ObligationBody.BorrowedResultViewScope model ->
+                        model.Call = row.Call && model.Declaration = row.Declaration &&
+                        model.Owner = row.Owner && model.View = row.View &&
+                        model.CallOrder = row.CallOrder && model.InvalidationOrders = row.InvalidationOrders &&
+                        model.ReadOrders = row.ReadOrders && model.NullToNoneBoundary
+                    | _ -> false)
+            let requiredParticipants =
+                [ ParticipantRole.BorrowedResultViewCall, row.Call
+                  ParticipantRole.BorrowedResultViewDeclaration, row.Declaration
+                  ParticipantRole.BorrowedResultViewOwner, row.Owner ] @
+                (row.Invalidations |> List.map (fun inv -> ParticipantRole.BorrowedResultViewInvalidation, inv)) @
+                (row.Reads |> List.map (fun rd -> ParticipantRole.BorrowedResultViewRead, rd))
+            [ if not account then
+                  yield defect "Emission.Boundary.BorrowedResultViewUses.Account" row.Call "The borrowed result view use lacks boundary NULL-to-None enforcement, owner alignment, or companion measurement."
+              if not frontierOk then
+                  yield defect "Emission.Boundary.BorrowedResultViewUses.Frontier" row.Call "The borrowed result view read exceeds its owner invalidation frontier or lacks a matching scope proof."
+              if not (hasEstablishedParticipants row.Participants requiredParticipants) then
+                  yield defect "Emission.Boundary.BorrowedResultViewUses.Participants" row.Call "The borrowed result view use lacks established participant evidence." ]
+
+        let countedEntryArrayCheck (key: NodeId) (row: BoundaryCountedEntryArray) =
+            let facts = row.DeclarationFacts
+            let own name = boundaryQuotedRecordFields facts row.Identity |> Option.bind (Map.tryFind name)
+            let elementMatches =
+                own "Element" |> Option.exists (fun elemId ->
+                    match row.Contract.Element with
+                    | BAREWire.Descriptors.CountedElement.Text ->
+                        factCase facts "Text" elemId = Some []
+                    | BAREWire.Descriptors.CountedElement.NullableText ->
+                        factCase facts "NullableText" elemId = Some []
+                    | BAREWire.Descriptors.CountedElement.Handle marker ->
+                        not (System.String.IsNullOrWhiteSpace marker) &&
+                        (factCase facts "Handle" elemId |> Option.bind List.tryExactlyOne |> Option.bind (factText facts) = Some marker)
+                    | BAREWire.Descriptors.CountedElement.NullableHandle marker ->
+                        not (System.String.IsNullOrWhiteSpace marker) &&
+                        (factCase facts "NullableHandle" elemId |> Option.bind List.tryExactlyOne |> Option.bind (factText facts) = Some marker))
+            let contractOk =
+                key = row.Identity && boundaryQuoteBinding facts row.Identity |> Option.isSome &&
+                row.Contract.Parameter = row.Parameter &&
+                row.Contract.Argument >= 0 && row.Contract.CountArgument >= 0 && row.Contract.Argument <> row.Contract.CountArgument &&
+                own "Binding" |> Option.bind (factText facts) = Some row.Contract.Binding &&
+                own "Parameter" |> Option.bind (factNumber facts) = Some(bigint row.Parameter) &&
+                own "Argument" |> Option.bind (factNumber facts) = Some(bigint row.Contract.Argument) &&
+                own "CountArgument" |> Option.bind (factNumber facts) = Some(bigint row.Contract.CountArgument) &&
+                elementMatches
+            let invocationOk =
+                boundary.CallbackInvocations.TryFind row.Invocation |> Option.exists (fun inv ->
+                    inv.Import = row.Import && inv.Parameter = row.Parameter &&
+                    inv.Contract.Binding = row.Contract.Binding)
+            [ if not contractOk || not invocationOk then
+                  yield defect "Emission.Boundary.CountedEntryArrays.Contract" key "The counted entry array descriptor differs from its immutable quotation or callback invocation."
+              if not (closedFactSupport facts Set.empty) ||
+                 not (hasEstablishedParticipants row.Participants [ ParticipantRole.CountedEntryArrayDeclaration, row.Identity; ParticipantRole.CountedEntryArrayInvocation, row.Invocation ]) then
+                  yield defect "Emission.Boundary.CountedEntryArrays.Participants" key "The counted entry array lacks established source support." ]
 
         // Passive replay of resource evidence. A well-formed claim may still
         // be refuted; this reader checks its source correspondence, not safety.
@@ -2321,8 +2893,15 @@ module Integrity =
                             | _ -> false)))
                 | _ -> false
             | None ->
-                not ((call.Result |> Option.toList) @ (call.Arguments |> List.map _.Abi)
-                     |> List.exists (function BoundaryScalar.ResourceHandle _ -> true | _ -> false))
+                not (call.Result |> Option.exists (function BoundaryScalar.ResourceHandle _ -> true | _ -> false)) &&
+                (call.Arguments |> List.forall (fun arg ->
+                    match arg.Abi with
+                    | BoundaryScalar.ResourceHandle(decl, nullable) ->
+                        boundary.ResourceDeclarations.ContainsKey decl ||
+                        (decl = arg.Formal &&
+                         (boundary.Imports.TryFind call.Import
+                          |> Option.exists (fun imp -> isBorrowedCHandleFormal imp decl nullable)))
+                    | _ -> true))
         let resourceAccess key (access: BoundaryResourceAccess) =
             match cleanupAt access.Cleanup, boundary.ResourceDeclarations.TryFind access.Declaration,
                   boundary.Calls.TryFind access.Acquisition, revision.Nodes.TryFind access.Site, revision.Nodes.TryFind access.Source with
@@ -2427,6 +3006,9 @@ module Integrity =
             for KeyValue(key, account) in boundary.CallbackAbsences do
                 if key<>account.Quote || not(absenceAccountCurrent boundary account) then
                     yield defect "Emission.Boundary.CallbackAbsences" key "The absence promise differs from its exact current quoted content, original optional formal or independent hypothesis."
+            for KeyValue(key, account) in boundary.BufferAbsences do
+                if key <> account.Quote || not (bufferAbsenceAccountCurrent boundary account) then
+                    yield defect "Emission.Boundary.BufferAbsences" key "The buffer absence promise differs from its exact current quoted content, target buffer formal, or independent hypothesis."
             for KeyValue(_, call) in boundary.Calls do
                 if not (resourceCall call) then
                     yield defect "Emission.Boundary.Calls.Resource" call.Site "The resource call differs from its exact current conversion, cleanup or original source incidence."
@@ -2441,6 +3023,29 @@ module Integrity =
                     yield defect "Emission.Boundary.WritableBufferDeclarations.Contract" key "A writable buffer ordinal has duplicate declaration contracts."
             for KeyValue(key, writable) in boundary.WritableBufferUses do
                 yield! writableUse key writable
+            for KeyValue(key, roDecl) in boundary.ReadOnlyBufferDeclarations do
+                yield! readOnlyDeclaration key roDecl
+                if boundary.ReadOnlyBufferDeclarations.Values |> Seq.filter (fun row -> row.Declaration = roDecl.Declaration && row.Parameter = roDecl.Parameter) |> Seq.length <> 1 then
+                    yield defect "Emission.Boundary.ReadOnlyBufferDeclarations.Contract" key "A read-only buffer ordinal has duplicate declaration contracts."
+            for KeyValue(key, roUse) in boundary.ReadOnlyBufferUses do
+                yield! readOnlyUse key roUse
+            for KeyValue(key, viewDecl) in boundary.BorrowedResultViewDeclarations do
+                yield! borrowedViewDeclaration key viewDecl
+            for KeyValue(key, viewUse) in boundary.BorrowedResultViewUses do
+                yield! borrowedViewUse key viewUse
+            for KeyValue(key, entryArray) in boundary.CountedEntryArrays do
+                yield! countedEntryArrayCheck key entryArray
+            for KeyValue(_, imported) in boundary.Imports do
+                match imported.Result with
+                | Some(BoundaryScalar.BorrowedBytes decl) ->
+                    let hasDecl =
+                        boundary.BorrowedResultViewDeclarations.TryFind decl
+                        |> Option.exists (fun row -> row.Declaration = imported.Binding && row.Descriptor = imported.Identity)
+                    if not hasDecl then
+                        yield defect "Emission.Boundary.Imports.Result" imported.Identity "A BorrowedBytes return requires a matching BorrowedResultViewDeclaration."
+                | _ -> ()
+                if imported.Parameters |> List.exists (fun (_, scalar) -> match scalar with BoundaryScalar.BorrowedBytes _ -> true | _ -> false) then
+                    yield defect "Emission.Boundary.Imports.Parameters" imported.Identity "BorrowedBytes is permitted only as a foreign return, never as a parameter."
             for KeyValue(_, call) in boundary.Calls do
                 for ordinal,operand in List.indexed call.Arguments do
                     match operand.Abi with
@@ -2448,6 +3053,23 @@ module Integrity =
                         if call.Entry.IsSome ||
                            not(boundary.WritableBufferUses.TryFind(call.Site,ordinal) |> Option.exists(fun row->row.Declaration=declaration)) then
                             yield defect "Emission.Boundary.Calls.WritableBuffer" call.Site "A writable byte operand requires its exact direct-call per-use account."
+                    | BoundaryScalar.ReadOnlyBytes declaration ->
+                        let absentOnly =
+                            operand.BufferAbsence
+                            |> Option.exists (fun choice ->
+                                BoundaryBufferAbsenceChoice.leaves choice
+                                |> List.forall (fun leaf -> leaf.CaseOrdinal = 0 && leaf.Payload.IsNone))
+                        let hasBufferUse =
+                            boundary.ReadOnlyBufferDeclarations.TryFind declaration
+                            |> Option.bind (fun roDecl ->
+                                nonFixedFormalIndex roDecl.DeclarationFacts roDecl.Descriptor roDecl.Parameter
+                                |> Option.filter (fun formalOrd -> formalOrd = ordinal)
+                                |> Option.bind (fun _ -> boundary.ReadOnlyBufferUses.TryFind(call.Site, roDecl.Parameter)))
+                            |> Option.exists (fun row -> row.Declaration = declaration)
+                        if call.Entry.IsSome || (not absentOnly && not hasBufferUse) then
+                            yield defect "Emission.Boundary.Calls.ReadOnlyBuffer" call.Site "A read-only buffer operand requires its exact direct-call zero-copy or path-termination account."
+                    | BoundaryScalar.BorrowedBytes _ ->
+                        yield defect "Emission.Boundary.Calls.BorrowedBytes" call.Site "BorrowedBytes is permitted only as a foreign return, never as a call argument."
                     | _ -> ()
             for KeyValue(key, invocation) in boundary.CallbackInvocations do
                 let part = "Emission.Boundary.CallbackInvocations"
@@ -2466,8 +3088,56 @@ module Integrity =
                 let scalar = function
                     | BAREWire.Descriptors.TypeRef.Integer(sign, bits) when bits > 0 -> Some(BoundaryScalar.Integer(bits, sign = BAREWire.Descriptors.Signedness.Signed))
                     | _ -> None
-                let parameters = contract.Signature.Parameters |> Array.map (fun parameter ->
-                    if parameter.PassBy = BAREWire.Descriptors.PassBy.Value then scalar parameter.Type else None) |> Array.toList
+                let pointerWidthOk width =
+                    width > 0 &&
+                    match revision.Platform.Pointer with
+                    | Ok ptrBits -> ptrBits = width
+                    | Error _ -> false
+                let isCallbackContextDescriptorType (ty: TypeIdentity) =
+                    match ty with
+                    | TypeIdentity.Application(constructor, []) ->
+                        (constructor.Declaration.Module = ["BAREWire"; "Descriptors"] && constructor.Declaration.Name = "CallbackContextDescriptor") ||
+                        (constructor.Declaration.Module = ["BAREWire"] && constructor.Declaration.Name = "Descriptors.CallbackContextDescriptor")
+                    | _ -> false
+                let hasCallbackPointerContract ordinal =
+                    (boundary.CountedEntryArrays.Values |> Seq.exists (fun a -> a.Invocation = invocation.Identity && a.Contract.Argument = ordinal)) ||
+                    (boundary.Imports.TryFind invocation.Import |> Option.exists (fun imported ->
+                        let facts = imported.DeclarationFacts
+                        facts |> Map.exists (fun quoteId quote ->
+                            boundaryQuoteBinding facts quoteId |> Option.isSome &&
+                            match quote.Form, quote.References with
+                            | "quotation", [recordId] when quote.Children = quote.References ->
+                                match facts.TryFind recordId, boundaryQuotedRecordFields facts quoteId with
+                                | Some recFact, Some fields when isCallbackContextDescriptorType recFact.SourceType ->
+                                    (fields.TryFind "Binding" |> Option.bind (factText facts) = Some contract.Binding) &&
+                                    (fields.TryFind "Parameter" |> Option.bind (factNumber facts) = Some(bigint invocation.Parameter)) &&
+                                    (fields.TryFind "Argument" |> Option.bind (factNumber facts) = Some(bigint ordinal)) &&
+                                    (fields.TryFind "ContextParameter" |> Option.bind (factNumber facts) |> Option.exists (fun cp -> cp >= 0I))
+                                | _ -> false
+                            | _ -> false)))
+                let parameterMatches ordinal (parameter: BAREWire.Descriptors.ParameterInfo) (actualScalar: BoundaryScalar option) =
+                    if parameter.PassBy <> BAREWire.Descriptors.PassBy.Value then false
+                    else
+                        match parameter.Type, actualScalar with
+                        | BAREWire.Descriptors.TypeRef.Integer(sign, bits), Some actual when bits > 0 ->
+                            actual = BoundaryScalar.Integer(bits, sign = BAREWire.Descriptors.Signedness.Signed)
+                        | BAREWire.Descriptors.TypeRef.Pointer width, Some actual when pointerWidthOk width ->
+                            match actual with
+                            | BoundaryScalar.ResourceHandle(decl, nullable) ->
+                                boundary.ResourceDeclarations.ContainsKey decl ||
+                                (decl = invocation.Formal &&
+                                 (boundary.Imports.TryFind invocation.Import
+                                  |> Option.exists (fun imp -> isBorrowedCallbackCHandle imp decl ordinal nullable)))
+                            | BoundaryScalar.ReadOnlyBytes decl ->
+                                boundary.CountedEntryArrays.TryFind decl
+                                |> Option.exists (fun a -> a.Invocation = invocation.Identity && a.Contract.Argument = ordinal)
+                            | BoundaryScalar.Integer(bits, false) when bits = width -> hasCallbackPointerContract ordinal
+                            | _ -> false
+                        | _ -> false
+                let parametersOk =
+                    contract.Signature.Parameters.Length = invocation.Signature.Parameters.Length &&
+                    (contract.Signature.Parameters |> Array.mapi (fun ordinal paramDesc ->
+                        parameterMatches ordinal paramDesc (List.tryItem ordinal invocation.Signature.Parameters)) |> Array.forall id)
                 let result = scalar contract.Signature.ReturnType
                 let resultMatches =
                     match contract.Signature.ReturnType with
@@ -2476,9 +3146,9 @@ module Integrity =
                 if contract.Parameter <> invocation.Parameter ||
                    contract.Signature.CallingConvention <> BAREWire.Descriptors.CallConv.CDecl ||
                    invocation.Signature.CallingConvention <> "CDecl" ||
-                   (parameters.IsEmpty && contract.Signature.ReturnType <> BAREWire.Descriptors.TypeRef.Void) || (parameters |> List.exists Option.isNone) || not resultMatches ||
-                   List.choose id parameters <> invocation.Signature.Parameters then
-                    yield defect (part + ".Signature") key "The callback signature differs from its complete nonempty integer-formal CDecl receiving quotation and exact integer or void result."
+                   (invocation.Signature.Parameters.IsEmpty && contract.Signature.ReturnType <> BAREWire.Descriptors.TypeRef.Void) ||
+                   not parametersOk || not resultMatches then
+                    yield defect (part + ".Signature") key "The callback signature differs from its complete nonempty CDecl receiving quotation and exact formal/result contract."
                 if [contract.Binding; contract.Scope; contract.Hypothesis.Identity; contract.Hypothesis.Version; contract.Hypothesis.Source]
                    |> List.exists System.String.IsNullOrWhiteSpace then
                     yield defect (part + ".Provenance") key "The callback invocation has missing receiver, scope or trusted hypothesis provenance."
@@ -2492,11 +3162,51 @@ module Integrity =
                                     | TypeIdentity.Application(constructor,_) when row.Form="record" -> Some(constructor.Declaration.Name.Split('.') |> Array.last)
                                     | _ -> None)
                             | _ -> None))
-                let expectedKind = match invocation.Extent with BoundaryCallbackExtent.DuringCall -> "ScopedCallbackDescriptor" | BoundaryCallbackExtent.ProcessExit _ -> "ProcessExitCallbackDescriptor"
+                let expectedKind =
+                    match invocation.Extent with
+                    | BoundaryCallbackExtent.DuringCall -> "ScopedCallbackDescriptor"
+                    | BoundaryCallbackExtent.ProcessExit _ -> "ProcessExitCallbackDescriptor"
+                    | BoundaryCallbackExtent.Retained _ -> "RetainedCallbackDescriptor"
                 if scopeKind<>Some expectedKind then
                     yield defect (part+".Extent") key "The callback extent differs from its exact source quotation type."
+                let entryParameterName (facts: Map<NodeId, BoundaryDeclarationFact>) (imported: BoundaryImport) (formal: NodeId) =
+                    imported.DeclarationPath |> List.tryPick (fun id ->
+                        facts.TryFind id |> Option.bind (fun declaration ->
+                            if declaration.Form <> "declaration-lambda" || declaration.References <> declaration.Children then None else
+                            declaration.References |> List.tryFindIndex ((=) formal) |> Option.bind (fun ordinal -> List.tryItem ordinal declaration.Text))
+                        |> Option.orElseWith (fun () ->
+                            boundaryBindingValue facts id |> Option.bind (fun (_, lambda) ->
+                                if lambda.Form = "lambda" && lambda.References = lambda.Children && lambda.Text.Length = lambda.References.Length then
+                                    lambda.References |> List.tryFindIndex ((=) formal)
+                                    |> Option.filter (fun ordinal -> ordinal < lambda.References.Length - 1)
+                                    |> Option.bind (fun ordinal -> List.tryItem (ordinal + 1) lambda.Text)
+                                else None)))
                 match invocation.Extent with
                 | BoundaryCallbackExtent.DuringCall -> ()
+                | BoundaryCallbackExtent.Retained(owner, releases) ->
+                    match boundary.Imports.TryFind invocation.Import with
+                    | Some imported when not (Array.isEmpty releases) ->
+                        let facts = imported.DeclarationFacts
+                        let ownerOk =
+                            nonFixedFormalIndex facts imported.Identity owner
+                            |> Option.exists (fun ownerFormalIdx ->
+                                ownerFormalIdx <> invocation.Parameter &&
+                                (imported.Parameters |> List.tryItem ownerFormalIdx |> Option.isSome))
+                        let scopeRecord = boundaryQuotedRecordFields facts invocation.Scope
+                        let bindingMatches =
+                            scopeRecord |> Option.bind (Map.tryFind "Binding") |> Option.bind (factText facts) = Some contract.Binding
+                        let ownerMatches =
+                            scopeRecord |> Option.bind (Map.tryFind "Owner") |> Option.bind (factNumber facts) = Some(bigint owner)
+                        let releasesMatches =
+                            scopeRecord |> Option.bind (Map.tryFind "Releases") |> Option.exists (fun arrId -> retentionReleasesMatch facts arrId releases)
+                        let parameterMatches =
+                            entryParameterName facts imported invocation.Formal
+                            |> Option.exists (fun formalName ->
+                                not (System.String.IsNullOrWhiteSpace formalName) &&
+                                (scopeRecord |> Option.bind (Map.tryFind "Parameter") |> Option.bind (factText facts) = Some formalName))
+                        if not (ownerOk && bindingMatches && ownerMatches && releasesMatches && parameterMatches) then
+                            yield defect (part + ".RetainedExtent") key "The retained callback differs from its exact RetainedCallbackDescriptor owner or retirement quotation."
+                    | _ -> yield defect (part + ".RetainedExtent") key "A retained callback requires a valid foreign owner ordinal and non-empty retirement contract."
                 | BoundaryCallbackExtent.ProcessExit(anchor, status) ->
                     match boundary.Imports.TryFind invocation.Import with
                     | Some imported when imported.Result=Some(BoundaryScalar.Integer(32,true)) &&
@@ -2510,10 +3220,7 @@ module Integrity =
                         let textMatches field expected =
                             scopeRecord |> Option.bind(fun fields -> fields.TryFind field) |> Option.bind facts.TryFind
                             |> Option.exists(fun value -> value.Form="string" && value.Text=[expected] && value.References.IsEmpty)
-                        let parameterName = imported.DeclarationPath |> List.tryPick(fun id ->
-                            facts.TryFind id |> Option.bind(fun declaration ->
-                                if declaration.Form<>"declaration-lambda" || declaration.References<>declaration.Children then None else
-                                declaration.References |> List.tryFindIndex((=)invocation.Formal) |> Option.bind(fun ordinal -> List.tryItem ordinal declaration.Text)))
+                        let parameterName = entryParameterName facts imported invocation.Formal
                         if not(textMatches "Binding" contract.Binding) || not(parameterName |> Option.exists(textMatches "Parameter")) then
                             yield defect (part+".ProcessExitReceiver") key "The process-exit quotation differs from its exact receiving declaration and original formal name."
                         let anchorMatches =
@@ -2664,6 +3371,32 @@ module Integrity =
                 for ordinal, operand in List.indexed call.Arguments do
                     if operand.OptionalEntry.IsSome && (match operand.Abi with BoundaryScalar.Entry _ -> false | _ -> true) then
                         yield defect "Emission.Boundary.Calls.OptionalEntry" call.Site "An optional-entry account requires its original Entry formal."
+                    if operand.BufferAbsence.IsSome && (match operand.Abi with BoundaryScalar.ReadOnlyBytes _ | BoundaryScalar.WritableBytes _ -> false | _ -> true) then
+                        yield defect "Emission.Boundary.Calls.BufferAbsence" call.Site "A buffer-absence account requires its original ReadOnlyBytes or WritableBytes formal."
+                    match operand.Abi with
+                    | BoundaryScalar.ReadOnlyBytes decl | BoundaryScalar.WritableBytes decl ->
+                      for selected in (operand.BufferAbsence |> Option.toList |> List.collect BoundaryBufferAbsenceChoice.leaves) do
+                        let absenceOk =
+                            (selected.CaseOrdinal = 0 && selected.Payload.IsNone || selected.CaseOrdinal = 1 && selected.Payload.IsSome) &&
+                            List.contains operand.Actual selected.Transport && List.contains selected.Construction selected.Transport &&
+                            (boundary.BufferAbsences.TryFind selected.Absence |> Option.exists (fun row ->
+                                row.Import = call.Import && row.Parameter = ordinal && row.Formal = operand.Formal &&
+                                row.BufferDeclaration = decl && bufferAbsenceAccountCurrent boundary row)) &&
+                            (match revision.CurrentClaims.TryFind selected.Obligation with
+                             | Some claim when List.contains claim revision.Obligations && claim.Kind = $"foreign-buffer-absence-conversion-{ordinal}" ->
+                                 match claim.Body with
+                                 | ObligationBody.BufferAbsenceArgumentConversion model ->
+                                     let expectedArms =
+                                         [ { BufferAbsencePlanArm.CaseOrdinal = 0; Choice = BufferAbsencePlanChoice.AbsentNull }
+                                           { BufferAbsencePlanArm.CaseOrdinal = 1; Choice = BufferAbsencePlanChoice.RequiresNonNullBuffer } ]
+                                     model.Call = call.Site && model.Parameter = ordinal && model.Actual = operand.Actual &&
+                                     model.Construction = selected.Construction && model.SourceCase = selected.CaseOrdinal &&
+                                     model.Absence = selected.Absence && model.Arms = expectedArms
+                                 | _ -> false
+                             | _ -> false)
+                        if not absenceOk then
+                            yield defect "Emission.Boundary.Calls.BufferAbsence" call.Site "The optional buffer absence conversion differs from its BufferAbsenceContract or call-site NULL plan."
+                    | _ -> ()
                     match operand.Abi with
                     | BoundaryScalar.Integer _ | BoundaryScalar.Boolean ->
                         if canonical operand.Actual<>Some operand.Adaptation then
@@ -2805,7 +3538,8 @@ module Integrity =
                                       tag.Constructor = optional.Construction && tag.CaseOrdinal = optional.CaseOrdinal &&
                                       tag.Payload = optional.Payload && tag.PayloadOrdinal = (optional.Payload |> Option.map (fun _ -> 0)))) &&
                                   receiver.Import = call.Import && receiver.Formal = operand.Formal && receiver.Parameter = ordinal &&
-                                  receiver.Extent = BoundaryCallbackExtent.DuringCall && operand.Adaptation.IsNone &&
+                                  (match receiver.Extent with BoundaryCallbackExtent.DuringCall | BoundaryCallbackExtent.Retained _ -> true | BoundaryCallbackExtent.ProcessExit _ -> false) &&
+                                  operand.Adaptation.IsNone &&
                                   (match optional.CaseOrdinal, optional.Payload, optional.Formation with
                                    | 0, None, None -> construction.Alternatives.IsEmpty
                                    | 1, Some payload, Some formation ->
@@ -2860,7 +3594,7 @@ module Integrity =
                                               | _ -> false)) &&
                                           claim.Logic="QF_LIA" && claim.Statement="The exact source Some selection has complete finite native-choice plan correspondence; target realization remains an artifact obligation."
                                       | ObligationBody.OptionalEntryAbsenceArgumentConversion model ->
-                                          let arms=[{CaseOrdinal=0;Choice=OptionalEntryAbsencePlanChoice.AbsentEntry};{CaseOrdinal=1;Choice=OptionalEntryAbsencePlanChoice.RequiresClosedEntry}]
+                                          let arms=[{OptionalEntryAbsencePlanArm.CaseOrdinal=0;Choice=OptionalEntryAbsencePlanChoice.AbsentEntry};{OptionalEntryAbsencePlanArm.CaseOrdinal=1;Choice=OptionalEntryAbsencePlanChoice.RequiresClosedEntry}]
                                           model.Call=call.Site && model.Parameter=ordinal && model.Actual=operand.Actual && model.Construction=optional.Construction && model.SourceCase=0 &&
                                           optional.CaseOrdinal=0 && optional.Payload.IsNone && optional.Formation.IsNone && model.Arms=arms &&
                                           (revision.Emission.Callable.AggregateDependencies.TryFind operand.Actual |> Option.exists(fun account->
@@ -3512,7 +4246,9 @@ module Integrity =
              | Some(TypeIdentity.Application(constructor, [])) -> constructor.NativeKind = Some NTUKind.NTUunit
              | _ -> false)
         let boundary = revision.Emission.Boundary
-        let absenceFact id = boundary.CallbackAbsences.Values |> Seq.exists(fun row->absenceAccountCurrent boundary row && row.DeclarationFacts.ContainsKey id)
+        let absenceFact id =
+            (boundary.CallbackAbsences.Values |> Seq.exists(fun row->absenceAccountCurrent boundary row && row.DeclarationFacts.ContainsKey id)) ||
+            (boundary.BufferAbsences.Values |> Seq.exists(fun row->bufferAbsenceAccountCurrent boundary row && row.DeclarationFacts.ContainsKey id))
         let retirementReference absent id =
             revision.CurrentClaims.Values |> Seq.exists(fun claim ->
                 let owned =
@@ -3711,6 +4447,40 @@ module Integrity =
                         row.DeclarationFacts.ContainsKey id || boundaryContext revision row.DeclarationFacts row.Declaration |> Option.exists(fun(scope,_)->scope=id))
                 | part when part.StartsWith("Emission.Boundary.WritableBufferDeclarations",System.StringComparison.Ordinal) ->
                     boundary.WritableBufferDeclarations.Values |> Seq.exists(fun row -> row.DeclarationFacts.ContainsKey id)
+                | "Emission.Boundary.ReadOnlyBufferDeclarations.DeclarationFacts" ->
+                    boundary.ReadOnlyBufferDeclarations.Values |> Seq.exists(fun row ->
+                        row.DeclarationFacts.ContainsKey id || boundaryContext revision row.DeclarationFacts row.Declaration |> Option.exists(fun(scope,_)->scope=id))
+                | part when part.StartsWith("Emission.Boundary.ReadOnlyBufferDeclarations",System.StringComparison.Ordinal) ->
+                    boundary.ReadOnlyBufferDeclarations.Values |> Seq.exists(fun row -> row.DeclarationFacts.ContainsKey id)
+                | part when part.StartsWith("Emission.Boundary.ReadOnlyBufferUses",System.StringComparison.Ordinal) ->
+                    boundary.ReadOnlyBufferUses.Values |> Seq.exists(fun row ->
+                        row.Call = id || row.Declaration = id || row.Buffer = id || row.Residence = id ||
+                        List.contains id row.Retirements || row.RetentionProof = id ||
+                        row.AccessExclusivityProof = Some id ||
+                        (match row.Crossing with
+                         | BoundaryReadOnlyBufferCrossing.ExplicitZeroCopy(_, cNode, _, cov) -> cNode = id || cov = id
+                         | BoundaryReadOnlyBufferCrossing.StaticImageNulBorrowed(_, orig, _, tp) -> orig = id || tp = id
+                         | BoundaryReadOnlyBufferCrossing.CallScopedNulStaged(sb, _, _, tp) -> sb = id || tp = id) ||
+                        (match row.Participants with ParticipantEvidence.Established ps -> ps |> List.exists(fun p -> p.Node = id) | ParticipantEvidence.Pending d -> d.Derived |> List.exists(fun p -> p.Node = id)))
+                | "Emission.Boundary.BorrowedResultViewDeclarations.DeclarationFacts" ->
+                    boundary.BorrowedResultViewDeclarations.Values |> Seq.exists(fun row ->
+                        row.DeclarationFacts.ContainsKey id || boundaryContext revision row.DeclarationFacts row.Declaration |> Option.exists(fun(scope,_)->scope=id))
+                | part when part.StartsWith("Emission.Boundary.BorrowedResultViewDeclarations",System.StringComparison.Ordinal) ->
+                    boundary.BorrowedResultViewDeclarations.Values |> Seq.exists(fun row -> row.DeclarationFacts.ContainsKey id)
+                | part when part.StartsWith("Emission.Boundary.BorrowedResultViewUses",System.StringComparison.Ordinal) ->
+                    boundary.BorrowedResultViewUses.Values |> Seq.exists(fun row ->
+                        row.Call = id || row.Declaration = id || row.Owner = id || row.View = id ||
+                        row.CompanionCall = Some id || List.contains id row.CompanionArguments ||
+                        List.contains id row.Invalidations || List.contains id row.Reads || row.ScopeProof = id ||
+                        (match row.Participants with ParticipantEvidence.Established ps -> ps |> List.exists(fun p -> p.Node = id) | ParticipantEvidence.Pending d -> d.Derived |> List.exists(fun p -> p.Node = id)))
+                | part when part.StartsWith("Emission.Boundary.BufferAbsences",System.StringComparison.Ordinal) ->
+                    absenceFact id || boundary.Imports.ContainsKey id ||
+                    boundary.ReadOnlyBufferDeclarations.ContainsKey id || boundary.WritableBufferDeclarations.ContainsKey id ||
+                    boundaryType id || source.ContextHeaders.ContainsKey id
+                | part when part.StartsWith("Emission.Boundary.CountedEntryArrays",System.StringComparison.Ordinal) ->
+                    boundary.CountedEntryArrays.Values |> Seq.exists(fun row ->
+                        row.Identity = id || row.Import = id || row.Invocation = id || row.DeclarationFacts.ContainsKey id ||
+                        (match row.Participants with ParticipantEvidence.Established ps -> ps |> List.exists(fun p -> p.Node = id) | ParticipantEvidence.Pending d -> d.Derived |> List.exists(fun p -> p.Node = id)))
                 | "Emission.Boundary.ResourceDeclarations.DeclarationFacts" ->
                     boundary.ResourceDeclarations.Values |> Seq.exists (fun row ->
                         row.DeclarationFacts.ContainsKey id ||
@@ -3736,7 +4506,7 @@ module Integrity =
                 | "Emission.Boundary.ResourceEvidence.Accesses" -> boundary.ResourceAccesses.ContainsKey id && body id
                 | "Emission.Boundary.Calls.Resource" ->
                     boundary.Calls.Values |> Seq.exists (fun call -> call.Resource |> Option.exists (fun row -> resourceUseRole row id))
-                | "Emission.Boundary.Imports.Result" | "Emission.Boundary.Calls.Result" -> resourceDeclaration id
+                | "Emission.Boundary.Imports.Result" | "Emission.Boundary.Calls.Result" -> resourceDeclaration id || boundary.BorrowedResultViewDeclarations.ContainsKey id
                 | part when part.StartsWith("Emission.Boundary.CallbackAbsences",System.StringComparison.Ordinal) ->
                     absenceFact id || boundary.Imports.ContainsKey id || boundary.CallbackInvocations.ContainsKey id || boundaryType id || source.ContextHeaders.ContainsKey id
                 | "Obligations.Body.OptionalEntryAbsenceArgumentConversion"
@@ -3751,6 +4521,8 @@ module Integrity =
                 | "Emission.Boundary.CallbackInvocations.Scope" ->
                     boundary.CallbackInvocations.Values |> Seq.exists (fun invocation ->
                         invocation.Scope = id && (boundary.Imports.TryFind invocation.Import |> Option.exists (fun imported -> imported.DeclarationFacts.ContainsKey id)))
+                | "Emission.Boundary.CallbackInvocations.Signature" ->
+                    boundary.CountedEntryArrays.ContainsKey id || resourceDeclaration id || boundaryType id || body id
                 | "Emission.Boundary.ClosedEntries" | "Emission.Boundary.ClosedEntries.Formation"
                 | "Emission.Boundary.ClosedEntries.Operand" -> body id
                 | "Emission.Boundary.ClosedEntries.Declaration" -> binding id || implementation id
@@ -3846,10 +4618,30 @@ module Integrity =
                             (List.contains id [model.Call;model.Actual;model.Construction;model.Payload;model.Formation] && body id) ||
                             (id=model.Invocation && boundary.CallbackInvocations.ContainsKey id) || retirementReference false id
                         | _ -> false)
+                | "Obligations.Body.ZeroCopyBufferExtent" | "CurrentClaims.Body.ZeroCopyBufferExtent"
+                | "Obligations.Body.BufferRetentionDomination" | "CurrentClaims.Body.BufferRetentionDomination"
+                | "Obligations.Body.UncountedPathTermination" | "CurrentClaims.Body.UncountedPathTermination"
+                | "Obligations.Body.BorrowedResultViewScope" | "CurrentClaims.Body.BorrowedResultViewScope"
+                | "Obligations.Body.BufferAbsenceArgumentConversion" | "CurrentClaims.Body.BufferAbsenceArgumentConversion" ->
+                    body id ||
+                    (revision.CurrentClaims.Values |> Seq.exists (fun claim ->
+                        match claim.Body with
+                        | ObligationBody.ZeroCopyBufferExtent m -> List.contains id [m.Call; m.Declaration; m.Buffer; m.Count; m.CountCoverage]
+                        | ObligationBody.BufferRetentionDomination m -> List.contains id [m.Call; m.Declaration; m.Buffer; m.Residence]
+                        | ObligationBody.UncountedPathTermination m ->
+                            List.contains id [m.Call; m.Declaration; m.Source] ||
+                            (match m.Mode with UncountedPathStagingMode.CallScopedStaged(sb, _) -> sb = id | _ -> false)
+                        | ObligationBody.BorrowedResultViewScope m -> List.contains id [m.Call; m.Declaration; m.Owner; m.View]
+                        | ObligationBody.BufferAbsenceArgumentConversion m ->
+                            List.contains id [m.Call; m.Actual; m.Construction; m.Absence] &&
+                            (m.Absence <> id || (boundary.BufferAbsences.TryFind id |> Option.exists (bufferAbsenceAccountCurrent boundary)))
+                        | _ -> false))
                 | "Obligations.Body"
                 | "CurrentClaims.Body" -> body id
                 | "Emission.Boundary.IntrinsicWriteImports.Scope" -> source.ContextHeaders.ContainsKey id
-                | "Emission.Boundary.Imports.Parameters" -> boundaryType id || boundary.CallbackInvocations.ContainsKey id || resourceDeclaration id || boundary.WritableBufferDeclarations.ContainsKey id
+                | "Emission.Boundary.Imports.Parameters" ->
+                    boundaryType id || boundary.CallbackInvocations.ContainsKey id || resourceDeclaration id ||
+                    boundary.WritableBufferDeclarations.ContainsKey id || boundary.ReadOnlyBufferDeclarations.ContainsKey id
                 | "Emission.Boundary.Imports.SourceTypes" -> boundaryType id
                 | "Emission.Boundary.ByScope (values)" | "Emission.Boundary.Calls.Import" -> boundary.Imports.ContainsKey id
                 | "Emission.Spatial.Kernels.Scope" | "Emission.Spatial.Hardware.Scope" -> body id || source.ContextHeaders.ContainsKey id

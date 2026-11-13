@@ -1524,6 +1524,92 @@ type ForeignResultUse = {
     Claims: (ForeignResultProofRole * NodeId) list
 }
 
+/// Model for zero-copy explicit-count read-only buffer extent bounds.
+type ZeroCopyBufferExtentModel = {
+    Call: NodeId
+    Declaration: NodeId
+    Parameter: int
+    CountParameter: int
+    Buffer: NodeId
+    Count: NodeId
+    MinimumCount: bigint
+    MaximumCount: bigint
+    ExtentCapacity: bigint
+    ElementBytes: int
+    CountCoverage: NodeId
+}
+
+/// Retention discipline for a borrowed read-only buffer crossing.
+[<RequireQualifiedAccess>]
+type BufferRetentionMode =
+    | DuringCall
+    | RetainedUntilOwner of ownerParameter: int * releaseOrdinal: int
+
+/// Model proving storage residence dominates all retained foreign accesses until retirement.
+type BufferRetentionDominationModel = {
+    Call: NodeId
+    Declaration: NodeId
+    Buffer: NodeId
+    Residence: NodeId
+    Mode: BufferRetentionMode
+    AcquireOrder: int
+    RetirementOrders: int list
+}
+
+/// Crossing realization mode for a legacy uncounted NUL-terminated foreign path.
+[<RequireQualifiedAccess>]
+type UncountedPathStagingMode =
+    | StaticImageZeroCopy of poolEntry: int
+    | CallScopedStaged of stagingBuffer: NodeId * capacity: int
+
+/// Model proving zero interior 0x00 bytes and trailing 0x00 at byte length.
+type UncountedPathTerminationModel = {
+    Call: NodeId
+    Declaration: NodeId
+    Parameter: int
+    Source: NodeId
+    Mode: UncountedPathStagingMode
+    ByteLength: bigint
+    RequiresNoInteriorNul: bool
+    RequiresTrailingNul: bool
+}
+
+/// Model proving non-owning borrowed result views respect NULL->None at the boundary
+/// and every read occurs before owner invalidation or companion measurement.
+type BorrowedResultViewScopeModel = {
+    Call: NodeId
+    Declaration: NodeId
+    Owner: NodeId
+    View: NodeId
+    CallOrder: int
+    InvalidationOrders: int list
+    ReadOrders: int list
+    NullToNoneBoundary: bool
+}
+
+/// Foreign choice of one Option<'Buffer> arm strictly at the call boundary.
+[<RequireQualifiedAccess>]
+type BufferAbsencePlanChoice =
+    | AbsentNull
+    | RequiresNonNullBuffer
+
+/// One arm of an immutable Option<'Buffer> absence conversion plan.
+type BufferAbsencePlanArm = {
+    CaseOrdinal: int
+    Choice: BufferAbsencePlanChoice
+}
+
+/// Model converting interior Option<'Buffer> (`None -> 0` strictly at call boundary).
+type BufferAbsenceArgumentConversionModel = {
+    Call: NodeId
+    Parameter: int
+    Actual: NodeId
+    Construction: NodeId
+    SourceCase: int
+    Absence: NodeId
+    Arms: BufferAbsencePlanArm list
+}
+
 [<RequireQualifiedAccess>]
 type ObligationBody =
     /// Finite program initialization phases supplied by Baker. This arithmetic
@@ -1619,6 +1705,12 @@ type ObligationBody =
     /// Source-plan correspondence only; the target artifact must realize it.
     | OptionalEntryArgumentConversion of OptionalEntryArgumentConversionModel
     | OptionalEntryAbsenceArgumentConversion of OptionalEntryAbsenceArgumentConversionModel
+    /// Zero-copy read-only buffer, uncounted path, borrowed result view, and buffer absence models.
+    | ZeroCopyBufferExtent of ZeroCopyBufferExtentModel
+    | BufferRetentionDomination of BufferRetentionDominationModel
+    | UncountedPathTermination of UncountedPathTerminationModel
+    | BorrowedResultViewScope of BorrowedResultViewScopeModel
+    | BufferAbsenceArgumentConversion of BufferAbsenceArgumentConversionModel
 
 [<RequireQualifiedAccess>]
 module ObligationBody =

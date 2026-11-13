@@ -35,7 +35,11 @@ module Empty =
         { ResourceEvidence = None; Imports = Map.empty; Loading = None; Entries = Map.empty; ByScope = Map.empty; Calls = Map.empty; ByteViews = Map.empty
           StringExtents = Map.empty; IntrinsicWriteImports = Map.empty; IntrinsicWrites = Map.empty
           IntrinsicWriteProofs = Map.empty; DeclarationLeaves = Set.empty; DeclarationOnly = Set.empty
-          Links = Set.empty; WritableBufferDeclarations = Map.empty; WritableBufferUses = Map.empty; ResourceDeclarations = Map.empty; ResourceAccesses = Map.empty
+          Links = Set.empty; WritableBufferDeclarations = Map.empty; WritableBufferUses = Map.empty
+          ReadOnlyBufferDeclarations = Map.empty; ReadOnlyBufferUses = Map.empty
+          BorrowedResultViewDeclarations = Map.empty; BorrowedResultViewUses = Map.empty
+          BufferAbsences = Map.empty; CountedEntryArrays = Map.empty
+          ResourceDeclarations = Map.empty; ResourceAccesses = Map.empty
           ResultHypotheses = []; CallbackInvocations = Map.empty; CallbackAbsences = Map.empty; ClosedEntries = Map.empty }
 
     let numeric : NumericWitnessProjection =

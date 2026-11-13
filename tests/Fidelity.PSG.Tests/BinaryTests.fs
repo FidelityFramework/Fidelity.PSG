@@ -95,7 +95,7 @@ let ``optional entry binary retains exact absent and present source selection`` 
         else BoundaryOptionalEntryChoice.Direct selected
     let operand : BoundaryOperand =
         {Actual = NodeId 63; Formal = NodeId 42; Abi = BoundaryScalar.Entry(NodeId 40)
-         Adaptation = None; OptionalEntry = Some choice}
+         Adaptation = None; OptionalEntry = Some choice; BufferAbsence = None}
     let bytes = indexedEncoded BinaryGenerated.write_Fidelity_PSG_BoundaryOperand operand
     let actual, state = BinaryGenerated.read_Fidelity_PSG_BoundaryOperand (indexedReadState limits bytes) |> take
     Assert.Equal(operand, actual)
@@ -222,7 +222,7 @@ let ``snapshot header has independent version schema and fingerprint bytes`` () 
     // Pin the approved schema/shape pair independently of the generated values.
     // A changed published shape must earn a deliberate schema migration; merely
     // regenerating the codecs cannot update this oracle.
-    let prefix = Convert.FromHexString("4650534749445832020000003400000058CC0513FCF3033AA9B29DF6713DB8A43C8369847085C71A7631D7616D6A8448")
+    let prefix = Convert.FromHexString("46505347494458320200000035000000FDEF677CCBF623DEBFA1DDD6E52490A20E6189D7FF400445FDCC9EB12C7F0151")
     Assert.Equal<byte>(prefix, bytes[..47])
     Assert.Equal(Revision.Schema, System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(12, 4)))
     Assert.Equal<byte>(Convert.FromHexString(BinaryGenerated.Fingerprint), bytes[16..47])
@@ -893,3 +893,130 @@ let ``binary codec roundtrips separated witness region digests and proof support
     | Result.Error(BinaryError.InvalidRevision failures) ->
         Assert.Contains(failures, fun v -> v.Part = "Codata.WitnessSegmentation.Regions.ProofSupportCoverage" && v.Reason.Contains("[WSEG-005]"))
     | other -> failwithf "Expected empty-support unclassified binary encode refusal, got: %A" other
+
+[<Fact>]
+let ``zero-copy read-only buffer borrowed view and buffer absence contracts survive binary roundtrip`` () =
+    let roBytes = indexedEncoded BinaryGenerated.write_Fidelity_PSG_BoundaryScalar (BoundaryScalar.ReadOnlyBytes(NodeId 210))
+    Assert.Equal(BoundaryScalar.ReadOnlyBytes(NodeId 210), BinaryGenerated.read_Fidelity_PSG_BoundaryScalar (indexedReadState limits roBytes) |> take |> fst)
+    let borrowedBytes = indexedEncoded BinaryGenerated.write_Fidelity_PSG_BoundaryScalar (BoundaryScalar.BorrowedBytes(NodeId 230))
+    Assert.Equal(BoundaryScalar.BorrowedBytes(NodeId 230), BinaryGenerated.read_Fidelity_PSG_BoundaryScalar (indexedReadState limits borrowedBytes) |> take |> fst)
+    let roDecl : BoundaryReadOnlyBufferDeclaration =
+        { Identity = NodeId 210; Declaration = NodeId 211; Body = NodeId 212
+          Formals = [NodeId 213; NodeId 214]; Descriptor = NodeId 215
+          Parameter = 0; CountParameter = Some 1
+          BufferFormal = NodeId 213; CountFormal = Some(NodeId 214)
+          Contract =
+            { Binding = "Libc.write"; Parameter = 0
+              Extent = BAREWire.Descriptors.ReadOnlyBufferExtent.ExplicitCount 1
+              Content = BAREWire.Descriptors.BorrowedContent.RawBytes
+              Retention = BAREWire.Descriptors.BufferRetention.DuringCall
+              Hypothesis = { Identity = "ro-hyp"; Version = "1"; Source = "fixture" } }
+          DeclarationFacts = Map.empty
+          Participants = ParticipantEvidence.Established [{ Role = ParticipantRole.ReadOnlyBufferDeclaration; Node = NodeId 210; Ordinal = 0; Group = NodeId 210 }] }
+    let roUse : BoundaryReadOnlyBufferUse =
+        { Call = NodeId 220; Declaration = NodeId 210; Parameter = 0; Buffer = NodeId 221
+          Residence = NodeId 222; Retirements = []; Copies = 0
+          Crossing = BoundaryReadOnlyBufferCrossing.ExplicitZeroCopy(1, NodeId 223, 64I, NodeId 224)
+          RetentionProof = NodeId 225; AccessExclusivityProof = None
+          Participants = ParticipantEvidence.Established [{ Role = ParticipantRole.ReadOnlyBufferCall; Node = NodeId 220; Ordinal = 0; Group = NodeId 220 }] }
+    let viewDecl : BoundaryBorrowedResultViewDeclaration =
+        { Identity = NodeId 230; Declaration = NodeId 231; Body = NodeId 232
+          Formals = [NodeId 233]; Descriptor = NodeId 234; OwnerParameter = 0; OwnerFormal = NodeId 233
+          Contract =
+            { Binding = "SQLite.errmsg"; Content = BAREWire.Descriptors.BorrowedContent.Utf8Text
+              Extent = BAREWire.Descriptors.BorrowedExtent.NulTerminated; Owner = 0
+              InvalidatedBy = [| BAREWire.Descriptors.BorrowInvalidation.AnyOwnerCall |]
+              Hypothesis = { Identity = "view-hyp"; Version = "1"; Source = "fixture" } }
+          DeclarationFacts = Map.empty
+          Participants = ParticipantEvidence.Established [{ Role = ParticipantRole.BorrowedResultViewDeclaration; Node = NodeId 230; Ordinal = 0; Group = NodeId 230 }] }
+    let viewUse : BoundaryBorrowedResultViewUse =
+        { Call = NodeId 240; Declaration = NodeId 230; Owner = NodeId 241; View = NodeId 242
+          CompanionCall = None; CompanionArguments = []; CallOrder = 1
+          Invalidations = [NodeId 243]; InvalidationOrders = [5]
+          Reads = [NodeId 244]; ReadOrders = [2]
+          NullToNoneBoundary = true; ScopeProof = NodeId 245
+          Participants = ParticipantEvidence.Established [{ Role = ParticipantRole.BorrowedResultViewCall; Node = NodeId 240; Ordinal = 0; Group = NodeId 240 }] }
+    let absence : BoundaryBufferAbsence =
+        { Quote = NodeId 250; DescriptorBinding = NodeId 251; Record = NodeId 252
+          Import = NodeId 215; Parameter = 0; Formal = NodeId 213; BufferDeclaration = NodeId 210
+          Contract = { Binding = "SQLite.open_v2"; Parameter = 0; Hypothesis = { Identity = "abs-hyp"; Version = "1"; Source = "fixture" } }
+          SourcePath = [NodeId 250; NodeId 252]
+          Inputs = [BufferAbsenceInputRole.Binding, [NodeId 253]]
+          DeclarationFacts = Map.empty }
+    let absenceSel : BoundaryBufferAbsenceSelection =
+        { Construction = NodeId 254; CaseOrdinal = 0; Payload = None; Absence = NodeId 250
+          Transport = [NodeId 254; NodeId 221]; Obligation = NodeId 255 }
+    let absenceChoice = BoundaryBufferAbsenceChoice.Direct absenceSel
+    let countedEntry : BoundaryCountedEntryArray =
+        { Identity = NodeId 260; Import = NodeId 215; Parameter = 0; Invocation = NodeId 261
+          Contract =
+            { Binding = "SQLite.create_function_v2"; Parameter = 0; Argument = 1; CountArgument = 0
+              Element = BAREWire.Descriptors.CountedElement.Handle "sqlite3_value" }
+          DeclarationFacts = Map.empty
+          Participants = ParticipantEvidence.Established [{ Role = ParticipantRole.CountedEntryArrayDeclaration; Node = NodeId 260; Ordinal = 0; Group = NodeId 260 }] }
+    let b1 = indexedEncoded BinaryGenerated.write_Fidelity_PSG_BoundaryReadOnlyBufferDeclaration roDecl
+    let a1, s1 = indexedReadState limits b1 |> BinaryGenerated.read_Fidelity_PSG_BoundaryReadOnlyBufferDeclaration |> take
+    Assert.Equal(roDecl, a1); Assert.Equal(0, s1.Depth)
+    let b2 = indexedEncoded BinaryGenerated.write_Fidelity_PSG_BoundaryReadOnlyBufferUse roUse
+    let a2, s2 = indexedReadState limits b2 |> BinaryGenerated.read_Fidelity_PSG_BoundaryReadOnlyBufferUse |> take
+    Assert.Equal(roUse, a2); Assert.Equal(0, s2.Depth)
+    let b3 = indexedEncoded BinaryGenerated.write_Fidelity_PSG_BoundaryBorrowedResultViewDeclaration viewDecl
+    let a3, s3 = indexedReadState limits b3 |> BinaryGenerated.read_Fidelity_PSG_BoundaryBorrowedResultViewDeclaration |> take
+    Assert.Equal(viewDecl, a3); Assert.Equal(0, s3.Depth)
+    let b4 = indexedEncoded BinaryGenerated.write_Fidelity_PSG_BoundaryBorrowedResultViewUse viewUse
+    let a4, s4 = indexedReadState limits b4 |> BinaryGenerated.read_Fidelity_PSG_BoundaryBorrowedResultViewUse |> take
+    Assert.Equal(viewUse, a4); Assert.Equal(0, s4.Depth)
+    let b5 = indexedEncoded BinaryGenerated.write_Fidelity_PSG_BoundaryBufferAbsence absence
+    let a5, s5 = indexedReadState limits b5 |> BinaryGenerated.read_Fidelity_PSG_BoundaryBufferAbsence |> take
+    Assert.Equal(absence, a5); Assert.Equal(0, s5.Depth)
+    let b6 = indexedEncoded BinaryGenerated.write_Fidelity_PSG_BoundaryBufferAbsenceSelection absenceSel
+    let a6, s6 = indexedReadState limits b6 |> BinaryGenerated.read_Fidelity_PSG_BoundaryBufferAbsenceSelection |> take
+    Assert.Equal(absenceSel, a6); Assert.Equal(0, s6.Depth)
+    let b7 = indexedEncoded BinaryGenerated.write_Fidelity_PSG_BoundaryBufferAbsenceChoice absenceChoice
+    let a7, s7 = indexedReadState limits b7 |> BinaryGenerated.read_Fidelity_PSG_BoundaryBufferAbsenceChoice |> take
+    Assert.Equal(absenceChoice, a7); Assert.Equal(0, s7.Depth)
+    let b8 = indexedEncoded BinaryGenerated.write_Fidelity_PSG_BoundaryCountedEntryArray countedEntry
+    let a8, s8 = indexedReadState limits b8 |> BinaryGenerated.read_Fidelity_PSG_BoundaryCountedEntryArray |> take
+    Assert.Equal(countedEntry, a8); Assert.Equal(0, s8.Depth)
+    let ext = BoundaryCallbackExtent.Retained(0, [| BAREWire.Descriptors.RetentionRelease.Redefinition [| 1; 2 |] |])
+    let b9 = indexedEncoded BinaryGenerated.write_Fidelity_PSG_BoundaryCallbackExtent ext
+    let a9, s9 = indexedReadState limits b9 |> BinaryGenerated.read_Fidelity_PSG_BoundaryCallbackExtent |> take
+    Assert.Equal(ext, a9); Assert.Equal(0, s9.Depth)
+    let retainedCb : BoundaryCallbackInvocation =
+        { Identity = NodeId 270; Import = NodeId 215; Parameter = 0; Formal = NodeId 213; Scope = NodeId 271
+          Contract =
+            { Binding = "M.reg"; Parameter = 0
+              Signature =
+                { Parameters = [| { Name = "x"; Type = BAREWire.Descriptors.TypeRef.Integer(BAREWire.Descriptors.Signedness.Signed, 32); PassBy = BAREWire.Descriptors.PassBy.Value } |]
+                  ReturnType = BAREWire.Descriptors.TypeRef.Void
+                  CallingConvention = BAREWire.Descriptors.CallConv.CDecl }
+              Hypothesis = { Identity = "cb"; Version = "1"; Source = "test" }; Scope = "retained" }
+          Signature = { Parameters = [BoundaryScalar.Integer(32, true)]; Result = None; CallingConvention = "CDecl" }
+          Extent = BoundaryCallbackExtent.Retained(1, [| BAREWire.Descriptors.RetentionRelease.OwnerRelease { Binding = "M.close"; Parameter = 0 } |])
+          Participants = Set.ofList [NodeId 270; NodeId 271; NodeId 215; NodeId 213] }
+    let emptyRev = Revision.empty "schema53-full"
+    let call53 : BoundaryCall =
+        { Site = NodeId 220; Import = NodeId 215; Callee = NodeId 211; Entry = None; Resource = None
+          Arguments =
+            [ { Actual = NodeId 221; Formal = NodeId 213; Abi = BoundaryScalar.ReadOnlyBytes(NodeId 210)
+                Adaptation = None; OptionalEntry = None; BufferAbsence = Some absenceChoice } ]
+          ErasedUnitArguments = []; Result = Some(BoundaryScalar.BorrowedBytes(NodeId 230)); ResultAdaptation = None
+          Participants = Set.ofList [NodeId 220; NodeId 221]; SourceTypes = Map.empty }
+    let fullRev =
+        { emptyRev with
+            Emission =
+                { emptyRev.Emission with
+                    Boundary =
+                        { emptyRev.Emission.Boundary with
+                            Calls = Map.ofList [NodeId 220, call53]
+                            CallbackInvocations = Map.ofList [NodeId 270, retainedCb]
+                            ReadOnlyBufferDeclarations = Map.ofList [NodeId 210, roDecl]
+                            ReadOnlyBufferUses = Map.ofList [(NodeId 220, 0), roUse]
+                            BorrowedResultViewDeclarations = Map.ofList [NodeId 230, viewDecl]
+                            BorrowedResultViewUses = Map.ofList [NodeId 240, viewUse]
+                            BufferAbsences = Map.ofList [NodeId 250, absence]
+                            CountedEntryArrays = Map.ofList [NodeId 260, countedEntry] } } }
+    let revBytes = indexedEncoded BinaryGenerated.writeRevision fullRev
+    let decodedRev, revState = indexedReadState limits revBytes |> BinaryGenerated.readRevision |> take
+    Assert.Equal(fullRev, decodedRev)
+    Assert.Equal(0, revState.Depth)

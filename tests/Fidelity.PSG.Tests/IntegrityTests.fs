@@ -1985,7 +1985,7 @@ let private boundaryCalleeFacts =
          DeclarationFacts = Map.ofList [NodeId 72, declared]}
     let call : BoundaryCall =
         {Site = NodeId 1; Import = NodeId 72; Callee = NodeId 2; Entry = None; Resource = None
-         Arguments = [3;4] |> List.map(fun id -> {Actual = NodeId id; Formal = NodeId id; Abi = BoundaryScalar.Integer(32, true); Adaptation = None; OptionalEntry = None})
+         Arguments = [3;4] |> List.map(fun id -> {Actual = NodeId id; Formal = NodeId id; Abi = BoundaryScalar.Integer(32, true); Adaptation = None; OptionalEntry = None; BufferAbsence = None})
          ErasedUnitArguments = []; Result = Some(BoundaryScalar.Integer(32, true)); ResultAdaptation = None; Participants = Set.singleton(NodeId 8000); SourceTypes = imported.SourceTypes}
     let callable =
         {numericOperationFacts.Emission.Callable with
@@ -3081,7 +3081,7 @@ let private conditionalOptionalCallback () =
     let claimFalse = pendingClaim "optional-conditional-none" ["Selected-target optional-entry conversion and the foreign nullable-acceptance premise remain Pending."]
     let call : BoundaryCall =
         {Site = NodeId 1; Import = NodeId 210; Callee = NodeId 201; Entry = None; Resource = None
-         Arguments = [{Actual = NodeId 3; Formal = NodeId 211; Abi = BoundaryScalar.Entry(NodeId 220); Adaptation = None; OptionalEntry = Some choice}]
+         Arguments = [{Actual = NodeId 3; Formal = NodeId 211; Abi = BoundaryScalar.Entry(NodeId 220); Adaptation = None; OptionalEntry = Some choice; BufferAbsence = None}]
          ErasedUnitArguments = []; Result = None; ResultAdaptation = None
          Participants = Set.unionMany [supportTrue; supportFalse; Set.ofList [NodeId 99; NodeId 404; NodeId 405]]
          SourceTypes = Map.ofList [NodeId 3, optionType]}
@@ -3548,8 +3548,8 @@ let private writableBufferControl relational =
             SourceTypes = Map.ofList [NodeId 1004,arrayType;NodeId 1005,countType;NodeId 1,(if relational then resultType else unitType)]}
     let call =
         {basis.Calls[NodeId 1] with
-            Arguments = [{Actual = NodeId 3; Formal = NodeId 1004; Abi = BoundaryScalar.WritableBytes(NodeId 1100); Adaptation = None; OptionalEntry = None}
-                         {Actual = NodeId 4; Formal = NodeId 1005; Abi = BoundaryScalar.Integer(64,false); Adaptation = None; OptionalEntry = None}]
+            Arguments = [{Actual = NodeId 3; Formal = NodeId 1004; Abi = BoundaryScalar.WritableBytes(NodeId 1100); Adaptation = None; OptionalEntry = None; BufferAbsence = None}
+                         {Actual = NodeId 4; Formal = NodeId 1005; Abi = BoundaryScalar.Integer(64,false); Adaptation = None; OptionalEntry = None; BufferAbsence = None}]
             Result = imported.Result; SourceTypes = imported.SourceTypes; Participants = declaration.Participants}
     let allocation =
         match held.Emission.Memory.Operations[NodeId 11] with
@@ -3924,7 +3924,7 @@ let private optionalBoundaryControl absent =
                 Statement="The exact source Some selection has complete finite native-choice plan correspondence; target realization remains an artifact obligation."}
     let call : BoundaryCall =
         {Site=NodeId 200;Import=NodeId 210;Callee=NodeId 201;Entry=None;Resource=None
-         Arguments=[{Actual=NodeId 1;Formal=NodeId 211;Abi=BoundaryScalar.Entry(NodeId 220);Adaptation=None;OptionalEntry=Some(BoundaryOptionalEntryChoice.Direct selected)}]
+         Arguments=[{Actual=NodeId 1;Formal=NodeId 211;Abi=BoundaryScalar.Entry(NodeId 220);Adaptation=None;OptionalEntry=Some(BoundaryOptionalEntryChoice.Direct selected);BufferAbsence=None}]
          ErasedUnitArguments=[];Result=None;ResultAdaptation=None;Participants=support.Add(NodeId 301);SourceTypes=Map.ofList [NodeId 1,optionType]}
     let boundary =
         {held.Emission.Boundary with
@@ -4159,3 +4159,1984 @@ let ``owned nullable resources reject unsigned wide or pointer release results``
     Assert.Empty(Integrity.check (resourceReleaseSignatureControl "signed32"))
     let violation = only "Emission.Boundary.ResourceDeclarations.Signature" (Integrity.check (resourceReleaseSignatureControl returnKind))
     Assert.Equal(Some(NodeId 7000),violation.Node)
+
+[<Fact>]
+let ``writable buffer profile admits non-initial positional splits across four parameters`` () =
+    let held = writableBufferControl false
+    let boundary = held.Emission.Boundary
+    let integerType name kind =
+        TypeIdentity.Application({Declaration = {Module = []; Name = name}; Parameters = []; NativeKind = Some kind}, [])
+    let byteType = integerType "uint8" (NTUKind.NTUuint(NTUWidth.Fixed 8))
+    let intType = integerType "int32" (NTUKind.NTUint(NTUWidth.Fixed 32))
+    let countType = integerType "uint64" (NTUKind.NTUuint(NTUWidth.Fixed 64))
+    let arrayType = TypeIdentity.Application({Declaration = {Module = []; Name = "array"}; Parameters = [TypeParamKind.Type]; NativeKind = None}, [byteType])
+    let decl = boundary.WritableBufferDeclarations[NodeId 1100]
+    let header = held.SourceReadings.ContextHeaders[NodeId 50]
+    let record fields ids parent = controlFact "record" fields [] ids (Some parent)
+    let case name refs parent = controlFact "case" [name] [] refs (Some parent)
+    let number value parent = controlFact "integer" [] [value] [] (Some parent)
+    let facts =
+        decl.DeclarationFacts
+        |> Map.add (NodeId 1003) (controlFact "lambda" ["fill"; "fd"; "buffer"; "count"; "flags"] [4I; 0I; 0I] [1001; 1004; 1005; 1002; 1006] (Some 2))
+        |> Map.add (NodeId 1001) {controlFact "formal" ["fd"] [] [] (Some 1003) with SourceType = intType}
+        |> Map.add (NodeId 1002) {controlFact "formal" ["flags"] [] [] (Some 1003) with SourceType = intType}
+        |> Map.add (NodeId 1010) (controlFact "array" [] [] [1030; 1011; 1012; 1031] (Some 72))
+        |> Map.add (NodeId 1030) (record ["Type"; "PassBy"] [1032; 1033] 1010)
+        |> Map.add (NodeId 1031) (record ["Type"; "PassBy"] [1034; 1035] 1010)
+        |> Map.add (NodeId 1032) (case "Integer" [1036] 1030)
+        |> Map.add (NodeId 1036) (controlFact "tuple" [] [] [1037; 1038] (Some 1032))
+        |> Map.add (NodeId 1037) (case "Signed" [] 1036)
+        |> Map.add (NodeId 1038) (number 32I 1036)
+        |> Map.add (NodeId 1033) (case "Value" [] 1030)
+        |> Map.add (NodeId 1034) (case "Integer" [1039] 1031)
+        |> Map.add (NodeId 1039) (controlFact "tuple" [] [] [1040; 1041] (Some 1034))
+        |> Map.add (NodeId 1040) (case "Signed" [] 1039)
+        |> Map.add (NodeId 1041) (number 32I 1039)
+        |> Map.add (NodeId 1035) (case "Value" [] 1031)
+        |> Map.add (NodeId 1104) (number 1I 1102)
+        |> Map.add (NodeId 1105) (number 2I 1102)
+    let updatedDecl =
+        { decl with
+            Formals = [NodeId 1001; NodeId 1004; NodeId 1005; NodeId 1002]
+            Parameter = 1; CountParameter = 2
+            Contract = { decl.Contract with Binding = header.Name + ".fill"; Parameter = 1; CountParameter = 2 }
+            DeclarationFacts = facts
+            Participants = facts.Keys |> Set.ofSeq }
+    let use' = { boundary.WritableBufferUses[NodeId 1, 0] with Parameter = 1; CountParameter = 2 }
+    let oldImport = boundary.Imports[NodeId 72]
+    let newParams =
+        [ NodeId 1001, BoundaryScalar.Integer(32, true)
+          NodeId 1004, BoundaryScalar.WritableBytes(NodeId 1100)
+          NodeId 1005, BoundaryScalar.Integer(64, false)
+          NodeId 1002, BoundaryScalar.Integer(32, true) ]
+    let updatedImport =
+        { oldImport with
+            Parameters = newParams
+            DeclarationFacts = facts
+            Participants = updatedDecl.Participants
+            SourceTypes = Map.ofList [NodeId 1001, intType; NodeId 1004, arrayType; NodeId 1005, countType; NodeId 1002, intType; NodeId 1, unitType] }
+    let newArgs =
+        [ { Actual = NodeId 31; Formal = NodeId 1001; Abi = BoundaryScalar.Integer(32, true); Adaptation = None; OptionalEntry = None; BufferAbsence = None }
+          boundary.Calls[NodeId 1].Arguments.[0]
+          boundary.Calls[NodeId 1].Arguments.[1]
+          { Actual = NodeId 32; Formal = NodeId 1002; Abi = BoundaryScalar.Integer(32, true); Adaptation = None; OptionalEntry = None; BufferAbsence = None } ]
+    let updatedCall = { boundary.Calls[NodeId 1] with Arguments = newArgs; Participants = updatedDecl.Participants; SourceTypes = updatedImport.SourceTypes }
+    let n31 = { node 31 (SemanticKind.Literal(NativeLiteral.Int(1L, NTUKind.NTUint(NTUWidth.Fixed 32)))) [] with Type = intType }
+    let n32 = { node 32 (SemanticKind.Literal(NativeLiteral.Int(0L, NTUKind.NTUint(NTUWidth.Fixed 32)))) [] with Type = intType }
+    let callNode = { held.Nodes[NodeId 1] with Kind = SemanticKind.Application(NodeId 2, [NodeId 31; NodeId 3; NodeId 4; NodeId 32]); Children = [NodeId 2; NodeId 31; NodeId 3; NodeId 4; NodeId 32] }
+    let revision =
+        { held with
+            Nodes = held.Nodes.Add(NodeId 1, callNode).Add(NodeId 31, n31).Add(NodeId 32, n32)
+            Emission =
+                { held.Emission with
+                    Boundary =
+                        { boundary with
+                            Imports = Map.ofList [NodeId 72, updatedImport]
+                            Calls = Map.ofList [NodeId 1, updatedCall]
+                            WritableBufferDeclarations = Map.ofList [NodeId 1100, updatedDecl]
+                            WritableBufferUses = Map.ofList [(NodeId 1, 1), use'] } } }
+        |> covered
+    let revision =
+        { revision with
+            SourceReadings =
+                { revision.SourceReadings with
+                    ContextHeaders = revision.SourceReadings.ContextHeaders.Add(NodeId 50, header)
+                    Contexts = revision.SourceReadings.Contexts.Add(NodeId 50, [[]])
+                    Ports = revision.SourceReadings.Ports.Add((NodeId 50, OccurrencePort.ModuleDeclaration), header.Ports[OccurrencePort.ModuleDeclaration]) } }
+    Assert.Empty(Integrity.check revision)
+
+[<Theory>]
+[<InlineData("valid-explicit-during", "")>]
+[<InlineData("valid-explicit-retained", "")>]
+[<InlineData("valid-static-nul", "")>]
+[<InlineData("valid-staged-nul", "")>]
+[<InlineData("nonzero-copy", "Emission.Boundary.ReadOnlyBufferUses.Account")>]
+[<InlineData("count-over-extent", "Emission.Boundary.ReadOnlyBufferUses.Crossing")>]
+[<InlineData("retention-after-retire", "Emission.Boundary.ReadOnlyBufferUses.Retention")>]
+[<InlineData("interior-nul-static", "Emission.Boundary.ReadOnlyBufferUses.Crossing")>]
+[<InlineData("staged-too-small", "Emission.Boundary.ReadOnlyBufferUses.Crossing")>]
+[<InlineData("missing-use", "Emission.Boundary.Calls.ReadOnlyBuffer")>]
+let ``read-only zero-copy and uncounted path crossings enforce extent termination and retention`` mode expectedPart =
+    let held = snapshotFacts
+    let basis = boundaryCalleeFacts.Emission.Boundary
+    let integerType name kind =
+        TypeIdentity.Application({Declaration = {Module = []; Name = name}; Parameters = []; NativeKind = Some kind}, [])
+    let byteType = integerType "uint8" (NTUKind.NTUuint(NTUWidth.Fixed 8))
+    let countType = integerType "uint64" (NTUKind.NTUuint(NTUWidth.Fixed 64))
+    let arrayType = TypeIdentity.Application({Declaration = {Module = []; Name = "array"}; Parameters = [TypeParamKind.Type]; NativeKind = None}, [byteType])
+    let header = boundaryCalleeFacts.SourceReadings.ContextHeaders[NodeId 50]
+    let isUncounted = mode = "valid-static-nul" || mode = "valid-staged-nul" || mode = "interior-nul-static" || mode = "staged-too-small"
+    let isRetained = mode = "valid-explicit-retained" || mode = "retention-after-retire"
+    let bindingName = header.Name + ".readFn"
+    let record fields ids parent = controlFact "record" fields [] ids (Some parent)
+    let binding name child = controlFact "binding" [name] [0I;0I] [child] (Some 50)
+    let text value parent = controlFact "string" [value] [] [] (Some parent)
+    let number value parent = controlFact "integer" [] [value] [] (Some parent)
+    let case name refs parent = controlFact "case" [name] [] refs (Some parent)
+    let formals = if isUncounted then [NodeId 1004] else [NodeId 1004; NodeId 1005]
+    let extentFact =
+        if isUncounted then case "UncountedNulTerminated" [] 1102
+        else case "ExplicitCount" [1110] 1102
+    let retentionFact =
+        if isRetained then case "RetainedUntil" [1112] 1102
+        else case "DuringCall" [] 1102
+    let extraFacts =
+        [ if not isUncounted then
+            yield 1110, number 1I 1105
+          if isRetained then
+            yield 1112, controlFact "tuple" [] [] [1113; 1114] (Some 1111)
+            yield 1113, number 1I 1112
+            yield 1114, controlFact "array" [] [] [1116] (Some 1112)
+            yield 1116, case "OwnerRelease" [1117] 1114
+            yield 1117, record ["Binding"; "Parameter"] [1118; 1119] 1116
+            yield 1118, text (header.Name + ".close") 1117
+            yield 1119, number 0I 1117 ]
+    let lambdaText = if isUncounted then ["readFn"; "buf"] else ["readFn"; "buf"; "count"]
+    let paramEntries = if isUncounted then [1011] else [1011; 1012]
+    let facts =
+        ([ 2, binding "readFn" 1003
+           1003, controlFact "lambda" lambdaText [bigint formals.Length; 0I; 0I] ((formals |> List.map NodeId.value) @ [1006]) (Some 2)
+           1004, {controlFact "formal" ["buf"] [] [] (Some 1003) with SourceType = arrayType}
+           1006, controlFact "unit" [] [] [] (Some 1003)
+           1073, binding "readFnDescriptor" 1072
+           1072, controlFact "quotation" [] [] [72] (Some 1073)
+           72, record ["Parameters"; "CName"] [1010; 1020] 1072
+           1010, controlFact "array" [] [] paramEntries (Some 72)
+           1011, record ["Type"; "PassBy"] [1013; 1016] 1010
+           1013, case "Integer" [1014] 1011
+           1014, controlFact "tuple" [] [] [1015; 1018] (Some 1013)
+           1015, case "Unsigned" [] 1014
+           1018, number 8I 1014
+           1016, case "ReadOnlyReference" [] 1011
+           1020, text "readFn" 72
+           1101, binding "readFnReadOnlyDescriptor" 1100
+           1100, controlFact "quotation" [] [] [1102] (Some 1101)
+           1102, record ["Binding"; "Parameter"; "Extent"; "Content"; "Retention"; "Hypothesis"] [1103; 1104; 1105; 1115; 1111; 1106] 1100
+           1103, text bindingName 1102
+           1104, number 0I 1102
+           1105, extentFact
+           1115, case "RawBytes" [] 1102
+           1111, retentionFact
+           1106, record ["Identity"; "Version"; "Source"] [1107; 1108; 1109] 1102
+           1107, text "ro-test" 1106
+           1108, text "1" 1106
+           1109, text "fixture" 1106 ]
+         @ (if isUncounted then [] else
+            [ 1005, {controlFact "formal" ["count"] [] [] (Some 1003) with SourceType = countType}
+              1012, record ["Type"; "PassBy"] [1017; 1019] 1010
+              1017, case "Integer" [1021] 1012
+              1021, controlFact "tuple" [] [] [1022; 1023] (Some 1017)
+              1022, case "Unsigned" [] 1021
+              1023, number 64I 1021
+              1019, case "Value" [] 1012 ])
+         @ extraFacts)
+        |> List.map (fun (id, fact) -> NodeId id, fact) |> Map.ofList
+    let extent = if isUncounted then BAREWire.Descriptors.ReadOnlyBufferExtent.UncountedNulTerminated else BAREWire.Descriptors.ReadOnlyBufferExtent.ExplicitCount 1
+    let releaseSpec = [| BAREWire.Descriptors.RetentionRelease.OwnerRelease { Binding = header.Name + ".close"; Parameter = 0 } |]
+    let retention = if isRetained then BAREWire.Descriptors.BufferRetention.RetainedUntil(1, releaseSpec) else BAREWire.Descriptors.BufferRetention.DuringCall
+    let roDecl : BoundaryReadOnlyBufferDeclaration =
+        { Identity = NodeId 1100; Declaration = NodeId 2; Body = NodeId 1006; Formals = formals; Descriptor = NodeId 72
+          Parameter = 0; CountParameter = (if isUncounted then None else Some 1)
+          BufferFormal = NodeId 1004; CountFormal = (if isUncounted then None else Some(NodeId 1005))
+          Contract =
+            { Binding = bindingName; Parameter = 0; Extent = extent
+              Content = BAREWire.Descriptors.BorrowedContent.RawBytes
+              Retention = retention
+              Hypothesis = { Identity = "ro-test"; Version = "1"; Source = "fixture" } }
+          DeclarationFacts = facts
+          Participants = ParticipantEvidence.Established
+            ([ { Role = ParticipantRole.ReadOnlyBufferDeclaration; Node = NodeId 1100; Ordinal = 0; Group = NodeId 1100 }
+               { Role = ParticipantRole.ReadOnlyBufferFormal; Node = NodeId 1004; Ordinal = 0; Group = NodeId 1100 } ] @
+             if isUncounted then [] else [ { Role = ParticipantRole.ReadOnlyBufferFormal; Node = NodeId 1005; Ordinal = 1; Group = NodeId 1100 } ]) }
+    let importParams =
+        [ NodeId 1004, BoundaryScalar.ReadOnlyBytes(NodeId 1100) ] @
+        if isUncounted then [] else [ NodeId 1005, BoundaryScalar.Integer(64, false) ]
+    let callArgs =
+        [ { Actual = NodeId 3; Formal = NodeId 1004; Abi = BoundaryScalar.ReadOnlyBytes(NodeId 1100); Adaptation = None; OptionalEntry = None; BufferAbsence = None } ] @
+        if isUncounted then [] else [ { Actual = NodeId 4; Formal = NodeId 1005; Abi = BoundaryScalar.Integer(64, false); Adaptation = None; OptionalEntry = None; BufferAbsence = None } ]
+    let imported =
+        { basis.Imports[NodeId 72] with
+            Symbol = "readFn"; Parameters = importParams; Result = None
+            DeclarationFacts = facts; Participants = facts.Keys |> Set.ofSeq
+            SourceTypes = Map.ofList ([NodeId 1004, arrayType; NodeId 1, unitType] @ if isUncounted then [] else [NodeId 1005, countType]) }
+    let call =
+        { basis.Calls[NodeId 1] with
+            Arguments = callArgs; Result = None; SourceTypes = imported.SourceTypes; Participants = facts.Keys |> Set.ofSeq }
+    let countVal = if mode = "count-over-extent" then 10I else 4I
+    let countCarrier =
+        { held.Emission.Numeric.Values[NodeId 4] with
+            Slot = SettledSlot.Integer(64, Some "uint64"); SourceType = countType
+            Range = ValueRange.Bounded(countVal, countVal); Obligations = [] }
+    let extentClaim =
+        controlClaim "ro-extent" "foreign-readonly-buffer-extent"
+            (ObligationBody.ZeroCopyBufferExtent
+                { Call = NodeId 1; Declaration = NodeId 1100; Parameter = 0; CountParameter = 1
+                  Buffer = NodeId 3; Count = NodeId 4; MinimumCount = 4I; MaximumCount = 4I
+                  ExtentCapacity = 4I; ElementBytes = 1; CountCoverage = NodeId 951 })
+    let retireOrders = if mode = "retention-after-retire" then [0] elif isRetained then [5] else []
+    let retireNodes = if isRetained then [NodeId 955] else []
+    let retentionClaim =
+        controlClaim "ro-ret" "foreign-buffer-retention-domination"
+            (ObligationBody.BufferRetentionDomination
+                { Call = NodeId 1; Declaration = NodeId 1100; Buffer = NodeId 3; Residence = NodeId 11
+                  Mode = (if isRetained then BufferRetentionMode.RetainedUntilOwner(1, 1) else BufferRetentionMode.DuringCall)
+                  AcquireOrder = 1; RetirementOrders = retireOrders })
+    let termClaim =
+        let staging =
+            if mode = "valid-static-nul" || mode = "interior-nul-static" then UncountedPathStagingMode.StaticImageZeroCopy 0
+            else UncountedPathStagingMode.CallScopedStaged(NodeId 956, (if mode = "staged-too-small" then 4 else 5))
+        controlClaim "ro-term" "foreign-uncounted-path-termination"
+            (ObligationBody.UncountedPathTermination
+                { Call = NodeId 1; Declaration = NodeId 1100; Parameter = 0; Source = NodeId 3
+                  Mode = staging; ByteLength = 4I; RequiresNoInteriorNul = true; RequiresTrailingNul = true })
+    let crossing =
+        match mode with
+        | "valid-static-nul" | "interior-nul-static" ->
+            BoundaryReadOnlyBufferCrossing.StaticImageNulBorrowed(0, NodeId 3, 4I, NodeId 953)
+        | "valid-staged-nul" ->
+            BoundaryReadOnlyBufferCrossing.CallScopedNulStaged(NodeId 956, 5, 4I, NodeId 953)
+        | "staged-too-small" ->
+            BoundaryReadOnlyBufferCrossing.CallScopedNulStaged(NodeId 956, 4, 4I, NodeId 953)
+        | _ ->
+            BoundaryReadOnlyBufferCrossing.ExplicitZeroCopy(1, NodeId 4, 4I, NodeId 951)
+    let roUse : BoundaryReadOnlyBufferUse =
+        { Call = NodeId 1; Declaration = NodeId 1100; Parameter = 0; Buffer = NodeId 3
+          Residence = NodeId 11; Retirements = retireNodes
+          Copies = if mode = "nonzero-copy" then 1 else 0
+          Crossing = crossing; RetentionProof = NodeId 952; AccessExclusivityProof = None
+          Participants = ParticipantEvidence.Established
+            ([ { Role = ParticipantRole.ReadOnlyBufferCall; Node = NodeId 1; Ordinal = 0; Group = NodeId 1 }
+               { Role = ParticipantRole.ReadOnlyBufferDeclaration; Node = NodeId 1100; Ordinal = 0; Group = NodeId 1 }
+               { Role = ParticipantRole.ReadOnlyBufferActual; Node = NodeId 3; Ordinal = 0; Group = NodeId 1 }
+               { Role = ParticipantRole.ReadOnlyBufferResidence; Node = NodeId 11; Ordinal = 0; Group = NodeId 1 } ] @
+             (retireNodes |> List.map (fun r -> { Role = ParticipantRole.ReadOnlyBufferRetirement; Node = r; Ordinal = 0; Group = NodeId 1 }))) }
+    let claims = [NodeId 951, extentClaim; NodeId 952, retentionClaim; NodeId 953, termClaim]
+    let useStaticPool = mode = "valid-static-nul" || mode = "interior-nul-static"
+    let poolBytes =
+        if mode = "interior-nul-static" then [byte 'a'; 0uy; byte 'c'; byte 'd'; 0uy]
+        else [byte 'a'; byte 'b'; byte 'c'; byte 'd'; 0uy]
+    let pool : StaticStringPool =
+        { Symbol = ".rodata.str"; Bytes = poolBytes; Alignment = 1; Size = 5; UsedSize = 5
+          Entries = [{ NodeIds = [NodeId 3]; Content = "abcd"; Offset = 0; Length = 4; StorageLength = 5 }]
+          SpaceName = "rodata"; Capacity = 5L; SpaceAlignment = 1; Granularity = 1; DeclarationNode = NodeId 2 }
+    let callNode =
+        let args = if isUncounted then [NodeId 3] else [NodeId 3; NodeId 4]
+        { held.Nodes[NodeId 1] with Kind = SemanticKind.Application(NodeId 2, args); Children = NodeId 2 :: args; Type = unitType }
+    let revision =
+        { held with
+            StaticStringPool = (if useStaticPool then Some pool else held.StaticStringPool)
+            LiteralStorage = (if useStaticPool then held.LiteralStorage.Add(NodeId 3, LiteralStorage.Materialized 0) else held.LiteralStorage)
+            Nodes = held.Nodes.Add(NodeId 1, callNode)
+            CurrentClaims = claims |> List.fold (fun m (k, v) -> Map.add k v m) held.CurrentClaims
+            Obligations = held.Obligations @ List.map snd claims
+            ObligationSources = claims |> List.fold (fun m (k, _) -> Map.add k [[NodeId 1; NodeId 3]] m) held.ObligationSources
+            Emission =
+                { held.Emission with
+                    Boundary =
+                        { basis with
+                            Imports = Map.ofList [NodeId 72, imported]
+                            Calls = Map.ofList [NodeId 1, call]
+                            ReadOnlyBufferDeclarations = Map.ofList [NodeId 1100, roDecl]
+                            ReadOnlyBufferUses = if mode = "missing-use" then Map.empty else Map.ofList [(NodeId 1, 0), roUse] }
+                    Numeric =
+                        { held.Emission.Numeric with
+                            Operations = Map.empty; OperationRequired = Set.empty; ResultSites = Set.empty
+                            Required = if isUncounted then Set.empty else Set.singleton(NodeId 4)
+                            Values = if isUncounted then held.Emission.Numeric.Values.Remove(NodeId 1) else held.Emission.Numeric.Values.Remove(NodeId 1).Add(NodeId 4, countCarrier) } } }
+        |> covered
+    let revision =
+        { revision with
+            SourceReadings =
+                { revision.SourceReadings with
+                    ContextHeaders = revision.SourceReadings.ContextHeaders.Add(NodeId 50, header)
+                    Contexts = revision.SourceReadings.Contexts.Add(NodeId 50, [[]])
+                    Ports = revision.SourceReadings.Ports.Add((NodeId 50, OccurrencePort.ModuleDeclaration), header.Ports[OccurrencePort.ModuleDeclaration]) } }
+    let violations = Integrity.check revision
+    if expectedPart = "" then
+        Assert.Empty violations
+    else
+        Assert.Contains(violations, fun v -> v.Part = expectedPart)
+
+
+[<Theory>]
+[<InlineData("valid", "")>]
+[<InlineData("null-not-option", "Emission.Boundary.BorrowedResultViewUses.Account")>]
+[<InlineData("read-after-invalidation", "Emission.Boundary.BorrowedResultViewUses.Frontier")>]
+let ``borrowed result view checks null-to-none boundary and invalidation frontier`` defect expectedPart =
+    let held = writableBufferControl false
+    let basis = held.Emission.Boundary
+    let header = held.SourceReadings.ContextHeaders[NodeId 50]
+    let record fields ids parent = controlFact "record" fields [] ids (Some parent)
+    let binding name child = controlFact "binding" [name] [0I;0I] [child] (Some 50)
+    let text value parent = controlFact "string" [value] [] [] (Some parent)
+    let number value parent = controlFact "integer" [] [value] [] (Some parent)
+    let case name refs parent = controlFact "case" [name] [] refs (Some parent)
+    let viewFacts =
+        basis.WritableBufferDeclarations[NodeId 1100].DeclarationFacts
+        |> Map.add (NodeId 1201) (binding "fillBorrowedViewDescriptor" 1200)
+        |> Map.add (NodeId 1200) (controlFact "quotation" [] [] [1202] (Some 1201))
+        |> Map.add (NodeId 1202) (record ["Binding"; "Content"; "Extent"; "Owner"; "InvalidatedBy"; "Hypothesis"] [1203; 1204; 1205; 1206; 1207; 1208] 1200)
+        |> Map.add (NodeId 1203) (text (header.Name + ".fill") 1202)
+        |> Map.add (NodeId 1204) (case "Utf8Text" [] 1202)
+        |> Map.add (NodeId 1205) (case "NulTerminated" [] 1202)
+        |> Map.add (NodeId 1206) (number 0I 1202)
+        |> Map.add (NodeId 1207) (controlFact "array" [] [] [1212] (Some 1202))
+        |> Map.add (NodeId 1212) (case "AnyOwnerCall" [] 1207)
+        |> Map.add (NodeId 1208) (record ["Identity"; "Version"; "Source"] [1209; 1210; 1211] 1202)
+        |> Map.add (NodeId 1209) (text "view-hyp" 1208)
+        |> Map.add (NodeId 1210) (text "1" 1208)
+        |> Map.add (NodeId 1211) (text "fixture" 1208)
+    let viewDecl : BoundaryBorrowedResultViewDeclaration =
+        { Identity = NodeId 1200; Declaration = NodeId 2; Body = NodeId 1006
+          Formals = [NodeId 1004; NodeId 1005]; Descriptor = NodeId 72
+          OwnerParameter = 0; OwnerFormal = NodeId 1004
+          Contract =
+            { Binding = header.Name + ".fill"; Content = BAREWire.Descriptors.BorrowedContent.Utf8Text
+              Extent = BAREWire.Descriptors.BorrowedExtent.NulTerminated; Owner = 0
+              InvalidatedBy = [| BAREWire.Descriptors.BorrowInvalidation.AnyOwnerCall |]
+              Hypothesis = { Identity = "view-hyp"; Version = "1"; Source = "fixture" } }
+          DeclarationFacts = viewFacts
+          Participants = ParticipantEvidence.Established
+            [ { Role = ParticipantRole.BorrowedResultViewDeclaration; Node = NodeId 1200; Ordinal = 0; Group = NodeId 1200 }
+              { Role = ParticipantRole.BorrowedResultViewOwner; Node = NodeId 1004; Ordinal = 0; Group = NodeId 1200 } ] }
+    let readOrders = if defect = "read-after-invalidation" then [6] else [2]
+    let scopeClaim =
+        controlClaim "borrowed-view-scope" "foreign-borrowed-view-scope"
+            (ObligationBody.BorrowedResultViewScope
+                { Call = NodeId 1; Declaration = NodeId 1200; Owner = NodeId 3; View = NodeId 1
+                  CallOrder = 1; InvalidationOrders = [5]; ReadOrders = readOrders
+                  NullToNoneBoundary = defect <> "null-not-option" })
+    let viewUse : BoundaryBorrowedResultViewUse =
+        { Call = NodeId 1; Declaration = NodeId 1200; Owner = NodeId 3; View = NodeId 1
+          CompanionCall = None; CompanionArguments = []; CallOrder = 1
+          Invalidations = [NodeId 961]; InvalidationOrders = [5]
+          Reads = [NodeId 962]; ReadOrders = readOrders
+          NullToNoneBoundary = defect <> "null-not-option"
+          ScopeProof = NodeId 960
+          Participants = ParticipantEvidence.Established
+            [ { Role = ParticipantRole.BorrowedResultViewCall; Node = NodeId 1; Ordinal = 0; Group = NodeId 1 }
+              { Role = ParticipantRole.BorrowedResultViewDeclaration; Node = NodeId 1200; Ordinal = 0; Group = NodeId 1 }
+              { Role = ParticipantRole.BorrowedResultViewOwner; Node = NodeId 3; Ordinal = 0; Group = NodeId 1 }
+              { Role = ParticipantRole.BorrowedResultViewInvalidation; Node = NodeId 961; Ordinal = 0; Group = NodeId 1 }
+              { Role = ParticipantRole.BorrowedResultViewRead; Node = NodeId 962; Ordinal = 0; Group = NodeId 1 } ] }
+    let revision =
+        { held with
+            CurrentClaims = held.CurrentClaims.Add(NodeId 960, scopeClaim)
+            Obligations = held.Obligations @ [scopeClaim]
+            ObligationSources = held.ObligationSources.Add(NodeId 960, [[NodeId 1; NodeId 3]])
+            Emission =
+                { held.Emission with
+                    Boundary =
+                        { basis with
+                            BorrowedResultViewDeclarations = Map.ofList [NodeId 1200, viewDecl]
+                            BorrowedResultViewUses = Map.ofList [NodeId 1, viewUse] } } }
+    let violations = Integrity.check revision
+    if expectedPart = "" then
+        Assert.Empty violations
+    else
+        Assert.Contains(violations, fun v -> v.Part = expectedPart)
+
+
+[<Fact>]
+let ``ordinary scalar operand cannot acquire a buffer absence account`` () =
+    let call = boundaryCalleeFacts.Emission.Boundary.Calls[NodeId 1]
+    let sel : BoundaryBufferAbsenceSelection =
+        { Construction = NodeId 3; CaseOrdinal = 0; Payload = None; Absence = NodeId 700
+          Transport = [NodeId 3]; Obligation = NodeId 701 }
+    let changed = { call with Arguments = { call.Arguments.Head with BufferAbsence = Some(BoundaryBufferAbsenceChoice.Direct sel) } :: call.Arguments.Tail }
+    let boundary = { boundaryCalleeFacts.Emission.Boundary with Calls = Map.ofList [call.Site, changed] }
+    let violations = Integrity.check { boundaryCalleeFacts with Emission = { boundaryCalleeFacts.Emission with Boundary = boundary } }
+    let v = within "Emission.Boundary.Calls.BufferAbsence" violations
+    Assert.Equal("A buffer-absence account requires its original ReadOnlyBytes or WritableBytes formal.", v.Reason)
+
+[<Theory>]
+[<InlineData("valid-return", "")>]
+[<InlineData("bad-import-return", "Emission.Boundary.Imports.Result")>]
+[<InlineData("arg-borrowed", "Emission.Boundary.Calls.BorrowedBytes")>]
+let ``borrowed bytes scalar is admitted only as declared borrowed view return`` mode expectedPart =
+    let held = writableBufferControl false
+    let basis = held.Emission.Boundary
+    let header = held.SourceReadings.ContextHeaders[NodeId 50]
+    let record fields ids parent = controlFact "record" fields [] ids (Some parent)
+    let binding name child = controlFact "binding" [name] [0I;0I] [child] (Some 50)
+    let text value parent = controlFact "string" [value] [] [] (Some parent)
+    let number value parent = controlFact "integer" [] [value] [] (Some parent)
+    let case name refs parent = controlFact "case" [name] [] refs (Some parent)
+    let viewFacts =
+        basis.WritableBufferDeclarations[NodeId 1100].DeclarationFacts
+        |> Map.add (NodeId 1201) (binding "fillBorrowedViewDescriptor" 1200)
+        |> Map.add (NodeId 1200) (controlFact "quotation" [] [] [1202] (Some 1201))
+        |> Map.add (NodeId 1202) (record ["Binding"; "Content"; "Extent"; "Owner"; "InvalidatedBy"; "Hypothesis"] [1203; 1204; 1205; 1206; 1207; 1208] 1200)
+        |> Map.add (NodeId 1203) (text (header.Name + ".fill") 1202)
+        |> Map.add (NodeId 1204) (case "Utf8Text" [] 1202)
+        |> Map.add (NodeId 1205) (case "NulTerminated" [] 1202)
+        |> Map.add (NodeId 1206) (number 0I 1202)
+        |> Map.add (NodeId 1207) (controlFact "array" [] [] [1212] (Some 1202))
+        |> Map.add (NodeId 1212) (case "AnyOwnerCall" [] 1207)
+        |> Map.add (NodeId 1208) (record ["Identity"; "Version"; "Source"] [1209; 1210; 1211] 1202)
+        |> Map.add (NodeId 1209) (text "view-hyp" 1208)
+        |> Map.add (NodeId 1210) (text "1" 1208)
+        |> Map.add (NodeId 1211) (text "fixture" 1208)
+    let viewDecl : BoundaryBorrowedResultViewDeclaration =
+        { Identity = NodeId 1200; Declaration = NodeId 2; Body = NodeId 1006
+          Formals = [NodeId 1004; NodeId 1005]; Descriptor = NodeId 72
+          OwnerParameter = 0; OwnerFormal = NodeId 1004
+          Contract =
+            { Binding = header.Name + ".fill"; Content = BAREWire.Descriptors.BorrowedContent.Utf8Text
+              Extent = BAREWire.Descriptors.BorrowedExtent.NulTerminated; Owner = 0
+              InvalidatedBy = [| BAREWire.Descriptors.BorrowInvalidation.AnyOwnerCall |]
+              Hypothesis = { Identity = "view-hyp"; Version = "1"; Source = "fixture" } }
+          DeclarationFacts = viewFacts
+          Participants = ParticipantEvidence.Established
+            [ { Role = ParticipantRole.BorrowedResultViewDeclaration; Node = NodeId 1200; Ordinal = 0; Group = NodeId 1200 }
+              { Role = ParticipantRole.BorrowedResultViewOwner; Node = NodeId 1004; Ordinal = 0; Group = NodeId 1200 } ] }
+    let scopeClaim =
+        controlClaim "borrowed-view-scope" "foreign-borrowed-view-scope"
+            (ObligationBody.BorrowedResultViewScope
+                { Call = NodeId 1; Declaration = NodeId 1200; Owner = NodeId 3; View = NodeId 1
+                  CallOrder = 1; InvalidationOrders = [5]; ReadOrders = [2]
+                  NullToNoneBoundary = true })
+    let viewUse : BoundaryBorrowedResultViewUse =
+        { Call = NodeId 1; Declaration = NodeId 1200; Owner = NodeId 3; View = NodeId 1
+          CompanionCall = None; CompanionArguments = []; CallOrder = 1
+          Invalidations = [NodeId 961]; InvalidationOrders = [5]
+          Reads = [NodeId 962]; ReadOrders = [2]
+          NullToNoneBoundary = true; ScopeProof = NodeId 960
+          Participants = ParticipantEvidence.Established
+            [ { Role = ParticipantRole.BorrowedResultViewCall; Node = NodeId 1; Ordinal = 0; Group = NodeId 1 }
+              { Role = ParticipantRole.BorrowedResultViewDeclaration; Node = NodeId 1200; Ordinal = 0; Group = NodeId 1 }
+              { Role = ParticipantRole.BorrowedResultViewOwner; Node = NodeId 3; Ordinal = 0; Group = NodeId 1 }
+              { Role = ParticipantRole.BorrowedResultViewInvalidation; Node = NodeId 961; Ordinal = 0; Group = NodeId 1 }
+              { Role = ParticipantRole.BorrowedResultViewRead; Node = NodeId 962; Ordinal = 0; Group = NodeId 1 } ] }
+    let imported0 = basis.Imports[NodeId 72]
+    let call0 = basis.Calls[NodeId 1]
+    let safeParams = (fst imported0.Parameters.Head, BoundaryScalar.Integer(64, false)) :: imported0.Parameters.Tail
+    let safeArgs = { call0.Arguments.Head with Abi = BoundaryScalar.Integer(64, false) } :: call0.Arguments.Tail
+    let imported, call =
+        match mode with
+        | "bad-import-return" ->
+            { imported0 with Parameters = safeParams; Result = Some(BoundaryScalar.BorrowedBytes(NodeId 9999)) },
+            { call0 with Arguments = safeArgs; Result = Some(BoundaryScalar.BorrowedBytes(NodeId 9999)) }
+        | "arg-borrowed" ->
+            { imported0 with Parameters = (fst imported0.Parameters.Head, BoundaryScalar.BorrowedBytes(NodeId 1200)) :: imported0.Parameters.Tail },
+            { call0 with Arguments = { call0.Arguments.Head with Abi = BoundaryScalar.BorrowedBytes(NodeId 1200) } :: call0.Arguments.Tail }
+        | _ ->
+            { imported0 with Parameters = safeParams; Result = Some(BoundaryScalar.BorrowedBytes(NodeId 1200)) },
+            { call0 with Arguments = safeArgs; Result = Some(BoundaryScalar.BorrowedBytes(NodeId 1200)) }
+    let revision =
+        { held with
+            CurrentClaims = held.CurrentClaims.Add(NodeId 960, scopeClaim)
+            Obligations = held.Obligations @ [scopeClaim]
+            ObligationSources = held.ObligationSources.Add(NodeId 960, [[NodeId 1; NodeId 3]])
+            Emission =
+                { held.Emission with
+                    Numeric = { held.Emission.Numeric with ForeignResultUses = [] }
+                    Boundary =
+                        { basis with
+                            Imports = Map.ofList [NodeId 72, imported]
+                            Calls = Map.ofList [NodeId 1, call]
+                            WritableBufferDeclarations = Map.empty
+                            WritableBufferUses = Map.empty
+                            BorrowedResultViewDeclarations = Map.ofList [NodeId 1200, viewDecl]
+                            BorrowedResultViewUses = Map.ofList [NodeId 1, viewUse] } } }
+    let violations = Integrity.check revision
+    if expectedPart = "" then
+        Assert.Empty violations
+    else
+        Assert.Contains(violations, fun v -> v.Part = expectedPart)
+
+
+[<Fact>]
+let ``readonly declaration ignores trailing PassBy Fixed descriptor sentinel parameters`` () =
+    let held = snapshotFacts
+    let basis = boundaryCalleeFacts.Emission.Boundary
+    let header = boundaryCalleeFacts.SourceReadings.ContextHeaders[NodeId 50]
+    let integerType name kind =
+        TypeIdentity.Application({Declaration = {Module = []; Name = name}; Parameters = []; NativeKind = Some kind}, [])
+    let byteType = integerType "uint8" (NTUKind.NTUuint(NTUWidth.Fixed 8))
+    let countType = integerType "uint64" (NTUKind.NTUuint(NTUWidth.Fixed 64))
+    let arrayType = TypeIdentity.Application({Declaration = {Module = []; Name = "array"}; Parameters = [TypeParamKind.Type]; NativeKind = None}, [byteType])
+    let unitType = held.Nodes[NodeId 1].Type
+    let record fields ids parent = controlFact "record" fields [] ids (Some parent)
+    let binding name child = controlFact "binding" [name] [0I;0I] [child] (Some 50)
+    let text value parent = controlFact "string" [value] [] [] (Some parent)
+    let number value parent = controlFact "integer" [] [value] [] (Some parent)
+    let case name refs parent = controlFact "case" [name] [] refs (Some parent)
+    let facts =
+        [ 2, binding "readFn" 1003
+          1003, controlFact "lambda" ["readFn"; "buf"; "count"] [2I; 0I; 0I] [1004; 1005; 1006] (Some 2)
+          1004, {controlFact "formal" ["buf"] [] [] (Some 1003) with SourceType = arrayType}
+          1005, {controlFact "formal" ["count"] [] [] (Some 1003) with SourceType = countType}
+          1006, controlFact "unit" [] [] [] (Some 1003)
+          1073, binding "readFnDescriptor" 1072
+          1072, controlFact "quotation" [] [] [72] (Some 1073)
+          72, record ["Parameters"; "CName"] [1010; 1020] 1072
+          1010, controlFact "array" [] [] [1011; 1012; 1030] (Some 72)
+          1011, record ["Type"; "PassBy"] [1013; 1016] 1010
+          1013, case "Integer" [1014] 1011
+          1014, controlFact "tuple" [] [] [1015; 1018] (Some 1013)
+          1015, case "Unsigned" [] 1014
+          1018, number 8I 1014
+          1016, case "ReadOnlyReference" [] 1011
+          1012, record ["Type"; "PassBy"] [1017; 1019] 1010
+          1017, case "Integer" [1021] 1012
+          1021, controlFact "tuple" [] [] [1022; 1023] (Some 1017)
+          1022, case "Unsigned" [] 1021
+          1023, number 64I 1021
+          1019, case "Value" [] 1012
+          1030, record ["Type"; "PassBy"] [1031; 1033] 1010
+          1031, case "Pointer" [1032] 1030
+          1032, number 64I 1031
+          1033, case "Fixed" [1034] 1030
+          1034, case "EntrySentinel" [1035; 1036] 1033
+          1035, text "SQLITE_TRANSIENT" 1034
+          1036, number (-1I) 1034
+          1020, text "readFn" 72
+          1101, binding "readFnReadOnlyDescriptor" 1100
+          1100, controlFact "quotation" [] [] [1102] (Some 1101)
+          1102, record ["Binding"; "Parameter"; "Extent"; "Content"; "Retention"; "Hypothesis"] [1103; 1104; 1105; 1115; 1111; 1106] 1100
+          1103, text (header.Name + ".readFn") 1102
+          1104, number 0I 1102
+          1105, case "ExplicitCount" [1110] 1102
+          1110, number 1I 1105
+          1115, case "RawBytes" [] 1102
+          1111, case "DuringCall" [] 1102
+          1106, record ["Identity"; "Version"; "Source"] [1107; 1108; 1109] 1102
+          1107, text "ro-fixed" 1106
+          1108, text "1" 1106
+          1109, text "fixture" 1106 ]
+        |> List.map (fun (id, fact) -> NodeId id, fact) |> Map.ofList
+    let roDecl : BoundaryReadOnlyBufferDeclaration =
+        { Identity = NodeId 1100; Declaration = NodeId 2; Body = NodeId 1006
+          Formals = [NodeId 1004; NodeId 1005]; Descriptor = NodeId 72
+          Parameter = 0; CountParameter = Some 1
+          BufferFormal = NodeId 1004; CountFormal = Some(NodeId 1005)
+          Contract =
+            { Binding = header.Name + ".readFn"; Parameter = 0
+              Extent = BAREWire.Descriptors.ReadOnlyBufferExtent.ExplicitCount 1
+              Content = BAREWire.Descriptors.BorrowedContent.RawBytes
+              Retention = BAREWire.Descriptors.BufferRetention.DuringCall
+              Hypothesis = { Identity = "ro-fixed"; Version = "1"; Source = "fixture" } }
+          DeclarationFacts = facts
+          Participants = ParticipantEvidence.Established
+            [ { Role = ParticipantRole.ReadOnlyBufferDeclaration; Node = NodeId 1100; Ordinal = 0; Group = NodeId 1100 }
+              { Role = ParticipantRole.ReadOnlyBufferFormal; Node = NodeId 1004; Ordinal = 0; Group = NodeId 1100 }
+              { Role = ParticipantRole.ReadOnlyBufferFormal; Node = NodeId 1005; Ordinal = 1; Group = NodeId 1100 } ] }
+    let imported =
+        { basis.Imports[NodeId 72] with
+            Symbol = "readFn"
+            Parameters = [NodeId 1004, BoundaryScalar.ReadOnlyBytes(NodeId 1100); NodeId 1005, BoundaryScalar.Integer(64, false)]
+            Result = None; DeclarationFacts = facts; Participants = facts.Keys |> Set.ofSeq
+            SourceTypes = Map.ofList [NodeId 1004, arrayType; NodeId 1005, countType; NodeId 1, unitType] }
+    let call =
+        { basis.Calls[NodeId 1] with
+            Arguments =
+                [ { Actual = NodeId 3; Formal = NodeId 1004; Abi = BoundaryScalar.ReadOnlyBytes(NodeId 1100); Adaptation = None; OptionalEntry = None; BufferAbsence = None }
+                  { Actual = NodeId 4; Formal = NodeId 1005; Abi = BoundaryScalar.Integer(64, false); Adaptation = None; OptionalEntry = None; BufferAbsence = None } ]
+            Result = None; SourceTypes = imported.SourceTypes; Participants = facts.Keys |> Set.ofSeq }
+    let countCarrier =
+        { held.Emission.Numeric.Values[NodeId 4] with
+            Slot = SettledSlot.Integer(64, Some "uint64"); SourceType = countType
+            Range = ValueRange.Bounded(4I, 4I); Obligations = [] }
+    let extentClaim =
+        controlClaim "ro-extent" "foreign-readonly-buffer-extent"
+            (ObligationBody.ZeroCopyBufferExtent
+                { Call = NodeId 1; Declaration = NodeId 1100; Parameter = 0; CountParameter = 1
+                  Buffer = NodeId 3; Count = NodeId 4; MinimumCount = 4I; MaximumCount = 4I
+                  ExtentCapacity = 4I; ElementBytes = 1; CountCoverage = NodeId 951 })
+    let retentionClaim =
+        controlClaim "ro-ret" "foreign-buffer-retention-domination"
+            (ObligationBody.BufferRetentionDomination
+                { Call = NodeId 1; Declaration = NodeId 1100; Buffer = NodeId 3; Residence = NodeId 11
+                  Mode = BufferRetentionMode.DuringCall; AcquireOrder = 1; RetirementOrders = [] })
+    let roUse : BoundaryReadOnlyBufferUse =
+        { Call = NodeId 1; Declaration = NodeId 1100; Parameter = 0; Buffer = NodeId 3
+          Residence = NodeId 11; Retirements = []; Copies = 0
+          Crossing = BoundaryReadOnlyBufferCrossing.ExplicitZeroCopy(1, NodeId 4, 4I, NodeId 951)
+          RetentionProof = NodeId 952; AccessExclusivityProof = None
+          Participants = ParticipantEvidence.Established
+            [ { Role = ParticipantRole.ReadOnlyBufferCall; Node = NodeId 1; Ordinal = 0; Group = NodeId 1 }
+              { Role = ParticipantRole.ReadOnlyBufferDeclaration; Node = NodeId 1100; Ordinal = 0; Group = NodeId 1 }
+              { Role = ParticipantRole.ReadOnlyBufferActual; Node = NodeId 3; Ordinal = 0; Group = NodeId 1 }
+              { Role = ParticipantRole.ReadOnlyBufferResidence; Node = NodeId 11; Ordinal = 0; Group = NodeId 1 } ] }
+    let callNode = { held.Nodes[NodeId 1] with Kind = SemanticKind.Application(NodeId 2, [NodeId 3; NodeId 4]); Children = [NodeId 2; NodeId 3; NodeId 4]; Type = unitType }
+    let revision =
+        { held with
+            Nodes = held.Nodes.Add(NodeId 1, callNode)
+            CurrentClaims = held.CurrentClaims.Add(NodeId 951, extentClaim).Add(NodeId 952, retentionClaim)
+            Obligations = held.Obligations @ [extentClaim; retentionClaim]
+            ObligationSources = held.ObligationSources.Add(NodeId 951, [[NodeId 1; NodeId 3]]).Add(NodeId 952, [[NodeId 1; NodeId 3]])
+            Emission =
+                { held.Emission with
+                    Boundary =
+                        { basis with
+                            Imports = Map.ofList [NodeId 72, imported]
+                            Calls = Map.ofList [NodeId 1, call]
+                            ReadOnlyBufferDeclarations = Map.ofList [NodeId 1100, roDecl]
+                            ReadOnlyBufferUses = Map.ofList [(NodeId 1, 0), roUse] }
+                    Numeric =
+                        { held.Emission.Numeric with
+                            Operations = Map.empty; OperationRequired = Set.empty; ResultSites = Set.empty
+                            Required = Set.singleton(NodeId 4)
+                            Values = held.Emission.Numeric.Values.Remove(NodeId 1).Add(NodeId 4, countCarrier) } } }
+        |> covered
+    let revision =
+        { revision with
+            SourceReadings =
+                { revision.SourceReadings with
+                    ContextHeaders = revision.SourceReadings.ContextHeaders.Add(NodeId 50, header)
+                    Contexts = revision.SourceReadings.Contexts.Add(NodeId 50, [[]])
+                    Ports = revision.SourceReadings.Ports.Add((NodeId 50, OccurrencePort.ModuleDeclaration), header.Ports[OccurrencePort.ModuleDeclaration]) } }
+    Assert.Empty(Integrity.check revision)
+
+[<Theory>]
+[<InlineData("borrowed-declared-resource", "")>]
+[<InlineData("borrowed-chandle-formal", "")>]
+[<InlineData("borrowed-nullable-chandle-formal", "")>]
+[<InlineData("unwitnessed-arbitrary-node", "Emission.Boundary.Calls.Resource")>]
+[<InlineData("non-chandle-formal", "Emission.Boundary.Calls.Resource")>]
+[<InlineData("unwitnessed-result", "Emission.Boundary.Calls.Resource")>]
+let ``non-acquiring call admits borrowed ResourceHandle arguments and forbids ResourceHandle return`` mode expectedPart =
+    let held = resourceReleaseSignatureControl "void"
+    let basis = boundaryCalleeFacts.Emission.Boundary
+    let imported0 = basis.Imports |> Map.values |> Seq.head
+    let call0 = basis.Calls[NodeId 1]
+    let sqliteMarker = TypeIdentity.Application({ Declaration = { Module = []; Name = "sqlite3_context" }; Parameters = []; NativeKind = None }, [])
+    let cHandleType = TypeIdentity.Application({ Declaration = { Module = []; Name = "CHandle" }; Parameters = [TypeParamKind.Type]; NativeKind = Some NTUKind.NTUptr }, [sqliteMarker])
+    let optionCHandleType = TypeIdentity.Application({ Declaration = { Module = []; Name = "option" }; Parameters = [TypeParamKind.Type]; NativeKind = None }, [cHandleType])
+    let formalId = fst imported0.Parameters.Head
+    let targetId, isNullable =
+        match mode with
+        | "borrowed-declared-resource" -> NodeId 7000, false
+        | "borrowed-nullable-chandle-formal" -> formalId, true
+        | "borrowed-chandle-formal" | "non-chandle-formal" -> formalId, false
+        | _ -> NodeId 2, false
+    let handleAbi = BoundaryScalar.ResourceHandle(targetId, isNullable)
+    let formalType =
+        match mode with
+        | "borrowed-chandle-formal" -> Some cHandleType
+        | "borrowed-nullable-chandle-formal" -> Some optionCHandleType
+        | _ -> None
+    let updatedFacts =
+        match mode with
+        | "borrowed-chandle-formal" | "borrowed-nullable-chandle-formal" | "non-chandle-formal" ->
+            imported0.DeclarationFacts.Add(formalId, controlFact "formal" ["ctx"] [] [] (Some 2))
+        | _ -> imported0.DeclarationFacts
+    let updatedSourceTypes =
+        match formalType with
+        | Some ty -> imported0.SourceTypes.Add(formalId, ty)
+        | None -> imported0.SourceTypes
+    let imported, call =
+        if mode = "unwitnessed-result" then
+            { imported0 with Result = Some(BoundaryScalar.ResourceHandle(NodeId 7000, true)) },
+            { call0 with Resource = None; Result = Some(BoundaryScalar.ResourceHandle(NodeId 7000, true)) }
+        else
+            { imported0 with
+                Parameters = (formalId, handleAbi) :: imported0.Parameters.Tail
+                Result = None
+                DeclarationFacts = updatedFacts
+                SourceTypes = updatedSourceTypes },
+            { call0 with
+                Resource = None; Result = None
+                Arguments = { call0.Arguments.Head with Abi = handleAbi } :: call0.Arguments.Tail
+                SourceTypes = updatedSourceTypes }
+    let boundary =
+        { basis with
+            ResourceDeclarations =
+                if mode = "borrowed-declared-resource" then held.Emission.Boundary.ResourceDeclarations
+                else basis.ResourceDeclarations
+            Imports = Map.add imported.Identity imported basis.Imports
+            Calls = Map.add call.Site call basis.Calls }
+    let violations = Integrity.check { boundaryCalleeFacts with Emission = { boundaryCalleeFacts.Emission with Boundary = boundary } }
+    if expectedPart = "" then
+        Assert.Empty violations
+    else
+        Assert.Contains(violations, fun v -> v.Part = expectedPart)
+
+[<Theory>]
+[<InlineData("contracted-chandle-formal", "")>]
+[<InlineData("contracted-context", "")>]
+[<InlineData("bogus-node-handle", "Emission.Boundary.CallbackInvocations.Signature")>]
+[<InlineData("non-chandle-formal-handle", "Emission.Boundary.CallbackInvocations.Signature")>]
+[<InlineData("forged-context-record", "Emission.Boundary.CallbackInvocations.Signature")>]
+[<InlineData("raw-pointer", "Emission.Boundary.CallbackInvocations.Signature")>]
+[<InlineData("missing-platform-pointer", "Emission.Boundary.CallbackInvocations.Signature")>]
+let ``callback signature admits contracted pointer parameters while rejecting raw pointers`` mode expectedPart =
+    let held = optionalBoundaryControl true
+    let basis = held.Emission.Boundary
+    let receiver0 = basis.CallbackInvocations[NodeId 220]
+    let imported0 = basis.Imports[receiver0.Import]
+    let sqliteMarker = TypeIdentity.Application({ Declaration = { Module = []; Name = "sqlite3_context" }; Parameters = []; NativeKind = None }, [])
+    let cHandleType = TypeIdentity.Application({ Declaration = { Module = []; Name = "CHandle" }; Parameters = [TypeParamKind.Type]; NativeKind = Some NTUKind.NTUptr }, [sqliteMarker])
+    let int32Type = TypeIdentity.Application({ Declaration = { Module = []; Name = "int32" }; Parameters = []; NativeKind = Some(NTUKind.NTUint(NTUWidth.Fixed 32)) }, [])
+    let fnPtrCHandleType =
+        TypeIdentity.Application(
+            { Declaration = { Module = []; Name = "entry" }; Parameters = [TypeParamKind.Type]; NativeKind = Some NTUKind.NTUfnptr },
+            [ TypeIdentity.Function(cHandleType, int32Type) ])
+    let text value parent = controlFact "string" [value] [] [] (Some parent)
+    let number value parent = controlFact "integer" [] [value] [] (Some parent)
+    let record fields refs parent = controlFact "record" fields [] refs (Some parent)
+    let ctxType = TypeIdentity.Application({ Declaration = { Module = ["BAREWire"; "Descriptors"]; Name = "CallbackContextDescriptor" }; Parameters = []; NativeKind = None }, [])
+    let contextQuotationFacts =
+        [ 801, { controlFact "binding" ["cbCtx"] [0I; 0I] [800] (Some 400) with SourceType = ctxType }
+          800, { controlFact "quotation" [] [1I] [802] (Some 801) with SourceType = ctxType }
+          802, { record ["Binding"; "Parameter"; "Argument"; "ContextParameter"] [803; 804; 805; 806] 800 with SourceType = ctxType }
+          803, text receiver0.Contract.Binding 802
+          804, number 0I 802
+          805, number 0I 802
+          806, number 1I 802 ]
+        |> List.map (fun (id, fact) -> NodeId id, fact)
+    let forgedRecordFacts =
+        [ 802, record ["Binding"; "Parameter"; "Argument"; "ContextParameter"] [803; 804; 805; 806] 210
+          803, text receiver0.Contract.Binding 802
+          804, number 0I 802
+          805, number 0I 802
+          806, number 1I 802 ]
+        |> List.map (fun (id, fact) -> NodeId id, fact)
+    let pointerSignature : BAREWire.Descriptors.EntrySignature =
+        { Parameters =
+            [| { Name = "ctx"; Type = BAREWire.Descriptors.TypeRef.Pointer 64; PassBy = BAREWire.Descriptors.PassBy.Value } |]
+          ReturnType = BAREWire.Descriptors.TypeRef.Integer(BAREWire.Descriptors.Signedness.Signed, 32)
+          CallingConvention = BAREWire.Descriptors.CallConv.CDecl }
+    let boundary, rev =
+        match mode with
+        | "contracted-chandle-formal" | "missing-platform-pointer" ->
+            let formal216 = NodeId 216
+            let inv225 = NodeId 225
+            let imp215 =
+                { imported0 with
+                    Identity = NodeId 215
+                    Parameters = [formal216, BoundaryScalar.Entry inv225]
+                    DeclarationFacts =
+                        imported0.DeclarationFacts
+                            .Add(formal216, { controlFact "formal" ["ctxCb"] [] [] (Some 215) with SourceType = fnPtrCHandleType })
+                            .Add(inv225, imported0.DeclarationFacts[NodeId 220])
+                    SourceTypes = Map.ofList [formal216, fnPtrCHandleType]
+                    Participants = imported0.Participants.Add(formal216).Add(inv225) }
+            let receiver225 =
+                { receiver0 with
+                    Identity = inv225; Import = imp215.Identity; Formal = formal216
+                    Contract = { receiver0.Contract with Signature = pointerSignature }
+                    Signature = { receiver0.Signature with Parameters = [BoundaryScalar.ResourceHandle(formal216, false)] }
+                    Participants = receiver0.Participants.Add(inv225).Add(imp215.Identity).Add(formal216) }
+            let b =
+                { basis with
+                    Imports = basis.Imports.Add(imp215.Identity, imp215)
+                    CallbackInvocations = basis.CallbackInvocations.Add(receiver225.Identity, receiver225) }
+            b,
+            { held with
+                Platform = if mode = "missing-platform-pointer" then { held.Platform with Pointer = Error "missing" } else held.Platform
+                Emission = { held.Emission with Boundary = b } }
+        | _ ->
+            let paramAbi, extraFacts =
+                match mode with
+                | "contracted-context" -> BoundaryScalar.Integer(64, false), contextQuotationFacts
+                | "forged-context-record" -> BoundaryScalar.Integer(64, false), forgedRecordFacts
+                | "non-chandle-formal-handle" -> BoundaryScalar.ResourceHandle(receiver0.Formal, false), []
+                | "bogus-node-handle" -> BoundaryScalar.ResourceHandle(NodeId 1, false), []
+                | _ -> BoundaryScalar.Integer(64, false), []
+            let mergedImport =
+                { imported0 with
+                    DeclarationFacts = (imported0.DeclarationFacts, extraFacts) ||> List.fold (fun m (k, v) -> Map.add k v m) }
+            let receiver =
+                { receiver0 with
+                    Contract = { receiver0.Contract with Signature = pointerSignature }
+                    Signature = { receiver0.Signature with Parameters = [paramAbi] } }
+            let b =
+                { basis with
+                    Imports = basis.Imports.Add(mergedImport.Identity, mergedImport)
+                    CallbackInvocations = basis.CallbackInvocations.Add(receiver.Identity, receiver) }
+            b, { held with Emission = { held.Emission with Boundary = b } }
+    ignore boundary
+    let violations = Integrity.check rev
+    if expectedPart = "" then
+        Assert.Empty violations
+    else
+        Assert.Contains(violations, fun v -> v.Part = expectedPart)
+
+[<Fact>]
+let ``retained callback invocation is admitted alongside callback absence`` () =
+    let held = optionalBoundaryControl true
+    let basis = held.Emission.Boundary
+    let receiver0 = basis.CallbackInvocations[NodeId 220]
+    let imported0 = basis.Imports[receiver0.Import]
+    let text value parent = controlFact "string" [value] [] [] (Some parent)
+    let number value parent = controlFact "integer" [] [value] [] (Some parent)
+    let case name refs parent = controlFact "case" [name] [] refs (Some parent)
+    let record fields refs parent = controlFact "record" fields [] refs (Some parent)
+    let retainedFacts =
+        imported0.DeclarationFacts
+        |> Map.add (NodeId 212) (controlFact "array" [] [] [218; 245] (Some 210))
+        |> Map.add (NodeId 245) (record ["Type"; "PassBy"] [246; 249] 212)
+        |> Map.add (NodeId 246) (case "Integer" [247] 245)
+        |> Map.add (NodeId 247) (controlFact "tuple" [] [] [248; 250] (Some 246))
+        |> Map.add (NodeId 248) (case "Signed" [] 247)
+        |> Map.add (NodeId 250) (number 32I 247)
+        |> Map.add (NodeId 249) (case "Value" [] 245)
+        |> Map.add (NodeId 602) { record ["Binding"; "Parameter"; "Owner"; "Releases"] [603; 604; 605; 606] 600 with SourceType = TypeIdentity.Application({ Declaration = { Module = ["BAREWire"; "Descriptors"]; Name = "RetainedCallbackDescriptor" }; Parameters = []; NativeKind = None }, []) }
+        |> Map.add (NodeId 605) (number 1I 602)
+        |> Map.add (NodeId 606) (controlFact "array" [] [] [607] (Some 602))
+        |> Map.add (NodeId 607) (case "OwnerRelease" [608] 606)
+        |> Map.add (NodeId 608) (record ["Binding"; "Parameter"] [609; 610] 607)
+        |> Map.add (NodeId 609) (text "OptionalControl.close" 608)
+        |> Map.add (NodeId 610) (number 0I 608)
+    let ownerDecl =
+        { imported0 with
+            Parameters = imported0.Parameters @ [NodeId 211, BoundaryScalar.Integer(32, true)]
+            DeclarationFacts = retainedFacts }
+    let receiver =
+        { receiver0 with
+            Extent = BoundaryCallbackExtent.Retained(1, [| BAREWire.Descriptors.RetentionRelease.OwnerRelease { Binding = "OptionalControl.close"; Parameter = 0 } |]) }
+    let boundary =
+        { basis with
+            Imports = basis.Imports.Add(ownerDecl.Identity, ownerDecl)
+            CallbackInvocations = basis.CallbackInvocations.Add(receiver.Identity, receiver) }
+    let violations = Integrity.check { held with Emission = { held.Emission with Boundary = boundary } }
+    Assert.DoesNotContain(violations, fun v -> v.Part.StartsWith("Emission.Boundary.Callback", System.StringComparison.Ordinal) || v.Part.Contains "OptionalEntry")
+
+[<Theory>]
+[<InlineData("wrong-owner", "Emission.Boundary.CallbackInvocations.RetainedExtent")>]
+[<InlineData("wrong-releases", "Emission.Boundary.CallbackInvocations.RetainedExtent")>]
+[<InlineData("wrong-parameter", "Emission.Boundary.CallbackInvocations.RetainedExtent")>]
+let ``retained callback invocation rejects owner release or parameter quotation mismatch`` mode expectedPart =
+    let held = optionalBoundaryControl false
+    let basis = held.Emission.Boundary
+    let receiver0 = basis.CallbackInvocations[NodeId 220]
+    let imported0 = basis.Imports[receiver0.Import]
+    let text value parent = controlFact "string" [value] [] [] (Some parent)
+    let number value parent = controlFact "integer" [] [value] [] (Some parent)
+    let case name refs parent = controlFact "case" [name] [] refs (Some parent)
+    let record fields refs parent = controlFact "record" fields [] refs (Some parent)
+    let quotedOwner = if mode = "wrong-owner" then 0I else 1I
+    let quotedRelease = if mode = "wrong-releases" then "OptionalControl.wrong" else "OptionalControl.close"
+    let quotedParam = if mode = "wrong-parameter" then "wrongParam" else "callback"
+    let retainedFacts =
+        imported0.DeclarationFacts
+        |> Map.add (NodeId 212) (controlFact "array" [] [] [218; 245] (Some 210))
+        |> Map.add (NodeId 245) (record ["Type"; "PassBy"] [246; 249] 212)
+        |> Map.add (NodeId 246) (case "Integer" [247] 245)
+        |> Map.add (NodeId 247) (controlFact "tuple" [] [] [248; 250] (Some 246))
+        |> Map.add (NodeId 248) (case "Signed" [] 247)
+        |> Map.add (NodeId 250) (number 32I 247)
+        |> Map.add (NodeId 249) (case "Value" [] 245)
+        |> Map.add (NodeId 604) (text quotedParam 602)
+        |> Map.add (NodeId 602) { record ["Binding"; "Parameter"; "Owner"; "Releases"] [603; 604; 605; 606] 600 with SourceType = TypeIdentity.Application({ Declaration = { Module = ["BAREWire"; "Descriptors"]; Name = "RetainedCallbackDescriptor" }; Parameters = []; NativeKind = None }, []) }
+        |> Map.add (NodeId 605) (number quotedOwner 602)
+        |> Map.add (NodeId 606) (controlFact "array" [] [] [607] (Some 602))
+        |> Map.add (NodeId 607) (case "OwnerRelease" [608] 606)
+        |> Map.add (NodeId 608) (record ["Binding"; "Parameter"] [609; 610] 607)
+        |> Map.add (NodeId 609) (text quotedRelease 608)
+        |> Map.add (NodeId 610) (number 0I 608)
+    let ownerDecl =
+        { imported0 with
+            Parameters = imported0.Parameters @ [NodeId 211, BoundaryScalar.Integer(32, true)]
+            DeclarationFacts = retainedFacts }
+    let receiver =
+        { receiver0 with
+            Extent = BoundaryCallbackExtent.Retained(1, [| BAREWire.Descriptors.RetentionRelease.OwnerRelease { Binding = "OptionalControl.close"; Parameter = 0 } |]) }
+    let boundary =
+        { basis with
+            Imports = basis.Imports.Add(ownerDecl.Identity, ownerDecl)
+            CallbackInvocations = basis.CallbackInvocations.Add(receiver.Identity, receiver) }
+    let violations = Integrity.check { held with Emission = { held.Emission with Boundary = boundary } }
+    Assert.Contains(violations, fun v -> v.Part = expectedPart)
+
+[<Theory>]
+[<InlineData("valid-pointer-value", "")>]
+[<InlineData("reject-mutable-reference", "Emission.Boundary.ReadOnlyBufferDeclarations.Ordinals")>]
+let ``readonly buffer declaration admits Pointer Value ABI while rejecting mutable Reference`` mode expectedPart =
+    let held = snapshotFacts
+    let basis = boundaryCalleeFacts.Emission.Boundary
+    let header = boundaryCalleeFacts.SourceReadings.ContextHeaders[NodeId 50]
+    let integerType name kind =
+        TypeIdentity.Application({Declaration = {Module = []; Name = name}; Parameters = []; NativeKind = Some kind}, [])
+    let byteType = integerType "uint8" (NTUKind.NTUuint(NTUWidth.Fixed 8))
+    let countType = integerType "uint64" (NTUKind.NTUuint(NTUWidth.Fixed 64))
+    let arrayType = TypeIdentity.Application({Declaration = {Module = []; Name = "array"}; Parameters = [TypeParamKind.Type]; NativeKind = None}, [byteType])
+    let unitType = held.Nodes[NodeId 1].Type
+    let record fields ids parent = controlFact "record" fields [] ids (Some parent)
+    let binding name child = controlFact "binding" [name] [0I;0I] [child] (Some 50)
+    let text value parent = controlFact "string" [value] [] [] (Some parent)
+    let number value parent = controlFact "integer" [] [value] [] (Some parent)
+    let case name refs parent = controlFact "case" [name] [] refs (Some parent)
+    let paramTypeFacts =
+        if mode = "valid-pointer-value" then
+            [ 1013, case "Pointer" [1014] 1011
+              1014, number 64I 1013
+              1016, case "Value" [] 1011 ]
+        else
+            [ 1013, case "Integer" [1014] 1011
+              1014, controlFact "tuple" [] [] [1015; 1018] (Some 1013)
+              1015, case "Unsigned" [] 1014
+              1018, number 8I 1014
+              1016, case "Reference" [] 1011 ]
+    let facts =
+        ([ 2, binding "readFn" 1003
+           1003, controlFact "lambda" ["readFn"; "buf"; "count"] [2I; 0I; 0I] [1004; 1005; 1006] (Some 2)
+           1004, {controlFact "formal" ["buf"] [] [] (Some 1003) with SourceType = arrayType}
+           1005, {controlFact "formal" ["count"] [] [] (Some 1003) with SourceType = countType}
+           1006, controlFact "unit" [] [] [] (Some 1003)
+           1073, binding "readFnDescriptor" 1072
+           1072, controlFact "quotation" [] [] [72] (Some 1073)
+           72, record ["Parameters"; "CName"] [1010; 1020] 1072
+           1010, controlFact "array" [] [] [1011; 1012] (Some 72)
+           1011, record ["Type"; "PassBy"] [1013; 1016] 1010
+           1012, record ["Type"; "PassBy"] [1017; 1019] 1010
+           1017, case "Integer" [1021] 1012
+           1021, controlFact "tuple" [] [] [1022; 1023] (Some 1017)
+           1022, case "Unsigned" [] 1021
+           1023, number 64I 1021
+           1019, case "Value" [] 1012
+           1020, text "readFn" 72
+           1101, binding "readFnReadOnlyDescriptor" 1100
+           1100, controlFact "quotation" [] [] [1102] (Some 1101)
+           1102, record ["Binding"; "Parameter"; "Extent"; "Content"; "Retention"; "Hypothesis"] [1103; 1104; 1105; 1115; 1111; 1106] 1100
+           1103, text (header.Name + ".readFn") 1102
+           1104, number 0I 1102
+           1105, case "ExplicitCount" [1110] 1102
+           1110, number 1I 1105
+           1115, case "RawBytes" [] 1102
+           1111, case "DuringCall" [] 1102
+           1106, record ["Identity"; "Version"; "Source"] [1107; 1108; 1109] 1102
+           1107, text "ro-abi" 1106
+           1108, text "1" 1106
+           1109, text "fixture" 1106 ] @ paramTypeFacts)
+        |> List.map (fun (id, fact) -> NodeId id, fact) |> Map.ofList
+    let roDecl : BoundaryReadOnlyBufferDeclaration =
+        { Identity = NodeId 1100; Declaration = NodeId 2; Body = NodeId 1006
+          Formals = [NodeId 1004; NodeId 1005]; Descriptor = NodeId 72
+          Parameter = 0; CountParameter = Some 1
+          BufferFormal = NodeId 1004; CountFormal = Some(NodeId 1005)
+          Contract =
+            { Binding = header.Name + ".readFn"; Parameter = 0
+              Extent = BAREWire.Descriptors.ReadOnlyBufferExtent.ExplicitCount 1
+              Content = BAREWire.Descriptors.BorrowedContent.RawBytes
+              Retention = BAREWire.Descriptors.BufferRetention.DuringCall
+              Hypothesis = { Identity = "ro-abi"; Version = "1"; Source = "fixture" } }
+          DeclarationFacts = facts
+          Participants = ParticipantEvidence.Established
+            [ { Role = ParticipantRole.ReadOnlyBufferDeclaration; Node = NodeId 1100; Ordinal = 0; Group = NodeId 1100 }
+              { Role = ParticipantRole.ReadOnlyBufferFormal; Node = NodeId 1004; Ordinal = 0; Group = NodeId 1100 }
+              { Role = ParticipantRole.ReadOnlyBufferFormal; Node = NodeId 1005; Ordinal = 1; Group = NodeId 1100 } ] }
+    let imported =
+        { basis.Imports[NodeId 72] with
+            Symbol = "readFn"
+            Parameters = [NodeId 1004, BoundaryScalar.ReadOnlyBytes(NodeId 1100); NodeId 1005, BoundaryScalar.Integer(64, false)]
+            Result = None; DeclarationFacts = facts; Participants = facts.Keys |> Set.ofSeq
+            SourceTypes = Map.ofList [NodeId 1004, arrayType; NodeId 1005, countType; NodeId 1, unitType] }
+    let call =
+        { basis.Calls[NodeId 1] with
+            Arguments =
+                [ { Actual = NodeId 3; Formal = NodeId 1004; Abi = BoundaryScalar.ReadOnlyBytes(NodeId 1100); Adaptation = None; OptionalEntry = None; BufferAbsence = None }
+                  { Actual = NodeId 4; Formal = NodeId 1005; Abi = BoundaryScalar.Integer(64, false); Adaptation = None; OptionalEntry = None; BufferAbsence = None } ]
+            Result = None; SourceTypes = imported.SourceTypes; Participants = facts.Keys |> Set.ofSeq }
+    let countCarrier =
+        { held.Emission.Numeric.Values[NodeId 4] with
+            Slot = SettledSlot.Integer(64, Some "uint64"); SourceType = countType
+            Range = ValueRange.Bounded(4I, 4I); Obligations = [] }
+    let extentClaim =
+        controlClaim "ro-extent" "foreign-readonly-buffer-extent"
+            (ObligationBody.ZeroCopyBufferExtent
+                { Call = NodeId 1; Declaration = NodeId 1100; Parameter = 0; CountParameter = 1
+                  Buffer = NodeId 3; Count = NodeId 4; MinimumCount = 4I; MaximumCount = 4I
+                  ExtentCapacity = 4I; ElementBytes = 1; CountCoverage = NodeId 951 })
+    let retentionClaim =
+        controlClaim "ro-ret" "foreign-buffer-retention-domination"
+            (ObligationBody.BufferRetentionDomination
+                { Call = NodeId 1; Declaration = NodeId 1100; Buffer = NodeId 3; Residence = NodeId 11
+                  Mode = BufferRetentionMode.DuringCall; AcquireOrder = 1; RetirementOrders = [] })
+    let roUse : BoundaryReadOnlyBufferUse =
+        { Call = NodeId 1; Declaration = NodeId 1100; Parameter = 0; Buffer = NodeId 3
+          Residence = NodeId 11; Retirements = []; Copies = 0
+          Crossing = BoundaryReadOnlyBufferCrossing.ExplicitZeroCopy(1, NodeId 4, 4I, NodeId 951)
+          RetentionProof = NodeId 952; AccessExclusivityProof = None
+          Participants = ParticipantEvidence.Established
+            [ { Role = ParticipantRole.ReadOnlyBufferCall; Node = NodeId 1; Ordinal = 0; Group = NodeId 1 }
+              { Role = ParticipantRole.ReadOnlyBufferDeclaration; Node = NodeId 1100; Ordinal = 0; Group = NodeId 1 }
+              { Role = ParticipantRole.ReadOnlyBufferActual; Node = NodeId 3; Ordinal = 0; Group = NodeId 1 }
+              { Role = ParticipantRole.ReadOnlyBufferResidence; Node = NodeId 11; Ordinal = 0; Group = NodeId 1 } ] }
+    let callNode = { held.Nodes[NodeId 1] with Kind = SemanticKind.Application(NodeId 2, [NodeId 3; NodeId 4]); Children = [NodeId 2; NodeId 3; NodeId 4]; Type = unitType }
+    let revision =
+        { held with
+            Nodes = held.Nodes.Add(NodeId 1, callNode)
+            CurrentClaims = held.CurrentClaims.Add(NodeId 951, extentClaim).Add(NodeId 952, retentionClaim)
+            Obligations = held.Obligations @ [extentClaim; retentionClaim]
+            ObligationSources = held.ObligationSources.Add(NodeId 951, [[NodeId 1; NodeId 3]]).Add(NodeId 952, [[NodeId 1; NodeId 3]])
+            Emission =
+                { held.Emission with
+                    Boundary =
+                        { basis with
+                            Imports = Map.ofList [NodeId 72, imported]
+                            Calls = Map.ofList [NodeId 1, call]
+                            ReadOnlyBufferDeclarations = Map.ofList [NodeId 1100, roDecl]
+                            ReadOnlyBufferUses = Map.ofList [(NodeId 1, 0), roUse] }
+                    Numeric =
+                        { held.Emission.Numeric with
+                            Operations = Map.empty; OperationRequired = Set.empty; ResultSites = Set.empty
+                            Required = Set.singleton(NodeId 4)
+                            Values = held.Emission.Numeric.Values.Remove(NodeId 1).Add(NodeId 4, countCarrier) } } }
+        |> covered
+    let revision =
+        { revision with
+            SourceReadings =
+                { revision.SourceReadings with
+                    ContextHeaders = revision.SourceReadings.ContextHeaders.Add(NodeId 50, header)
+                    Contexts = revision.SourceReadings.Contexts.Add(NodeId 50, [[]])
+                    Ports = revision.SourceReadings.Ports.Add((NodeId 50, OccurrencePort.ModuleDeclaration), header.Ports[OccurrencePort.ModuleDeclaration]) } }
+    let violations = Integrity.check revision
+    if expectedPart = "" then Assert.Empty violations
+    else Assert.Contains(violations, fun v -> v.Part = expectedPart)
+
+[<Fact>]
+let ``positive buffer absence account passes with None-to-null choice and current plan claim`` () =
+    let held = snapshotFacts
+    let basis = boundaryCalleeFacts.Emission.Boundary
+    let header = boundaryCalleeFacts.SourceReadings.ContextHeaders[NodeId 50]
+    let byteType = TypeIdentity.Application({Declaration = {Module = []; Name = "uint8"}; Parameters = []; NativeKind = Some(NTUKind.NTUuint(NTUWidth.Fixed 8))}, [])
+    let arrayType = TypeIdentity.Application({Declaration = {Module = []; Name = "array"}; Parameters = [TypeParamKind.Type]; NativeKind = None}, [byteType])
+    let optionArrayType = TypeIdentity.Application({Declaration = {Module = []; Name = "option"}; Parameters = [TypeParamKind.Type]; NativeKind = None}, [arrayType])
+    let unitType = held.Nodes[NodeId 1].Type
+    let record fields ids parent = controlFact "record" fields [] ids (Some parent)
+    let binding name child = controlFact "binding" [name] [0I;0I] [child] (Some 50)
+    let text value parent = controlFact "string" [value] [] [] (Some parent)
+    let number value parent = controlFact "integer" [] [value] [] (Some parent)
+    let case name refs parent = controlFact "case" [name] [] refs (Some parent)
+    let facts =
+        [ 2, binding "openVfs" 1003
+          1003, controlFact "lambda" ["openVfs"; "vfs"] [1I; 0I; 0I] [1004; 1006] (Some 2)
+          1004, {controlFact "formal" ["vfs"] [] [] (Some 1003) with SourceType = optionArrayType}
+          1006, controlFact "unit" [] [] [] (Some 1003)
+          1073, binding "openVfsDescriptor" 1072
+          1072, controlFact "quotation" [] [] [72] (Some 1073)
+          72, record ["Parameters"; "CName"] [1010; 1020] 1072
+          1010, controlFact "array" [] [] [1011] (Some 72)
+          1011, record ["Type"; "PassBy"] [1013; 1016] 1010
+          1013, case "Pointer" [1014] 1011
+          1014, number 64I 1013
+          1016, case "Value" [] 1011
+          1020, text "openVfs" 72
+          1101, binding "openVfsReadOnlyDescriptor" 1100
+          1100, controlFact "quotation" [] [] [1102] (Some 1101)
+          1102, record ["Binding"; "Parameter"; "Extent"; "Content"; "Retention"; "Hypothesis"] [1103; 1104; 1105; 1115; 1111; 1106] 1100
+          1103, text (header.Name + ".openVfs") 1102
+          1104, number 0I 1102
+          1105, case "UncountedNulTerminated" [] 1102
+          1115, case "Utf8Text" [] 1102
+          1111, case "DuringCall" [] 1102
+          1106, record ["Identity"; "Version"; "Source"] [1107; 1108; 1109] 1102
+          1107, text "ro-abs" 1106
+          1108, text "1" 1106
+          1109, text "fixture" 1106
+          701, binding "openVfsBufferAbsence" 700
+          700, controlFact "quotation" [] [] [702] (Some 701)
+          702, { record ["Binding"; "Parameter"; "Hypothesis"] [703; 704; 705] 700 with
+                    SourceType = TypeIdentity.Application({ Declaration = { Module = ["BAREWire"; "Descriptors"]; Name = "BufferAbsenceContract" }; Parameters = []; NativeKind = None }, []) }
+          703, text (header.Name + ".openVfs") 702
+          704, number 0I 702
+          705, record ["Identity"; "Version"; "Source"] [706; 707; 708] 702
+          706, text "abs-hyp" 705
+          707, text "1" 705
+          708, text "fixture" 705 ]
+        |> List.map (fun (id, fact) -> NodeId id, fact) |> Map.ofList
+    let roDecl : BoundaryReadOnlyBufferDeclaration =
+        { Identity = NodeId 1100; Declaration = NodeId 2; Body = NodeId 1006
+          Formals = [NodeId 1004]; Descriptor = NodeId 72
+          Parameter = 0; CountParameter = None
+          BufferFormal = NodeId 1004; CountFormal = None
+          Contract =
+            { Binding = header.Name + ".openVfs"; Parameter = 0
+              Extent = BAREWire.Descriptors.ReadOnlyBufferExtent.UncountedNulTerminated
+              Content = BAREWire.Descriptors.BorrowedContent.Utf8Text
+              Retention = BAREWire.Descriptors.BufferRetention.DuringCall
+              Hypothesis = { Identity = "ro-abs"; Version = "1"; Source = "fixture" } }
+          DeclarationFacts = facts
+          Participants = ParticipantEvidence.Established
+            [ { Role = ParticipantRole.ReadOnlyBufferDeclaration; Node = NodeId 1100; Ordinal = 0; Group = NodeId 1100 }
+              { Role = ParticipantRole.ReadOnlyBufferFormal; Node = NodeId 1004; Ordinal = 0; Group = NodeId 1100 } ] }
+    let absence : BoundaryBufferAbsence =
+        { Quote = NodeId 700; DescriptorBinding = NodeId 701; Record = NodeId 702
+          Import = NodeId 72; Parameter = 0; Formal = NodeId 1004; BufferDeclaration = NodeId 1100
+          Contract = { Binding = header.Name + ".openVfs"; Parameter = 0; Hypothesis = { Identity = "abs-hyp"; Version = "1"; Source = "fixture" } }
+          SourcePath = [NodeId 700; NodeId 702]
+          Inputs =
+            [ BufferAbsenceInputRole.Binding, [NodeId 703]
+              BufferAbsenceInputRole.Parameter, [NodeId 704]
+              BufferAbsenceInputRole.Hypothesis, [NodeId 705]
+              BufferAbsenceInputRole.HypothesisIdentity, [NodeId 706]
+              BufferAbsenceInputRole.HypothesisVersion, [NodeId 707]
+              BufferAbsenceInputRole.HypothesisSource, [NodeId 708] ]
+          DeclarationFacts = [700..708] |> List.map (fun id -> NodeId id, facts[NodeId id]) |> Map.ofList }
+    let sel : BoundaryBufferAbsenceSelection =
+        { Construction = NodeId 3; CaseOrdinal = 0; Payload = None; Absence = NodeId 700
+          Transport = [NodeId 3]; Obligation = NodeId 958 }
+    let absClaim =
+        controlClaim "abs-none" "foreign-buffer-absence-conversion-0"
+            (ObligationBody.BufferAbsenceArgumentConversion
+                { Call = NodeId 1; Parameter = 0; Actual = NodeId 3; Construction = NodeId 3; SourceCase = 0
+                  Absence = NodeId 700
+                  Arms = [ { CaseOrdinal = 0; Choice = BufferAbsencePlanChoice.AbsentNull }
+                           { CaseOrdinal = 1; Choice = BufferAbsencePlanChoice.RequiresNonNullBuffer } ] })
+    let imported =
+        { basis.Imports[NodeId 72] with
+            Symbol = "openVfs"; Parameters = [NodeId 1004, BoundaryScalar.ReadOnlyBytes(NodeId 1100)]; Result = None
+            DeclarationFacts = facts; Participants = facts.Keys |> Set.ofSeq
+            SourceTypes = Map.ofList [NodeId 1004, optionArrayType; NodeId 1, unitType] }
+    let call =
+        { basis.Calls[NodeId 1] with
+            Arguments = [ { Actual = NodeId 3; Formal = NodeId 1004; Abi = BoundaryScalar.ReadOnlyBytes(NodeId 1100); Adaptation = None; OptionalEntry = None; BufferAbsence = Some(BoundaryBufferAbsenceChoice.Direct sel) } ]
+            Result = None; SourceTypes = imported.SourceTypes; Participants = facts.Keys |> Set.ofSeq }
+    let callNode = { held.Nodes[NodeId 1] with Kind = SemanticKind.Application(NodeId 2, [NodeId 3]); Children = [NodeId 2; NodeId 3]; Type = unitType }
+    let revision =
+        { held with
+            Nodes = held.Nodes.Add(NodeId 1, callNode)
+            CurrentClaims = held.CurrentClaims.Add(NodeId 958, absClaim)
+            Obligations = held.Obligations @ [absClaim]
+            ObligationSources = held.ObligationSources.Add(NodeId 958, [[NodeId 1; NodeId 3]])
+            Emission =
+                { held.Emission with
+                    Boundary =
+                        { basis with
+                            Imports = Map.ofList [NodeId 72, imported]
+                            Calls = Map.ofList [NodeId 1, call]
+                            ReadOnlyBufferDeclarations = Map.ofList [NodeId 1100, roDecl]
+                            BufferAbsences = Map.ofList [NodeId 700, absence] }
+                    Numeric =
+                        { held.Emission.Numeric with
+                            Operations = Map.empty; OperationRequired = Set.empty; ResultSites = Set.empty
+                            Required = Set.empty; Values = held.Emission.Numeric.Values.Remove(NodeId 1) } } }
+        |> covered
+    let revision =
+        { revision with
+            SourceReadings =
+                { revision.SourceReadings with
+                    ContextHeaders = revision.SourceReadings.ContextHeaders.Add(NodeId 50, header)
+                    Contexts = revision.SourceReadings.Contexts.Add(NodeId 50, [[]])
+                    Ports = revision.SourceReadings.Ports.Add((NodeId 50, OccurrencePort.ModuleDeclaration), header.Ports[OccurrencePort.ModuleDeclaration]) } }
+    Assert.Empty(Integrity.check revision)
+
+[<Theory>]
+[<InlineData("valid", "")>]
+[<InlineData("mismatched-count-arg", "Emission.Boundary.CountedEntryArrays.Contract")>]
+[<InlineData("mismatched-element", "Emission.Boundary.CountedEntryArrays.Contract")>]
+let ``counted entry array validates quotation fields and Pointer callback argument`` mode expectedPart =
+    let held = optionalBoundaryControl true
+    let basis = held.Emission.Boundary
+    let receiver0 = basis.CallbackInvocations[NodeId 220]
+    let imported0 = basis.Imports[receiver0.Import]
+    let text value parent = controlFact "string" [value] [] [] (Some parent)
+    let number value parent = controlFact "integer" [] [value] [] (Some parent)
+    let case name refs parent = controlFact "case" [name] [] refs (Some parent)
+    let record fields refs parent = controlFact "record" fields [] refs (Some parent)
+    let countedFacts =
+        [ 751, controlFact "binding" ["countedArg"] [0I; 0I] [750] None
+          750, controlFact "quotation" [] [] [752] (Some 751)
+          752, record ["Binding"; "Parameter"; "Argument"; "CountArgument"; "Element"] [753; 754; 755; 756; 757] 750
+          753, text "OptionalControl.receive" 752
+          754, number 0I 752
+          755, number 1I 752
+          756, number 0I 752
+          757, (if mode = "mismatched-element" then case "NullableText" [] 752 else case "Handle" [758] 752)
+          758, text "sqlite3_value" 757 ]
+        |> List.map (fun (id, fact) -> NodeId id, fact) |> Map.ofList
+    let counted : BoundaryCountedEntryArray =
+        { Identity = NodeId 750; Import = receiver0.Import; Parameter = 0; Invocation = NodeId 220
+          Contract =
+            { Binding = "OptionalControl.receive"; Parameter = 0; Argument = 1
+              CountArgument = (if mode = "mismatched-count-arg" then 2 else 0)
+              Element = BAREWire.Descriptors.CountedElement.Handle "sqlite3_value" }
+          DeclarationFacts = countedFacts
+          Participants = ParticipantEvidence.Established
+            [ { Role = ParticipantRole.CountedEntryArrayDeclaration; Node = NodeId 750; Ordinal = 0; Group = NodeId 750 }
+              { Role = ParticipantRole.CountedEntryArrayInvocation; Node = NodeId 220; Ordinal = 0; Group = NodeId 750 } ] }
+    let sigWithArray : BAREWire.Descriptors.EntrySignature =
+        { Parameters =
+            [| { Name = "argc"; Type = BAREWire.Descriptors.TypeRef.Integer(BAREWire.Descriptors.Signedness.Signed, 32); PassBy = BAREWire.Descriptors.PassBy.Value }
+               { Name = "argv"; Type = BAREWire.Descriptors.TypeRef.Pointer 64; PassBy = BAREWire.Descriptors.PassBy.Value } |]
+          ReturnType = BAREWire.Descriptors.TypeRef.Integer(BAREWire.Descriptors.Signedness.Signed, 32)
+          CallingConvention = BAREWire.Descriptors.CallConv.CDecl }
+    let receiver =
+        { receiver0 with
+            Contract = { receiver0.Contract with Signature = sigWithArray }
+            Signature = { receiver0.Signature with Parameters = [BoundaryScalar.Integer(32, true); BoundaryScalar.ReadOnlyBytes(NodeId 750)] } }
+    let boundary =
+        { basis with
+            CallbackInvocations = basis.CallbackInvocations.Add(receiver.Identity, receiver)
+            CountedEntryArrays = Map.ofList [NodeId 750, counted] }
+    let violations = Integrity.check { held with Emission = { held.Emission with Boundary = boundary } }
+    if expectedPart = "" then
+        Assert.Empty violations
+    else
+        Assert.Contains(violations, fun v -> v.Part = expectedPart)
+
+[<Theory>]
+[<InlineData("valid-companion", "")>]
+[<InlineData("wrong-companion-binding", "Emission.Boundary.BorrowedResultViewUses.Account")>]
+let ``borrowed result view CompanionCall verifies companion import binding and shared arguments`` mode expectedPart =
+    let held = snapshotFacts
+    let basis = boundaryCalleeFacts.Emission.Boundary
+    let header = boundaryCalleeFacts.SourceReadings.ContextHeaders[NodeId 50]
+    let record fields ids parent = controlFact "record" fields [] ids (Some parent)
+    let binding name child = controlFact "binding" [name] [0I;0I] [child] (Some 50)
+    let text value parent = controlFact "string" [value] [] [] (Some parent)
+    let number value parent = controlFact "integer" [] [value] [] (Some parent)
+    let case name refs parent = controlFact "case" [name] [] refs (Some parent)
+    let intType = held.Nodes[NodeId 3].Type
+    let viewFacts =
+        [ 2, binding "colText" 1003
+          1003, controlFact "lambda" ["colText"; "stmt"; "col"] [2I; 0I; 0I] [1004; 1005; 1006] (Some 2)
+          1004, {controlFact "formal" ["stmt"] [] [] (Some 1003) with SourceType = intType}
+          1005, {controlFact "formal" ["col"] [] [] (Some 1003) with SourceType = intType}
+          1006, controlFact "unit" [] [] [] (Some 1003)
+          1073, binding "colTextDescriptor" 1072
+          1072, controlFact "quotation" [] [] [72] (Some 1073)
+          72, record ["Parameters"; "CName"] [1010; 1020] 1072
+          1010, controlFact "array" [] [] [1011; 1012] (Some 72)
+          1011, record ["Type"; "PassBy"] [1013; 1016] 1010
+          1013, case "Pointer" [1014] 1011
+          1014, number 64I 1013
+          1016, case "Value" [] 1011
+          1012, record ["Type"; "PassBy"] [1017; 1019] 1010
+          1017, case "Integer" [1021] 1012
+          1021, controlFact "tuple" [] [] [1022; 1023] (Some 1017)
+          1022, case "Signed" [] 1021
+          1023, number 32I 1021
+          1019, case "Value" [] 1012
+          1020, text "colText" 72
+          1201, binding "colTextBorrowedViewDescriptor" 1200
+          1200, controlFact "quotation" [] [] [1202] (Some 1201)
+          1202, record ["Binding"; "Content"; "Extent"; "Owner"; "InvalidatedBy"; "Hypothesis"] [1203; 1204; 1205; 1206; 1207; 1208] 1200
+          1203, text (header.Name + ".colText") 1202
+          1204, case "Utf8Text" [] 1202
+          1205, case "CompanionCall" [1213; 1214] 1202
+          1213, text (header.Name + ".colBytes") 1205
+          1214, controlFact "array" [] [] [1215; 1216] (Some 1205)
+          1215, number 0I 1214
+          1216, number 1I 1214
+          1206, number 0I 1202
+          1207, controlFact "array" [] [] [1212] (Some 1202)
+          1212, case "AnyOwnerCall" [] 1207
+          1208, record ["Identity"; "Version"; "Source"] [1209; 1210; 1211] 1202
+          1209, text "view-comp" 1208
+          1210, text "1" 1208
+          1211, text "fixture" 1208 ]
+        |> List.map (fun (id, fact) -> NodeId id, fact) |> Map.ofList
+    let compBindingName = if mode = "wrong-companion-binding" then "wrongComp" else "colBytes"
+    let compFacts =
+        [ 20, binding compBindingName 1083
+          1083, controlFact "lambda" [compBindingName; "stmt"; "col"] [2I; 0I; 0I] [1084; 1085; 1086] (Some 20)
+          1084, {controlFact "formal" ["stmt"] [] [] (Some 1083) with SourceType = intType}
+          1085, {controlFact "formal" ["col"] [] [] (Some 1083) with SourceType = intType}
+          1086, controlFact "unit" [] [] [] (Some 1083) ]
+        |> List.map (fun (id, fact) -> NodeId id, fact) |> Map.ofList
+    let viewDecl : BoundaryBorrowedResultViewDeclaration =
+        { Identity = NodeId 1200; Declaration = NodeId 2; Body = NodeId 1006
+          Formals = [NodeId 1004; NodeId 1005]; Descriptor = NodeId 72
+          OwnerParameter = 0; OwnerFormal = NodeId 1004
+          Contract =
+            { Binding = header.Name + ".colText"; Content = BAREWire.Descriptors.BorrowedContent.Utf8Text
+              Extent = BAREWire.Descriptors.BorrowedExtent.CompanionCall(header.Name + ".colBytes", [| 0; 1 |]); Owner = 0
+              InvalidatedBy = [| BAREWire.Descriptors.BorrowInvalidation.AnyOwnerCall |]
+              Hypothesis = { Identity = "view-comp"; Version = "1"; Source = "fixture" } }
+          DeclarationFacts = viewFacts
+          Participants = ParticipantEvidence.Established
+            [ { Role = ParticipantRole.BorrowedResultViewDeclaration; Node = NodeId 1200; Ordinal = 0; Group = NodeId 1200 }
+              { Role = ParticipantRole.BorrowedResultViewOwner; Node = NodeId 1004; Ordinal = 0; Group = NodeId 1200 } ] }
+    let scopeClaim =
+        controlClaim "borrowed-view-scope" "foreign-borrowed-view-scope"
+            (ObligationBody.BorrowedResultViewScope
+                { Call = NodeId 1; Declaration = NodeId 1200; Owner = NodeId 3; View = NodeId 1
+                  CallOrder = 1; InvalidationOrders = [5]; ReadOrders = [2]; NullToNoneBoundary = true })
+    let viewUse : BoundaryBorrowedResultViewUse =
+        { Call = NodeId 1; Declaration = NodeId 1200; Owner = NodeId 3; View = NodeId 1
+          CompanionCall = Some(NodeId 21); CompanionArguments = [NodeId 3; NodeId 4]; CallOrder = 1
+          Invalidations = [NodeId 961]; InvalidationOrders = [5]; Reads = [NodeId 962]; ReadOrders = [2]
+          NullToNoneBoundary = true; ScopeProof = NodeId 960
+          Participants = ParticipantEvidence.Established
+            [ { Role = ParticipantRole.BorrowedResultViewCall; Node = NodeId 1; Ordinal = 0; Group = NodeId 1 }
+              { Role = ParticipantRole.BorrowedResultViewDeclaration; Node = NodeId 1200; Ordinal = 0; Group = NodeId 1 }
+              { Role = ParticipantRole.BorrowedResultViewOwner; Node = NodeId 3; Ordinal = 0; Group = NodeId 1 }
+              { Role = ParticipantRole.BorrowedResultViewInvalidation; Node = NodeId 961; Ordinal = 0; Group = NodeId 1 }
+              { Role = ParticipantRole.BorrowedResultViewRead; Node = NodeId 962; Ordinal = 0; Group = NodeId 1 } ] }
+    let borrowImport =
+        { basis.Imports[NodeId 72] with
+            Binding = NodeId 2; Symbol = "colText"
+            Parameters = [NodeId 1004, BoundaryScalar.Integer(64, false); NodeId 1005, BoundaryScalar.Integer(32, true)]
+            Result = Some(BoundaryScalar.BorrowedBytes(NodeId 1200))
+            DeclarationFacts = viewFacts; Participants = viewFacts.Keys |> Set.ofSeq
+            SourceTypes = Map.ofList [NodeId 1004, intType; NodeId 1005, intType; NodeId 1, held.Nodes[NodeId 1].Type] }
+    let compImport =
+        { basis.Imports[NodeId 72] with
+            Identity = NodeId 73; Binding = NodeId 20; Symbol = compBindingName
+            Parameters = [NodeId 1084, BoundaryScalar.Integer(64, false); NodeId 1085, BoundaryScalar.Integer(32, true)]
+            Result = Some(BoundaryScalar.Integer(32, true))
+            DeclarationFacts = compFacts; Participants = compFacts.Keys |> Set.ofSeq
+            SourceTypes = Map.ofList [NodeId 1084, intType; NodeId 1085, intType; NodeId 21, held.Nodes[NodeId 1].Type] }
+    let borrowCall =
+        { basis.Calls[NodeId 1] with
+            Callee = NodeId 2
+            Arguments =
+                [ { Actual = NodeId 3; Formal = NodeId 1004; Abi = BoundaryScalar.Integer(64, false); Adaptation = None; OptionalEntry = None; BufferAbsence = None }
+                  { Actual = NodeId 4; Formal = NodeId 1005; Abi = BoundaryScalar.Integer(32, true); Adaptation = None; OptionalEntry = None; BufferAbsence = None } ]
+            Result = Some(BoundaryScalar.BorrowedBytes(NodeId 1200))
+            SourceTypes = borrowImport.SourceTypes; Participants = viewFacts.Keys |> Set.ofSeq }
+    let compCall =
+        { basis.Calls[NodeId 1] with
+            Site = NodeId 21; Import = NodeId 73; Callee = NodeId 20
+            Arguments =
+                [ { Actual = NodeId 3; Formal = NodeId 1084; Abi = BoundaryScalar.Integer(64, false); Adaptation = None; OptionalEntry = None; BufferAbsence = None }
+                  { Actual = NodeId 4; Formal = NodeId 1085; Abi = BoundaryScalar.Integer(32, true); Adaptation = None; OptionalEntry = None; BufferAbsence = None } ]
+            Result = Some(BoundaryScalar.Integer(32, true))
+            SourceTypes = compImport.SourceTypes; Participants = compFacts.Keys |> Set.ofSeq }
+    let compSiteNode = { held.Nodes[NodeId 1] with Id = NodeId 21; Kind = SemanticKind.Application(NodeId 20, [NodeId 3; NodeId 4]); Children = [NodeId 20; NodeId 3; NodeId 4] }
+    let compCalleeNode = { held.Nodes[NodeId 2] with Id = NodeId 20 }
+    let revision =
+        { held with
+            Nodes = held.Nodes.Add(NodeId 20, compCalleeNode).Add(NodeId 21, compSiteNode)
+            CurrentClaims = held.CurrentClaims.Add(NodeId 960, scopeClaim)
+            Obligations = held.Obligations @ [scopeClaim]
+            ObligationSources = held.ObligationSources.Add(NodeId 960, [[NodeId 1; NodeId 3]])
+            Emission =
+                { held.Emission with
+                    Boundary =
+                        { basis with
+                            Imports = Map.ofList [NodeId 72, borrowImport; NodeId 73, compImport]
+                            Calls = Map.ofList [NodeId 1, borrowCall; NodeId 21, compCall]
+                            BorrowedResultViewDeclarations = Map.ofList [NodeId 1200, viewDecl]
+                            BorrowedResultViewUses = Map.ofList [NodeId 1, viewUse] }
+                    Numeric =
+                        { held.Emission.Numeric with
+                            Operations = Map.empty; OperationRequired = Set.empty; ResultSites = Set.empty
+                            Required = Set.empty; Values = held.Emission.Numeric.Values.Remove(NodeId 1) } } }
+        |> covered
+    let revision =
+        { revision with
+            SourceReadings =
+                { revision.SourceReadings with
+                    ContextHeaders = revision.SourceReadings.ContextHeaders.Add(NodeId 50, header)
+                    Contexts = revision.SourceReadings.Contexts.Add(NodeId 50, [[]])
+                    Ports = revision.SourceReadings.Ports.Add((NodeId 50, OccurrencePort.ModuleDeclaration), header.Ports[OccurrencePort.ModuleDeclaration]) } }
+    let violations = Integrity.check revision
+    if expectedPart = "" then
+        Assert.Empty violations
+    else
+        Assert.Contains(violations, fun v -> v.Part = expectedPart)
+
+[<Fact>]
+let ``integrity-valid Schema 53 revision round-trips through Binary encode decode and Json Inspection render`` () =
+    let held = snapshotFacts
+    let basis = boundaryCalleeFacts.Emission.Boundary
+    let header = boundaryCalleeFacts.SourceReadings.ContextHeaders[NodeId 50]
+    let byteType = TypeIdentity.Application({Declaration = {Module = []; Name = "uint8"}; Parameters = []; NativeKind = Some(NTUKind.NTUuint(NTUWidth.Fixed 8))}, [])
+    let arrayType = TypeIdentity.Application({Declaration = {Module = []; Name = "array"}; Parameters = [TypeParamKind.Type]; NativeKind = None}, [byteType])
+    let optionArrayType = TypeIdentity.Application({Declaration = {Module = []; Name = "option"}; Parameters = [TypeParamKind.Type]; NativeKind = None}, [arrayType])
+    let unitType = held.Nodes[NodeId 1].Type
+    let record fields ids parent = controlFact "record" fields [] ids (Some parent)
+    let binding name child = controlFact "binding" [name] [0I;0I] [child] (Some 50)
+    let text value parent = controlFact "string" [value] [] [] (Some parent)
+    let number value parent = controlFact "integer" [] [value] [] (Some parent)
+    let case name refs parent = controlFact "case" [name] [] refs (Some parent)
+    let facts =
+        [ 2, binding "openVfs" 1003
+          1003, controlFact "lambda" ["openVfs"; "vfs"] [1I; 0I; 0I] [1004; 1006] (Some 2)
+          1004, {controlFact "formal" ["vfs"] [] [] (Some 1003) with SourceType = optionArrayType}
+          1006, controlFact "unit" [] [] [] (Some 1003)
+          1073, binding "openVfsDescriptor" 1072
+          1072, controlFact "quotation" [] [] [72] (Some 1073)
+          72, record ["Parameters"; "CName"] [1010; 1020] 1072
+          1010, controlFact "array" [] [] [1011] (Some 72)
+          1011, record ["Type"; "PassBy"] [1013; 1016] 1010
+          1013, case "Pointer" [1014] 1011
+          1014, number 64I 1013
+          1016, case "Value" [] 1011
+          1020, text "openVfs" 72
+          1101, binding "openVfsReadOnlyDescriptor" 1100
+          1100, controlFact "quotation" [] [] [1102] (Some 1101)
+          1102, record ["Binding"; "Parameter"; "Extent"; "Content"; "Retention"; "Hypothesis"] [1103; 1104; 1105; 1115; 1111; 1106] 1100
+          1103, text (header.Name + ".openVfs") 1102
+          1104, number 0I 1102
+          1105, case "UncountedNulTerminated" [] 1102
+          1115, case "Utf8Text" [] 1102
+          1111, case "DuringCall" [] 1102
+          1106, record ["Identity"; "Version"; "Source"] [1107; 1108; 1109] 1102
+          1107, text "ro-rt" 1106
+          1108, text "1" 1106
+          1109, text "fixture" 1106
+          701, binding "openVfsBufferAbsence" 700
+          700, controlFact "quotation" [] [] [702] (Some 701)
+          702, { record ["Binding"; "Parameter"; "Hypothesis"] [703; 704; 705] 700 with
+                    SourceType = TypeIdentity.Application({ Declaration = { Module = ["BAREWire"; "Descriptors"]; Name = "BufferAbsenceContract" }; Parameters = []; NativeKind = None }, []) }
+          703, text (header.Name + ".openVfs") 702
+          704, number 0I 702
+          705, record ["Identity"; "Version"; "Source"] [706; 707; 708] 702
+          706, text "abs-rt" 705
+          707, text "1" 705
+          708, text "fixture" 705 ]
+        |> List.map (fun (id, fact) -> NodeId id, fact) |> Map.ofList
+    let viewFacts =
+        [ 1201, binding "openVfsBorrowedViewDescriptor" 1200
+          1200, controlFact "quotation" [] [] [1202] (Some 1201)
+          1202, record ["Binding"; "Content"; "Extent"; "Owner"; "InvalidatedBy"; "Hypothesis"] [1203; 1204; 1205; 1206; 1207; 1208] 1200
+          1203, text (header.Name + ".openVfs") 1202
+          1204, case "Utf8Text" [] 1202
+          1205, case "NulTerminated" [] 1202
+          1206, number 0I 1202
+          1207, controlFact "array" [] [] [1212] (Some 1202)
+          1212, case "AnyOwnerCall" [] 1207
+          1208, record ["Identity"; "Version"; "Source"] [1209; 1210; 1211] 1202
+          1209, text "view-rt" 1208
+          1210, text "1" 1208
+          1211, text "fixture" 1208 ]
+        |> List.map (fun (id, fact) -> NodeId id, fact)
+    let allOpenVfsFacts = (facts, viewFacts) ||> List.fold (fun m (k, v) -> Map.add k v m)
+    let roDecl : BoundaryReadOnlyBufferDeclaration =
+        { Identity = NodeId 1100; Declaration = NodeId 2; Body = NodeId 1006
+          Formals = [NodeId 1004]; Descriptor = NodeId 72; Parameter = 0; CountParameter = None
+          BufferFormal = NodeId 1004; CountFormal = None
+          Contract =
+            { Binding = header.Name + ".openVfs"; Parameter = 0
+              Extent = BAREWire.Descriptors.ReadOnlyBufferExtent.UncountedNulTerminated
+              Content = BAREWire.Descriptors.BorrowedContent.Utf8Text
+              Retention = BAREWire.Descriptors.BufferRetention.DuringCall
+              Hypothesis = { Identity = "ro-rt"; Version = "1"; Source = "fixture" } }
+          DeclarationFacts = allOpenVfsFacts
+          Participants = ParticipantEvidence.Established
+            [ { Role = ParticipantRole.ReadOnlyBufferDeclaration; Node = NodeId 1100; Ordinal = 0; Group = NodeId 1100 }
+              { Role = ParticipantRole.ReadOnlyBufferFormal; Node = NodeId 1004; Ordinal = 0; Group = NodeId 1100 } ] }
+    let viewDecl : BoundaryBorrowedResultViewDeclaration =
+        { Identity = NodeId 1200; Declaration = NodeId 2; Body = NodeId 1006
+          Formals = [NodeId 1004]; Descriptor = NodeId 72
+          OwnerParameter = 0; OwnerFormal = NodeId 1004
+          Contract =
+            { Binding = header.Name + ".openVfs"; Content = BAREWire.Descriptors.BorrowedContent.Utf8Text
+              Extent = BAREWire.Descriptors.BorrowedExtent.NulTerminated; Owner = 0
+              InvalidatedBy = [| BAREWire.Descriptors.BorrowInvalidation.AnyOwnerCall |]
+              Hypothesis = { Identity = "view-rt"; Version = "1"; Source = "fixture" } }
+          DeclarationFacts = allOpenVfsFacts
+          Participants = ParticipantEvidence.Established
+            [ { Role = ParticipantRole.BorrowedResultViewDeclaration; Node = NodeId 1200; Ordinal = 0; Group = NodeId 1200 }
+              { Role = ParticipantRole.BorrowedResultViewOwner; Node = NodeId 1004; Ordinal = 0; Group = NodeId 1200 } ] }
+    let terminationClaim =
+        controlClaim "ro-term" "foreign-uncounted-path-termination"
+            (ObligationBody.UncountedPathTermination
+                { Call = NodeId 1; Declaration = NodeId 1100; Parameter = 0; Source = NodeId 3
+                  Mode = UncountedPathStagingMode.CallScopedStaged(NodeId 12, 5); ByteLength = 4I
+                  RequiresNoInteriorNul = true; RequiresTrailingNul = true })
+    let retentionClaim =
+        controlClaim "ro-ret" "foreign-buffer-retention-domination"
+            (ObligationBody.BufferRetentionDomination
+                { Call = NodeId 1; Declaration = NodeId 1100; Buffer = NodeId 3; Residence = NodeId 11
+                  Mode = BufferRetentionMode.DuringCall; AcquireOrder = 1; RetirementOrders = [] })
+    let roUse : BoundaryReadOnlyBufferUse =
+        { Call = NodeId 1; Declaration = NodeId 1100; Parameter = 0; Buffer = NodeId 3
+          Residence = NodeId 11; Retirements = []; Copies = 0
+          Crossing = BoundaryReadOnlyBufferCrossing.CallScopedNulStaged(NodeId 12, 5, 4I, NodeId 959)
+          RetentionProof = NodeId 952; AccessExclusivityProof = None
+          Participants = ParticipantEvidence.Established
+            [ { Role = ParticipantRole.ReadOnlyBufferCall; Node = NodeId 1; Ordinal = 0; Group = NodeId 1 }
+              { Role = ParticipantRole.ReadOnlyBufferDeclaration; Node = NodeId 1100; Ordinal = 0; Group = NodeId 1 }
+              { Role = ParticipantRole.ReadOnlyBufferActual; Node = NodeId 3; Ordinal = 0; Group = NodeId 1 }
+              { Role = ParticipantRole.ReadOnlyBufferResidence; Node = NodeId 11; Ordinal = 0; Group = NodeId 1 } ] }
+    let viewClaim =
+        controlClaim "borrowed-view-scope" "foreign-borrowed-view-scope"
+            (ObligationBody.BorrowedResultViewScope
+                { Call = NodeId 1; Declaration = NodeId 1200; Owner = NodeId 3; View = NodeId 1
+                  CallOrder = 1; InvalidationOrders = [5]; ReadOrders = [2]; NullToNoneBoundary = true })
+    let viewUse : BoundaryBorrowedResultViewUse =
+        { Call = NodeId 1; Declaration = NodeId 1200; Owner = NodeId 3; View = NodeId 1
+          CompanionCall = None; CompanionArguments = []; CallOrder = 1
+          Invalidations = [NodeId 961]; InvalidationOrders = [5]; Reads = [NodeId 962]; ReadOrders = [2]
+          NullToNoneBoundary = true; ScopeProof = NodeId 960
+          Participants = ParticipantEvidence.Established
+            [ { Role = ParticipantRole.BorrowedResultViewCall; Node = NodeId 1; Ordinal = 0; Group = NodeId 1 }
+              { Role = ParticipantRole.BorrowedResultViewDeclaration; Node = NodeId 1200; Ordinal = 0; Group = NodeId 1 }
+              { Role = ParticipantRole.BorrowedResultViewOwner; Node = NodeId 3; Ordinal = 0; Group = NodeId 1 }
+              { Role = ParticipantRole.BorrowedResultViewInvalidation; Node = NodeId 961; Ordinal = 0; Group = NodeId 1 }
+              { Role = ParticipantRole.BorrowedResultViewRead; Node = NodeId 962; Ordinal = 0; Group = NodeId 1 } ] }
+    let absence : BoundaryBufferAbsence =
+        { Quote = NodeId 700; DescriptorBinding = NodeId 701; Record = NodeId 702
+          Import = NodeId 72; Parameter = 0; Formal = NodeId 1004; BufferDeclaration = NodeId 1100
+          Contract = { Binding = header.Name + ".openVfs"; Parameter = 0; Hypothesis = { Identity = "abs-rt"; Version = "1"; Source = "fixture" } }
+          SourcePath = [NodeId 700; NodeId 702]
+          Inputs =
+            [ BufferAbsenceInputRole.Binding, [NodeId 703]; BufferAbsenceInputRole.Parameter, [NodeId 704]
+              BufferAbsenceInputRole.Hypothesis, [NodeId 705]; BufferAbsenceInputRole.HypothesisIdentity, [NodeId 706]
+              BufferAbsenceInputRole.HypothesisVersion, [NodeId 707]; BufferAbsenceInputRole.HypothesisSource, [NodeId 708] ]
+          DeclarationFacts = [700..708] |> List.map (fun id -> NodeId id, facts[NodeId id]) |> Map.ofList }
+    let sel : BoundaryBufferAbsenceSelection =
+        { Construction = NodeId 3; CaseOrdinal = 0; Payload = None; Absence = NodeId 700
+          Transport = [NodeId 3]; Obligation = NodeId 958 }
+    let absClaim =
+        controlClaim "abs-none" "foreign-buffer-absence-conversion-0"
+            (ObligationBody.BufferAbsenceArgumentConversion
+                { Call = NodeId 1; Parameter = 0; Actual = NodeId 3; Construction = NodeId 3; SourceCase = 0
+                  Absence = NodeId 700
+                  Arms = [ { CaseOrdinal = 0; Choice = BufferAbsencePlanChoice.AbsentNull }
+                           { CaseOrdinal = 1; Choice = BufferAbsencePlanChoice.RequiresNonNullBuffer } ] })
+    let imported =
+        { basis.Imports[NodeId 72] with
+            Symbol = "openVfs"; Parameters = [NodeId 1004, BoundaryScalar.ReadOnlyBytes(NodeId 1100)]
+            Result = Some(BoundaryScalar.BorrowedBytes(NodeId 1200))
+            DeclarationFacts = allOpenVfsFacts; Participants = allOpenVfsFacts.Keys |> Set.ofSeq
+            SourceTypes = Map.ofList [NodeId 1004, optionArrayType; NodeId 1, held.Nodes[NodeId 1].Type] }
+    let call =
+        { basis.Calls[NodeId 1] with
+            Arguments = [ { Actual = NodeId 3; Formal = NodeId 1004; Abi = BoundaryScalar.ReadOnlyBytes(NodeId 1100); Adaptation = None; OptionalEntry = None; BufferAbsence = Some(BoundaryBufferAbsenceChoice.Direct sel) } ]
+            Result = Some(BoundaryScalar.BorrowedBytes(NodeId 1200))
+            SourceTypes = imported.SourceTypes; Participants = allOpenVfsFacts.Keys |> Set.ofSeq }
+    let callNode = { held.Nodes[NodeId 1] with Kind = SemanticKind.Application(NodeId 2, [NodeId 3]); Children = [NodeId 2; NodeId 3]; Type = held.Nodes[NodeId 1].Type }
+    let optRev = optionalBoundaryControl true
+    let optBasis = optRev.Emission.Boundary
+    let optCb0 = optBasis.CallbackInvocations[NodeId 220]
+    let optImp0 = optBasis.Imports[optCb0.Import]
+    let retType = TypeIdentity.Application({ Declaration = { Module = ["BAREWire"; "Descriptors"]; Name = "RetainedCallbackDescriptor" }; Parameters = []; NativeKind = None }, [])
+    let optCbFacts =
+        optImp0.DeclarationFacts
+        |> Map.add (NodeId 212) (controlFact "array" [] [] [218; 245] (Some 210))
+        |> Map.add (NodeId 245) (controlFact "record" ["Type"; "PassBy"] [] [246; 249] (Some 212))
+        |> Map.add (NodeId 246) (controlFact "case" ["Integer"] [] [247] (Some 245))
+        |> Map.add (NodeId 247) (controlFact "tuple" [] [] [248; 250] (Some 246))
+        |> Map.add (NodeId 248) (controlFact "case" ["Signed"] [] [] (Some 247))
+        |> Map.add (NodeId 250) (number 32I 247)
+        |> Map.add (NodeId 249) (controlFact "case" ["Value"] [] [] (Some 245))
+        |> Map.add (NodeId 602) { controlFact "record" ["Binding"; "Parameter"; "Owner"; "Releases"] [] [603; 604; 605; 606] (Some 600) with SourceType = retType }
+        |> Map.add (NodeId 605) (number 1I 602)
+        |> Map.add (NodeId 606) (controlFact "array" [] [] [607] (Some 602))
+        |> Map.add (NodeId 607) (controlFact "case" ["OwnerRelease"] [] [608] (Some 606))
+        |> Map.add (NodeId 608) (controlFact "record" ["Binding"; "Parameter"] [] [609; 610] (Some 607))
+        |> Map.add (NodeId 609) (text "OptionalControl.close" 608)
+        |> Map.add (NodeId 610) (number 0I 608)
+    let optImp =
+        { optImp0 with
+            Parameters = optImp0.Parameters @ [NodeId 211, BoundaryScalar.Integer(32, true)]
+            DeclarationFacts = optCbFacts }
+    let countedFacts =
+        [ 751, controlFact "binding" ["countedArg"] [0I; 0I] [750] None
+          750, controlFact "quotation" [] [] [752] (Some 751)
+          752, record ["Binding"; "Parameter"; "Argument"; "CountArgument"; "Element"] [753; 754; 755; 756; 757] 750
+          753, text "OptionalControl.receive" 752
+          754, number 0I 752
+          755, number 1I 752
+          756, number 0I 752
+          757, case "Handle" [758] 752
+          758, text "sqlite3_value" 757 ]
+        |> List.map (fun (id, fact) -> NodeId id, fact) |> Map.ofList
+    let counted : BoundaryCountedEntryArray =
+        { Identity = NodeId 750; Import = optImp.Identity; Parameter = 0; Invocation = NodeId 220
+          Contract =
+            { Binding = "OptionalControl.receive"; Parameter = 0; Argument = 1
+              CountArgument = 0; Element = BAREWire.Descriptors.CountedElement.Handle "sqlite3_value" }
+          DeclarationFacts = countedFacts
+          Participants = ParticipantEvidence.Established
+            [ { Role = ParticipantRole.CountedEntryArrayDeclaration; Node = NodeId 750; Ordinal = 0; Group = NodeId 750 }
+              { Role = ParticipantRole.CountedEntryArrayInvocation; Node = NodeId 220; Ordinal = 0; Group = NodeId 750 } ] }
+    let sigWithArray : BAREWire.Descriptors.EntrySignature =
+        { Parameters =
+            [| { Name = "argc"; Type = BAREWire.Descriptors.TypeRef.Integer(BAREWire.Descriptors.Signedness.Signed, 32); PassBy = BAREWire.Descriptors.PassBy.Value }
+               { Name = "argv"; Type = BAREWire.Descriptors.TypeRef.Pointer 64; PassBy = BAREWire.Descriptors.PassBy.Value } |]
+          ReturnType = BAREWire.Descriptors.TypeRef.Integer(BAREWire.Descriptors.Signedness.Signed, 32)
+          CallingConvention = BAREWire.Descriptors.CallConv.CDecl }
+    let optCb =
+        { optCb0 with
+            Contract = { optCb0.Contract with Signature = sigWithArray }
+            Signature = { optCb0.Signature with Parameters = [BoundaryScalar.Integer(32, true); BoundaryScalar.ReadOnlyBytes(NodeId 750)] }
+            Extent = BoundaryCallbackExtent.Retained(1, [| BAREWire.Descriptors.RetentionRelease.OwnerRelease { Binding = "OptionalControl.close"; Parameter = 0 } |]) }
+    let revision =
+        { held with
+            Nodes = held.Nodes.Add(NodeId 1, callNode)
+            CurrentClaims =
+                held.CurrentClaims
+                    .Add(NodeId 958, absClaim)
+                    .Add(NodeId 959, terminationClaim)
+                    .Add(NodeId 952, retentionClaim)
+                    .Add(NodeId 960, viewClaim)
+            Obligations = held.Obligations @ [absClaim; terminationClaim; retentionClaim; viewClaim]
+            ObligationSources =
+                held.ObligationSources
+                    .Add(NodeId 958, [[NodeId 1; NodeId 3]])
+                    .Add(NodeId 959, [[NodeId 1; NodeId 3]])
+                    .Add(NodeId 952, [[NodeId 1; NodeId 3]])
+                    .Add(NodeId 960, [[NodeId 1; NodeId 3]])
+            Emission =
+                { held.Emission with
+                    Boundary =
+                        { basis with
+                            ByScope = basis.ByScope.Add(optImp.Scope, [optImp.Identity])
+                            Imports = Map.ofList [NodeId 72, imported; optImp.Identity, optImp]
+                            Calls = Map.ofList [NodeId 1, call]
+                            CallbackInvocations = Map.ofList [optCb.Identity, optCb]
+                            ReadOnlyBufferDeclarations = Map.ofList [NodeId 1100, roDecl]
+                            ReadOnlyBufferUses = Map.ofList [(NodeId 1, 0), roUse]
+                            BorrowedResultViewDeclarations = Map.ofList [NodeId 1200, viewDecl]
+                            BorrowedResultViewUses = Map.ofList [NodeId 1, viewUse]
+                            BufferAbsences = Map.ofList [NodeId 700, absence]
+                            CountedEntryArrays = Map.ofList [NodeId 750, counted] }
+                    Numeric =
+                        { held.Emission.Numeric with
+                            Operations = Map.empty; OperationRequired = Set.empty; ResultSites = Set.empty
+                            Required = Set.empty; Values = held.Emission.Numeric.Values.Remove(NodeId 1) } } }
+        |> covered
+    let optHeader = optRev.SourceReadings.ContextHeaders[optImp.Scope]
+    let revision =
+        { revision with
+            Platform = { revision.Platform with Pointer = Ok 64 }
+            SourceReadings =
+                { revision.SourceReadings with
+                    ContextHeaders = revision.SourceReadings.ContextHeaders.Add(NodeId 50, header).Add(optImp.Scope, optHeader)
+                    Contexts = revision.SourceReadings.Contexts.Add(NodeId 50, [[]]).Add(optImp.Scope, optRev.SourceReadings.Contexts[optImp.Scope])
+                    Ports =
+                        revision.SourceReadings.Ports
+                            .Add((NodeId 50, OccurrencePort.ModuleDeclaration), header.Ports[OccurrencePort.ModuleDeclaration])
+                            .Add((optImp.Scope, OccurrencePort.ModuleDeclaration), optHeader.Ports[OccurrencePort.ModuleDeclaration]) } }
+    Assert.Empty(Integrity.check revision)
+    let limits : Binary.Limits =
+        { MaxBytes = 4 * 1024 * 1024; MaxCollectionLength = 10000; MaxDepth = 128
+          MaxStringBytes = 1024 * 1024; MaxBigIntegerBytes = 4096; MaxValues = 1000000 }
+    let bytes =
+        match Binary.encode limits revision with
+        | Ok bytes -> bytes
+        | Error err -> failwithf "Unexpected encode refusal: %A" err
+    let decoded =
+        match Binary.decode limits bytes with
+        | Ok rev -> rev
+        | Error err -> failwithf "Unexpected decode refusal: %A" err
+    Assert.Equal(revision, decoded)
+    let view =
+        match Binary.openSource limits (BAREWire.Memory.ByteSource.ofArray bytes) with
+        | Ok v -> v
+        | Error err -> failwithf "Unexpected openSource refusal: %A" err
+    let json =
+        match Fidelity.PSG.Json.Inspection.render false view with
+        | Ok text -> text
+        | Error err -> failwithf "Unexpected JSON render refusal: %A" err
+    for expected in
+        [ "ReadOnlyBufferDeclarations"; "ReadOnlyBufferUses"
+          "BorrowedResultViewDeclarations"; "BorrowedResultViewUses"
+          "BufferAbsences"; "CountedEntryArrays"
+          "ReadOnlyBytes"; "BorrowedBytes"; "Retained" ] do
+        Assert.Contains(expected, json)
+
+[<Fact>]
+let ``leading PassBy Fixed shifts ReadOnlyBufferDeclaration ReadOnlyBufferUse and Retained callback native ordinals`` () =
+    let held = snapshotFacts
+    let basis = boundaryCalleeFacts.Emission.Boundary
+    let header = boundaryCalleeFacts.SourceReadings.ContextHeaders[NodeId 50]
+    let integerType name kind =
+        TypeIdentity.Application({ Declaration = { Module = []; Name = name }; Parameters = []; NativeKind = Some kind }, [])
+    let byteType = integerType "uint8" (NTUKind.NTUuint(NTUWidth.Fixed 8))
+    let countType = integerType "uint64" (NTUKind.NTUuint(NTUWidth.Fixed 64))
+    let arrayType = TypeIdentity.Application({ Declaration = { Module = []; Name = "array" }; Parameters = [TypeParamKind.Type]; NativeKind = None }, [byteType])
+    let unitType = held.Nodes[NodeId 1].Type
+    let record fields ids parent = controlFact "record" fields [] ids (Some parent)
+    let binding name child = controlFact "binding" [name] [0I; 0I] [child] (Some 50)
+    let text value parent = controlFact "string" [value] [] [] (Some parent)
+    let number value parent = controlFact "integer" [] [value] [] (Some parent)
+    let case name refs parent = controlFact "case" [name] [] refs (Some parent)
+    let facts =
+        [ 2, binding "readFn" 1003
+          1003, controlFact "lambda" ["readFn"; "buf"; "count"] [2I; 0I; 0I] [1004; 1005; 1006] (Some 2)
+          1004, { controlFact "formal" ["buf"] [] [] (Some 1003) with SourceType = arrayType }
+          1005, { controlFact "formal" ["count"] [] [] (Some 1003) with SourceType = countType }
+          1006, controlFact "unit" [] [] [] (Some 1003)
+          1073, binding "readFnDescriptor" 1072
+          1072, controlFact "quotation" [] [] [72] (Some 1073)
+          72, record ["Parameters"; "CName"] [1010; 1020] 1072
+          1010, controlFact "array" [] [] [1030; 1011; 1012] (Some 72)
+          1030, record ["Type"; "PassBy"] [1031; 1033] 1010
+          1031, case "Pointer" [1032] 1030
+          1032, number 64I 1031
+          1033, case "Fixed" [1034] 1030
+          1034, case "EntrySentinel" [1035; 1036] 1033
+          1035, text "SQLITE_TRANSIENT" 1034
+          1036, number (-1I) 1034
+          1011, record ["Type"; "PassBy"] [1013; 1016] 1010
+          1013, case "Pointer" [1014] 1011
+          1014, number 64I 1013
+          1016, case "Value" [] 1011
+          1012, record ["Type"; "PassBy"] [1017; 1019] 1010
+          1017, case "Integer" [1021] 1012
+          1021, controlFact "tuple" [] [] [1022; 1023] (Some 1017)
+          1022, case "Unsigned" [] 1021
+          1023, number 64I 1021
+          1019, case "Value" [] 1012
+          1020, text "readFn" 72
+          1101, binding "readFnReadOnlyDescriptor" 1100
+          1100, controlFact "quotation" [] [] [1102] (Some 1101)
+          1102, record ["Binding"; "Parameter"; "Extent"; "Content"; "Retention"; "Hypothesis"] [1103; 1104; 1105; 1115; 1111; 1106] 1100
+          1103, text (header.Name + ".readFn") 1102
+          1104, number 1I 1102
+          1105, case "ExplicitCount" [1110] 1102
+          1110, number 2I 1105
+          1115, case "RawBytes" [] 1102
+          1111, case "DuringCall" [] 1102
+          1106, record ["Identity"; "Version"; "Source"] [1107; 1108; 1109] 1102
+          1107, text "ro-lead-fixed" 1106
+          1108, text "1" 1106
+          1109, text "fixture" 1106 ]
+        |> List.map (fun (id, fact) -> NodeId id, fact) |> Map.ofList
+    let roDecl : BoundaryReadOnlyBufferDeclaration =
+        { Identity = NodeId 1100; Declaration = NodeId 2; Body = NodeId 1006
+          Formals = [NodeId 1004; NodeId 1005]; Descriptor = NodeId 72
+          Parameter = 1; CountParameter = Some 2
+          BufferFormal = NodeId 1004; CountFormal = Some(NodeId 1005)
+          Contract =
+            { Binding = header.Name + ".readFn"; Parameter = 1
+              Extent = BAREWire.Descriptors.ReadOnlyBufferExtent.ExplicitCount 2
+              Content = BAREWire.Descriptors.BorrowedContent.RawBytes
+              Retention = BAREWire.Descriptors.BufferRetention.DuringCall
+              Hypothesis = { Identity = "ro-lead-fixed"; Version = "1"; Source = "fixture" } }
+          DeclarationFacts = facts
+          Participants = ParticipantEvidence.Established
+            [ { Role = ParticipantRole.ReadOnlyBufferDeclaration; Node = NodeId 1100; Ordinal = 0; Group = NodeId 1100 }
+              { Role = ParticipantRole.ReadOnlyBufferFormal; Node = NodeId 1004; Ordinal = 0; Group = NodeId 1100 }
+              { Role = ParticipantRole.ReadOnlyBufferFormal; Node = NodeId 1005; Ordinal = 1; Group = NodeId 1100 } ] }
+    let imported =
+        { basis.Imports[NodeId 72] with
+            Symbol = "readFn"
+            Parameters = [NodeId 1004, BoundaryScalar.ReadOnlyBytes(NodeId 1100); NodeId 1005, BoundaryScalar.Integer(64, false)]
+            Result = None; DeclarationFacts = facts; Participants = facts.Keys |> Set.ofSeq
+            SourceTypes = Map.ofList [NodeId 1004, arrayType; NodeId 1005, countType; NodeId 1, unitType] }
+    let call =
+        { basis.Calls[NodeId 1] with
+            Arguments =
+                [ { Actual = NodeId 3; Formal = NodeId 1004; Abi = BoundaryScalar.ReadOnlyBytes(NodeId 1100); Adaptation = None; OptionalEntry = None; BufferAbsence = None }
+                  { Actual = NodeId 4; Formal = NodeId 1005; Abi = BoundaryScalar.Integer(64, false); Adaptation = None; OptionalEntry = None; BufferAbsence = None } ]
+            Result = None; SourceTypes = imported.SourceTypes; Participants = facts.Keys |> Set.ofSeq }
+    let countCarrier =
+        { held.Emission.Numeric.Values[NodeId 4] with
+            Slot = SettledSlot.Integer(64, Some "uint64"); SourceType = countType
+            Range = ValueRange.Bounded(4I, 4I); Obligations = [] }
+    let extentClaim =
+        controlClaim "ro-extent" "foreign-readonly-buffer-extent"
+            (ObligationBody.ZeroCopyBufferExtent
+                { Call = NodeId 1; Declaration = NodeId 1100; Parameter = 1; CountParameter = 2
+                  Buffer = NodeId 3; Count = NodeId 4; MinimumCount = 4I; MaximumCount = 4I
+                  ExtentCapacity = 4I; ElementBytes = 1; CountCoverage = NodeId 951 })
+    let retentionClaim =
+        controlClaim "ro-ret" "foreign-buffer-retention-domination"
+            (ObligationBody.BufferRetentionDomination
+                { Call = NodeId 1; Declaration = NodeId 1100; Buffer = NodeId 3; Residence = NodeId 11
+                  Mode = BufferRetentionMode.DuringCall; AcquireOrder = 1; RetirementOrders = [] })
+    let roUse : BoundaryReadOnlyBufferUse =
+        { Call = NodeId 1; Declaration = NodeId 1100; Parameter = 1; Buffer = NodeId 3
+          Residence = NodeId 11; Retirements = []; Copies = 0
+          Crossing = BoundaryReadOnlyBufferCrossing.ExplicitZeroCopy(2, NodeId 4, 4I, NodeId 951)
+          RetentionProof = NodeId 952; AccessExclusivityProof = None
+          Participants = ParticipantEvidence.Established
+            [ { Role = ParticipantRole.ReadOnlyBufferCall; Node = NodeId 1; Ordinal = 0; Group = NodeId 1 }
+              { Role = ParticipantRole.ReadOnlyBufferDeclaration; Node = NodeId 1100; Ordinal = 0; Group = NodeId 1 }
+              { Role = ParticipantRole.ReadOnlyBufferActual; Node = NodeId 3; Ordinal = 0; Group = NodeId 1 }
+              { Role = ParticipantRole.ReadOnlyBufferResidence; Node = NodeId 11; Ordinal = 0; Group = NodeId 1 } ] }
+    let callNode = { held.Nodes[NodeId 1] with Kind = SemanticKind.Application(NodeId 2, [NodeId 3; NodeId 4]); Children = [NodeId 2; NodeId 3; NodeId 4]; Type = unitType }
+    let roRevision =
+        { held with
+            Nodes = held.Nodes.Add(NodeId 1, callNode)
+            CurrentClaims = held.CurrentClaims.Add(NodeId 951, extentClaim).Add(NodeId 952, retentionClaim)
+            Obligations = held.Obligations @ [extentClaim; retentionClaim]
+            ObligationSources = held.ObligationSources.Add(NodeId 951, [[NodeId 1; NodeId 3]]).Add(NodeId 952, [[NodeId 1; NodeId 3]])
+            Emission =
+                { held.Emission with
+                    Boundary =
+                        { basis with
+                            Imports = Map.ofList [NodeId 72, imported]
+                            Calls = Map.ofList [NodeId 1, call]
+                            ReadOnlyBufferDeclarations = Map.ofList [NodeId 1100, roDecl]
+                            ReadOnlyBufferUses = Map.ofList [(NodeId 1, 1), roUse] }
+                    Numeric =
+                        { held.Emission.Numeric with
+                            Operations = Map.empty; OperationRequired = Set.empty; ResultSites = Set.empty
+                            Required = Set.singleton(NodeId 4)
+                            Values = held.Emission.Numeric.Values.Remove(NodeId 1).Add(NodeId 4, countCarrier) } } }
+        |> covered
+    let roRevision =
+        { roRevision with
+            SourceReadings =
+                { roRevision.SourceReadings with
+                    ContextHeaders = roRevision.SourceReadings.ContextHeaders.Add(NodeId 50, header)
+                    Contexts = roRevision.SourceReadings.Contexts.Add(NodeId 50, [[]])
+                    Ports = roRevision.SourceReadings.Ports.Add((NodeId 50, OccurrencePort.ModuleDeclaration), header.Ports[OccurrencePort.ModuleDeclaration]) } }
+    Assert.Empty(Integrity.check roRevision)
+    let optRev = optionalBoundaryControl true
+    let optBasis = optRev.Emission.Boundary
+    let receiver0 = optBasis.CallbackInvocations[NodeId 220]
+    let imp0 = optBasis.Imports[receiver0.Import]
+    let retType = TypeIdentity.Application({ Declaration = { Module = ["BAREWire"; "Descriptors"]; Name = "RetainedCallbackDescriptor" }; Parameters = []; NativeKind = None }, [])
+    let leadFixedFacts =
+        imp0.DeclarationFacts
+        |> Map.add (NodeId 212) (controlFact "array" [] [] [240; 218; 245] (Some 210))
+        |> Map.add (NodeId 240) (record ["Type"; "PassBy"] [241; 243] 212)
+        |> Map.add (NodeId 241) (case "Pointer" [242] 240)
+        |> Map.add (NodeId 242) (number 64I 241)
+        |> Map.add (NodeId 243) (case "Fixed" [244] 240)
+        |> Map.add (NodeId 244) (case "EntrySentinel" [260; 261] 243)
+        |> Map.add (NodeId 260) (text "SENTINEL" 244)
+        |> Map.add (NodeId 261) (number (-1I) 244)
+        |> Map.add (NodeId 245) (record ["Type"; "PassBy"] [246; 249] 212)
+        |> Map.add (NodeId 246) (case "Integer" [247] 245)
+        |> Map.add (NodeId 247) (controlFact "tuple" [] [] [248; 250] (Some 246))
+        |> Map.add (NodeId 248) (case "Signed" [] 247)
+        |> Map.add (NodeId 250) (number 32I 247)
+        |> Map.add (NodeId 249) (case "Value" [] 245)
+        |> Map.add (NodeId 602) { record ["Binding"; "Parameter"; "Owner"; "Releases"] [603; 604; 605; 606] 600 with SourceType = retType }
+        |> Map.add (NodeId 605) (number 2I 602)
+        |> Map.add (NodeId 606) (controlFact "array" [] [] [607] (Some 602))
+        |> Map.add (NodeId 607) (case "OwnerRelease" [608] 606)
+        |> Map.add (NodeId 608) (record ["Binding"; "Parameter"] [609; 610] 607)
+        |> Map.add (NodeId 609) (text "OptionalControl.close" 608)
+        |> Map.add (NodeId 610) (number 0I 608)
+    let leadImp = { imp0 with Parameters = imp0.Parameters @ [NodeId 211, BoundaryScalar.Integer(32, true)]; DeclarationFacts = leadFixedFacts }
+    let leadCb = { receiver0 with Extent = BoundaryCallbackExtent.Retained(2, [| BAREWire.Descriptors.RetentionRelease.OwnerRelease { Binding = "OptionalControl.close"; Parameter = 0 } |]) }
+    let cbViolations = Integrity.check { optRev with Emission = { optRev.Emission with Boundary = { optBasis with Imports = optBasis.Imports.Add(leadImp.Identity, leadImp); CallbackInvocations = optBasis.CallbackInvocations.Add(leadCb.Identity, leadCb) } } }
+    Assert.DoesNotContain(cbViolations, fun v -> v.Part.StartsWith("Emission.Boundary.Callback", System.StringComparison.Ordinal))
+
+[<Fact>]
+let ``leading PassBy Fixed shifts BorrowedResultViewDeclaration and CompanionCall ordinals`` () =
+    let held = snapshotFacts
+    let basis = boundaryCalleeFacts.Emission.Boundary
+    let header = boundaryCalleeFacts.SourceReadings.ContextHeaders[NodeId 50]
+    let record fields ids parent = controlFact "record" fields [] ids (Some parent)
+    let binding name child = controlFact "binding" [name] [0I; 0I] [child] (Some 50)
+    let text value parent = controlFact "string" [value] [] [] (Some parent)
+    let number value parent = controlFact "integer" [] [value] [] (Some parent)
+    let case name refs parent = controlFact "case" [name] [] refs (Some parent)
+    let intType = held.Nodes[NodeId 3].Type
+    let viewFacts =
+        [ 2, binding "colText" 1003
+          1003, controlFact "lambda" ["colText"; "stmt"; "col"] [2I; 0I; 0I] [1004; 1005; 1006] (Some 2)
+          1004, { controlFact "formal" ["stmt"] [] [] (Some 1003) with SourceType = intType }
+          1005, { controlFact "formal" ["col"] [] [] (Some 1003) with SourceType = intType }
+          1006, controlFact "unit" [] [] [] (Some 1003)
+          1073, binding "colTextDescriptor" 1072
+          1072, controlFact "quotation" [] [] [72] (Some 1073)
+          72, record ["Parameters"; "CName"] [1010; 1020] 1072
+          1010, controlFact "array" [] [] [1030; 1011; 1012] (Some 72)
+          1030, record ["Type"; "PassBy"] [1031; 1033] 1010
+          1031, case "Pointer" [1032] 1030
+          1032, number 64I 1031
+          1033, case "Fixed" [1034] 1030
+          1034, case "EntrySentinel" [1035; 1036] 1033
+          1035, text "SENTINEL" 1034
+          1036, number (-1I) 1034
+          1011, record ["Type"; "PassBy"] [1013; 1016] 1010
+          1013, case "Pointer" [1014] 1011
+          1014, number 64I 1013
+          1016, case "Value" [] 1011
+          1012, record ["Type"; "PassBy"] [1017; 1019] 1010
+          1017, case "Integer" [1021] 1012
+          1021, controlFact "tuple" [] [] [1022; 1023] (Some 1017)
+          1022, case "Signed" [] 1021
+          1023, number 32I 1021
+          1019, case "Value" [] 1012
+          1020, text "colText" 72
+          1201, binding "colTextBorrowedViewDescriptor" 1200
+          1200, controlFact "quotation" [] [] [1202] (Some 1201)
+          1202, record ["Binding"; "Content"; "Extent"; "Owner"; "InvalidatedBy"; "Hypothesis"] [1203; 1204; 1205; 1206; 1207; 1208] 1200
+          1203, text (header.Name + ".colText") 1202
+          1204, case "Utf8Text" [] 1202
+          1205, case "CompanionCall" [1213; 1214] 1202
+          1213, text (header.Name + ".colBytes") 1205
+          1214, controlFact "array" [] [] [1215; 1216] (Some 1205)
+          1215, number 1I 1214
+          1216, number 2I 1214
+          1206, number 1I 1202
+          1207, controlFact "array" [] [] [1212] (Some 1202)
+          1212, case "AnyOwnerCall" [] 1207
+          1208, record ["Identity"; "Version"; "Source"] [1209; 1210; 1211] 1202
+          1209, text "view-comp-lead" 1208
+          1210, text "1" 1208
+          1211, text "fixture" 1208 ]
+        |> List.map (fun (id, fact) -> NodeId id, fact) |> Map.ofList
+    let compFacts =
+        [ 20, binding "colBytes" 1083
+          1083, controlFact "lambda" ["colBytes"; "stmt"; "col"] [2I; 0I; 0I] [1084; 1085; 1086] (Some 20)
+          1084, { controlFact "formal" ["stmt"] [] [] (Some 1083) with SourceType = intType }
+          1085, { controlFact "formal" ["col"] [] [] (Some 1083) with SourceType = intType }
+          1086, controlFact "unit" [] [] [] (Some 1083) ]
+        |> List.map (fun (id, fact) -> NodeId id, fact) |> Map.ofList
+    let viewDecl : BoundaryBorrowedResultViewDeclaration =
+        { Identity = NodeId 1200; Declaration = NodeId 2; Body = NodeId 1006
+          Formals = [NodeId 1004; NodeId 1005]; Descriptor = NodeId 72
+          OwnerParameter = 1; OwnerFormal = NodeId 1004
+          Contract =
+            { Binding = header.Name + ".colText"; Content = BAREWire.Descriptors.BorrowedContent.Utf8Text
+              Extent = BAREWire.Descriptors.BorrowedExtent.CompanionCall(header.Name + ".colBytes", [| 1; 2 |]); Owner = 1
+              InvalidatedBy = [| BAREWire.Descriptors.BorrowInvalidation.AnyOwnerCall |]
+              Hypothesis = { Identity = "view-comp-lead"; Version = "1"; Source = "fixture" } }
+          DeclarationFacts = viewFacts
+          Participants = ParticipantEvidence.Established
+            [ { Role = ParticipantRole.BorrowedResultViewDeclaration; Node = NodeId 1200; Ordinal = 0; Group = NodeId 1200 }
+              { Role = ParticipantRole.BorrowedResultViewOwner; Node = NodeId 1004; Ordinal = 0; Group = NodeId 1200 } ] }
+    let scopeClaim =
+        controlClaim "borrowed-view-scope" "foreign-borrowed-view-scope"
+            (ObligationBody.BorrowedResultViewScope
+                { Call = NodeId 1; Declaration = NodeId 1200; Owner = NodeId 3; View = NodeId 1
+                  CallOrder = 1; InvalidationOrders = [5]; ReadOrders = [2]; NullToNoneBoundary = true })
+    let viewUse : BoundaryBorrowedResultViewUse =
+        { Call = NodeId 1; Declaration = NodeId 1200; Owner = NodeId 3; View = NodeId 1
+          CompanionCall = Some(NodeId 21); CompanionArguments = [NodeId 3; NodeId 4]; CallOrder = 1
+          Invalidations = [NodeId 961]; InvalidationOrders = [5]; Reads = [NodeId 962]; ReadOrders = [2]
+          NullToNoneBoundary = true; ScopeProof = NodeId 960
+          Participants = ParticipantEvidence.Established
+            [ { Role = ParticipantRole.BorrowedResultViewCall; Node = NodeId 1; Ordinal = 0; Group = NodeId 1 }
+              { Role = ParticipantRole.BorrowedResultViewDeclaration; Node = NodeId 1200; Ordinal = 0; Group = NodeId 1 }
+              { Role = ParticipantRole.BorrowedResultViewOwner; Node = NodeId 3; Ordinal = 0; Group = NodeId 1 }
+              { Role = ParticipantRole.BorrowedResultViewInvalidation; Node = NodeId 961; Ordinal = 0; Group = NodeId 1 }
+              { Role = ParticipantRole.BorrowedResultViewRead; Node = NodeId 962; Ordinal = 0; Group = NodeId 1 } ] }
+    let borrowImport =
+        { basis.Imports[NodeId 72] with
+            Binding = NodeId 2; Symbol = "colText"
+            Parameters = [NodeId 1004, BoundaryScalar.Integer(64, false); NodeId 1005, BoundaryScalar.Integer(32, true)]
+            Result = Some(BoundaryScalar.BorrowedBytes(NodeId 1200))
+            DeclarationFacts = viewFacts; Participants = viewFacts.Keys |> Set.ofSeq
+            SourceTypes = Map.ofList [NodeId 1004, intType; NodeId 1005, intType; NodeId 1, held.Nodes[NodeId 1].Type] }
+    let compImport =
+        { basis.Imports[NodeId 72] with
+            Identity = NodeId 73; Binding = NodeId 20; Symbol = "colBytes"
+            Parameters = [NodeId 1084, BoundaryScalar.Integer(64, false); NodeId 1085, BoundaryScalar.Integer(32, true)]
+            Result = Some(BoundaryScalar.Integer(32, true))
+            DeclarationFacts = compFacts; Participants = compFacts.Keys |> Set.ofSeq
+            SourceTypes = Map.ofList [NodeId 1084, intType; NodeId 1085, intType; NodeId 21, held.Nodes[NodeId 1].Type] }
+    let borrowCall =
+        { basis.Calls[NodeId 1] with
+            Callee = NodeId 2
+            Arguments =
+                [ { Actual = NodeId 3; Formal = NodeId 1004; Abi = BoundaryScalar.Integer(64, false); Adaptation = None; OptionalEntry = None; BufferAbsence = None }
+                  { Actual = NodeId 4; Formal = NodeId 1005; Abi = BoundaryScalar.Integer(32, true); Adaptation = None; OptionalEntry = None; BufferAbsence = None } ]
+            Result = Some(BoundaryScalar.BorrowedBytes(NodeId 1200))
+            SourceTypes = borrowImport.SourceTypes; Participants = viewFacts.Keys |> Set.ofSeq }
+    let compCall =
+        { basis.Calls[NodeId 1] with
+            Site = NodeId 21; Import = NodeId 73; Callee = NodeId 20
+            Arguments =
+                [ { Actual = NodeId 3; Formal = NodeId 1084; Abi = BoundaryScalar.Integer(64, false); Adaptation = None; OptionalEntry = None; BufferAbsence = None }
+                  { Actual = NodeId 4; Formal = NodeId 1085; Abi = BoundaryScalar.Integer(32, true); Adaptation = None; OptionalEntry = None; BufferAbsence = None } ]
+            Result = Some(BoundaryScalar.Integer(32, true))
+            SourceTypes = compImport.SourceTypes; Participants = compFacts.Keys |> Set.ofSeq }
+    let compSiteNode = { held.Nodes[NodeId 1] with Id = NodeId 21; Kind = SemanticKind.Application(NodeId 20, [NodeId 3; NodeId 4]); Children = [NodeId 20; NodeId 3; NodeId 4] }
+    let compCalleeNode = { held.Nodes[NodeId 2] with Id = NodeId 20 }
+    let rev =
+        { held with
+            Nodes = held.Nodes.Add(NodeId 20, compCalleeNode).Add(NodeId 21, compSiteNode)
+            CurrentClaims = held.CurrentClaims.Add(NodeId 960, scopeClaim)
+            Obligations = held.Obligations @ [scopeClaim]
+            ObligationSources = held.ObligationSources.Add(NodeId 960, [[NodeId 1; NodeId 3]])
+            Emission =
+                { held.Emission with
+                    Boundary =
+                        { basis with
+                            Imports = Map.ofList [NodeId 72, borrowImport; NodeId 73, compImport]
+                            Calls = Map.ofList [NodeId 1, borrowCall; NodeId 21, compCall]
+                            BorrowedResultViewDeclarations = Map.ofList [NodeId 1200, viewDecl]
+                            BorrowedResultViewUses = Map.ofList [NodeId 1, viewUse] }
+                    Numeric =
+                        { held.Emission.Numeric with
+                            Operations = Map.empty; OperationRequired = Set.empty; ResultSites = Set.empty
+                            Required = Set.empty; Values = held.Emission.Numeric.Values.Remove(NodeId 1) } } }
+        |> covered
+    let rev =
+        { rev with
+            SourceReadings =
+                { rev.SourceReadings with
+                    ContextHeaders = rev.SourceReadings.ContextHeaders.Add(NodeId 50, header)
+                    Contexts = rev.SourceReadings.Contexts.Add(NodeId 50, [[]])
+                    Ports = rev.SourceReadings.Ports.Add((NodeId 50, OccurrencePort.ModuleDeclaration), header.Ports[OccurrencePort.ModuleDeclaration]) } }
+    Assert.Empty(Integrity.check rev)

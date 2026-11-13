@@ -78,6 +78,17 @@ type ParticipantRole =
     /// actual ordinals retain order; ABI/destination ordinals name proof roles.
     | ForeignResultDeclaration | ForeignResultCall | ForeignResultContext
     | ForeignResultHypothesis | ForeignResultActual | ForeignResultAbi | ForeignResultDestination
+    /// Zero-copy read-only buffer, uncounted path, borrowed result view,
+    /// counted entry array, and buffer absence accounts.
+    | ReadOnlyBufferDeclaration | ReadOnlyBufferCall | ReadOnlyBufferFormal
+    | ReadOnlyBufferActual | ReadOnlyBufferCount | ReadOnlyBufferExtent
+    | ReadOnlyBufferResidence | ReadOnlyBufferRetirement
+    | UncountedPathSource | UncountedPathStaging
+    | BorrowedResultViewDeclaration | BorrowedResultViewCall | BorrowedResultViewOwner
+    | BorrowedResultViewCompanion | BorrowedResultViewInvalidation | BorrowedResultViewRead
+    | BufferAbsenceQuote | BufferAbsenceFormal | BufferAbsenceCall | BufferAbsenceOperand
+    | CountedEntryArrayDeclaration | CountedEntryArrayInvocation
+    | RetainedCallbackOwner | RetainedCallbackRelease
 
 /// One occurrence in a relation: the node, its role, its ordinal within the role (an
 /// argument or parameter position; 0 for a role without positions) and its group. The

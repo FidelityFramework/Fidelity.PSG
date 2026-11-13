@@ -221,6 +221,12 @@ type BoundaryDomain = {
     Declarations: BoundaryDeclaration list
     WritableBufferDeclarations: NodeId list
     WritableBufferUses: (NodeId * int) list
+    ReadOnlyBufferDeclarations: NodeId list
+    ReadOnlyBufferUses: (NodeId * int) list
+    BorrowedResultViewDeclarations: NodeId list
+    BorrowedResultViewUses: NodeId list
+    BufferAbsences: NodeId list
+    CountedEntryArrays: NodeId list
     ResourceDeclarations: NodeId list
     ResourceAccesses: NodeId list
     ResourceEvaluationRoots: (NodeId * NodeId * NodeId) list
@@ -297,6 +303,12 @@ type EdgeRole =
     | BoundaryResourceDeclaration of BoundaryResourceDeclaration
     | BoundaryWritableBufferDeclaration of BoundaryWritableBufferDeclaration
     | BoundaryWritableBufferUse of BoundaryWritableBufferUse
+    | BoundaryReadOnlyBufferDeclaration of BoundaryReadOnlyBufferDeclaration
+    | BoundaryReadOnlyBufferUse of BoundaryReadOnlyBufferUse
+    | BoundaryBorrowedResultViewDeclaration of BoundaryBorrowedResultViewDeclaration
+    | BoundaryBorrowedResultViewUse of BoundaryBorrowedResultViewUse
+    | BoundaryBufferAbsence of BoundaryBufferAbsence
+    | BoundaryCountedEntryArray of BoundaryCountedEntryArray
     | BoundaryResourceAccess of BoundaryResourceAccess
     | BoundaryImport of BoundaryImport
     | BoundaryCall of BoundaryCall
