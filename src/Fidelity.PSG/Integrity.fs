@@ -1932,6 +1932,15 @@ module Integrity =
             let case name id = facts.TryFind id |> Option.bind (fun fact ->
                 if (fact.Form="case" || fact.Form="settled-case") && fact.Text=[name] && fact.References=fact.Children then Some fact.References else None)
             let pointer id = case "Pointer" id |> Option.bind List.tryExactlyOne |> Option.bind number
+            let integer id =
+                case "Integer" id |> Option.bind List.tryExactlyOne |> Option.bind facts.TryFind |> Option.bind (fun pair ->
+                    match pair.Form, pair.References with
+                    | "tuple", [sign; bits] when pair.Children = pair.References ->
+                        number bits |> Option.bind (fun bits ->
+                            if bits <= 0I then None
+                            elif case "Unsigned" sign = Some [] then Some(false, bits)
+                            elif case "Signed" sign = Some [] then Some(true, bits) else None)
+                    | _ -> None)
             let binding id = facts.TryFind id |> Option.filter (fun fact -> fact.Form="binding" && fact.Numbers=[0I;0I])
             let descriptorQuote record = facts.TryFind record |> Option.bind(fun fact ->
                 if fact.Form<>"record" then None else
@@ -1982,7 +1991,8 @@ module Integrity =
                 (fact.Parent |> Option.forall(fun parent -> facts.ContainsKey parent || contextIds.Contains parent)))
             let abiMatches =
                 field "ReturnType" row.AcquisitionDescriptor |> Option.bind pointer = Some(bigint row.PointerBits) &&
-                field "ReturnType" row.ReleaseDescriptor |> Option.bind (case "Void") = Some [] &&
+                (field "ReturnType" row.ReleaseDescriptor |> Option.exists (fun id ->
+                    case "Void" id = Some [] || integer id = Some(true, 32I))) &&
                 ([row.AcquisitionDescriptor;row.ReleaseDescriptor] |> List.forall(fun id ->
                     field "CallingConvention" id |> Option.bind (case "CDecl") = Some [])) &&
                 (field "Parameters" row.ReleaseDescriptor |> Option.bind facts.TryFind |> Option.exists (fun parameters ->
@@ -2003,7 +2013,7 @@ module Integrity =
               if not (lambdaIncidence row.Acquisition row.AcquisitionBody None && lambdaIncidence row.Release row.ReleaseBody (Some row.ReleaseFormal)) then
                   yield defect "Emission.Boundary.ResourceDeclarations.Incidence" key "The resource declaration differs from its exact original acquisition/release body or ordinal-zero release formal."
               if not abiMatches || not(typed row.Acquisition row.AcquisitionType && typed row.AcquisitionBody row.ResultType && typed row.ReleaseFormal row.HandleType) then
-                  yield defect "Emission.Boundary.ResourceDeclarations.Signature" key "The resource declaration lost its exact nullable-handle/raw-pointer acquisition or unary matching raw-Void release."
+                  yield defect "Emission.Boundary.ResourceDeclarations.Signature" key "The resource declaration lost its exact nullable-handle/raw-pointer acquisition or unary matching raw-Void/int32 release."
               if not supportedFacts || required |> List.exists (facts.ContainsKey >> not) || row.Participants <> (facts.Keys |> Set.ofSeq) then
                   yield defect "Emission.Boundary.ResourceDeclarations.Participants" key "The resource declaration has missing or unrelated source support." ]
 

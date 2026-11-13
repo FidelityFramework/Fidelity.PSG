@@ -2617,3 +2617,1545 @@ let ``witness segmentation refuses blank and duplicate region identities`` () =
     let dupViolations = Integrity.check duplicated |> List.filter (fun v -> v.Part = "Codata.WitnessSegmentation.Regions.Identity")
     Assert.Equal(2, dupViolations.Length)
     Assert.All(dupViolations, fun v -> Assert.Contains("[WSEG-001]", v.Reason))
+
+// Tranche 2: finite plans and their fault-injection checks.
+let private optionalPlanRetirement : CallableAggregateResultRetirement =
+    { Application = NodeId 10; Caller = NodeId 11; Construction = NodeId 12
+      Actual = NodeId 13; Receiver = NodeId 14
+      Policy = { ProjectPath = "fixture.fidproj"; SourceVersion = String.replicate 64 "a"; Model = "Standard" }
+      Uses = [NodeId 10; NodeId 13; NodeId 14] }
+
+let private presentPlan retirement : OptionalEntryArgumentConversionModel =
+    { Call = NodeId 14; Parameter = 0; Actual = NodeId 13; Construction = NodeId 12
+      SourceCase = 1; Payload = NodeId 15; Formation = NodeId 16; Invocation = NodeId 17
+      Arms = [{ CaseOrdinal = 0; Choice = OptionalEntryPlanChoice.PendingAbsence; Formation = None }
+              { CaseOrdinal = 1; Choice = OptionalEntryPlanChoice.ClosedEntry; Formation = Some(NodeId 16) }]
+      ResultRetirement = retirement }
+
+let private absentPlan retirement : OptionalEntryAbsenceArgumentConversionModel =
+    { Call = NodeId 14; Parameter = 0; Actual = NodeId 13; Construction = NodeId 12
+      SourceCase = 0; Absence = NodeId 18
+      Arms = [{ CaseOrdinal = 0; Choice = OptionalEntryAbsencePlanChoice.AbsentEntry }
+              { CaseOrdinal = 1; Choice = OptionalEntryAbsencePlanChoice.RequiresClosedEntry }]
+      ResultRetirement = retirement }
+
+let private projected = function
+    | Ok value -> value
+    | Error reason -> failwith reason
+
+[<Theory>]
+[<InlineData(false, false)>]
+[<InlineData(false, true)>]
+[<InlineData(true, false)>]
+[<InlineData(true, true)>]
+let ``finite optional plans project Some and None with and without result retirement`` absent retired =
+    let retirement = if retired then Some optionalPlanRetirement else None
+    let projection =
+        if absent then OptionalEntryArgumentProof.projectAbsence (absentPlan retirement) |> projected
+        else OptionalEntryArgumentProof.project (presentPlan retirement) |> projected
+    let name = if absent then "optional_entry_absence_case" else "optional_entry_case"
+    Assert.Contains((name, ResourceProof.Sort.Integer), projection.Declarations)
+    Assert.Equal<ResourceProof.Expr list>(
+        [ResourceProof.Expr.Equal(ResourceProof.Expr.Variable name, ResourceProof.Expr.Integer(if absent then 0I else 1I))],
+        projection.Alternatives)
+    let retirementFields = projection.Declarations |> List.filter (fun (name, _) -> name.StartsWith("optional_retirement_"))
+    Assert.Equal((if retired then 11 else 0), retirementFields.Length)
+    if absent then
+        Assert.Contains(("optional_entry_absence_accepted_18", ResourceProof.Sort.Boolean), projection.Declarations)
+    if retired then
+        Assert.Contains(("retirement_receiver", "optional_retirement_receiver"), projection.ParticipantRoles)
+
+[<Theory>]
+[<InlineData("missing")>]
+[<InlineData("duplicate")>]
+[<InlineData("ordinal")>]
+[<InlineData("choice")>]
+[<InlineData("formation")>]
+let ``finite Some plan rejects invalid arms`` defect =
+    let model = presentPlan None
+    let arms =
+        match defect with
+        | "missing" -> [model.Arms.Head]
+        | "duplicate" -> model.Arms @ [model.Arms.Head]
+        | "ordinal" -> [{model.Arms.Head with CaseOrdinal = 1}; model.Arms[1]]
+        | "choice" -> [{model.Arms.Head with Choice = OptionalEntryPlanChoice.ClosedEntry}; model.Arms[1]]
+        | _ -> [model.Arms.Head; {model.Arms[1] with Formation = None}]
+    Assert.Equal<Result<ResourceProof.Projection, string>>(
+        Error "The optional entry conversion plan requires exact None and Some arms.",
+        OptionalEntryArgumentProof.project {model with Arms = arms})
+
+[<Theory>]
+[<InlineData("missing")>]
+[<InlineData("duplicate")>]
+[<InlineData("ordinal")>]
+[<InlineData("choice")>]
+let ``finite None plan rejects invalid arms`` defect =
+    let model = absentPlan None
+    let arms =
+        match defect with
+        | "missing" -> [model.Arms.Head]
+        | "duplicate" -> model.Arms @ [model.Arms.Head]
+        | "ordinal" -> [{model.Arms.Head with CaseOrdinal = 1}; model.Arms[1]]
+        | _ -> [{model.Arms.Head with Choice = OptionalEntryAbsencePlanChoice.RequiresClosedEntry}; model.Arms[1]]
+    Assert.Equal<Result<ResourceProof.Projection, string>>(
+        Error "The optional entry absence conversion plan requires exact AbsentEntry and RequiresClosedEntry arms.",
+        OptionalEntryArgumentProof.projectAbsence {model with Arms = arms})
+
+[<Theory>]
+[<InlineData("receiver")>]
+[<InlineData("actual")>]
+[<InlineData("construction")>]
+[<InlineData("application")>]
+[<InlineData("first-use")>]
+[<InlineData("last-use")>]
+[<InlineData("missing-actual")>]
+[<InlineData("duplicate-use")>]
+[<InlineData("policy-path")>]
+[<InlineData("policy-version")>]
+[<InlineData("policy-model")>]
+let ``finite optional plans reject incomplete result retirement`` defect =
+    let row = optionalPlanRetirement
+    let changed =
+        match defect with
+        | "receiver" -> {row with Receiver = NodeId 99}
+        | "actual" -> {row with Actual = NodeId 99}
+        | "construction" -> {row with Construction = NodeId 99}
+        | "application" -> {row with Application = row.Receiver}
+        | "first-use" -> {row with Uses = row.Uses.Tail}
+        | "last-use" -> {row with Uses = [row.Application; row.Actual]}
+        | "missing-actual" -> {row with Uses = [row.Application; row.Receiver]}
+        | "duplicate-use" -> {row with Uses = [row.Application; row.Actual; row.Actual; row.Receiver]}
+        | "policy-path" -> {row with Policy = {row.Policy with ProjectPath = ""}}
+        | "policy-version" -> {row with Policy = {row.Policy with SourceVersion = ""}}
+        | _ -> {row with Policy = {row.Policy with Model = ""}}
+    let expected = Error "The optional entry aggregate result retirement account is incomplete."
+    Assert.Equal<Result<ResourceProof.Projection, string>>(expected, OptionalEntryArgumentProof.project (presentPlan (Some changed)))
+    Assert.Equal<Result<ResourceProof.Projection, string>>(expected, OptionalEntryArgumentProof.projectAbsence (absentPlan (Some changed)))
+
+let private foreignResultControl () =
+    let held = boundaryCalleeFacts
+    let hypothesis : ForeignResultHypothesis =
+        { Quote = NodeId 4; Declaration = NodeId 2; Identity = "read-result"; Version = "1"; Source = "fixture"
+          Lower = ForeignResultBound.Constant -1I; Upper = ForeignResultBound.Argument 0 }
+    let application : ForeignResultApplication =
+        { Declaration = NodeId 2; Call = NodeId 1; Context = []; Hypothesis = Some hypothesis
+          Arguments = [{Index = 0; Node = NodeId 3; Enclosure = ValueRange.Bounded(1I,4I)}
+                       {Index = 1; Node = NodeId 4; Enclosure = ValueRange.Bounded(3I,4I)}] }
+    let model role : ForeignResultCoverageModel =
+        { Application = application; Role = role; ResultRange = ValueRange.Bounded(-1I,4I)
+          Destination = ValueRange.Bounded(-(1I <<< 31), (1I <<< 31)-1I); DestinationDeclaration = Some(NodeId 64)
+          Abi = Some(NodeId 72); AbiRange = ValueRange.Bounded(-(1I <<< 31), (1I <<< 31)-1I)
+          AbiIdentity = Some "fixture-abi-1"; DestinationIdentity = Some "fixture-destination-1" }
+    let p role ordinal id : Participant = {Role = role; Ordinal = ordinal; Group = NodeId 1; Node = NodeId id}
+    let participants =
+        [p ParticipantRole.ForeignResultDeclaration 0 2; p ParticipantRole.ForeignResultCall 0 1
+         p ParticipantRole.ForeignResultHypothesis 0 4; p ParticipantRole.ForeignResultActual 0 3
+         p ParticipantRole.ForeignResultActual 1 4; p ParticipantRole.ForeignResultAbi 0 72
+         p ParticipantRole.ForeignResultDestination 0 64; p ParticipantRole.ForeignResultAbi 1 72
+         p ParticipantRole.ForeignResultDestination 1 64]
+    let claims = [ForeignResultProofRole.LogicalCoverage, NodeId 940; ForeignResultProofRole.AbiNarrowing, NodeId 941]
+    let account : ForeignResultUse = {Application = application; Participants = ParticipantEvidence.Established participants; Claims = claims}
+    let additions = claims |> List.map (fun (role, id) ->
+        id, {Id = sprintf "result-%A" role; Kind = "foreign-result-coverage"; Logic = "QF_LIA"
+             Statement = "The result is covered under the external hypothesis."; Source = "fixture"; Refs = []
+             Body = ObligationBody.ForeignResultCoverage(model role)})
+    { held with
+        CurrentClaims = additions |> List.fold (fun rows (id, claim) -> Map.add id claim rows) held.CurrentClaims
+        Obligations = held.Obligations @ List.map snd additions
+        ObligationSources = claims |> List.fold (fun rows (_, id) -> Map.add id [participants |> List.map _.Node] rows) held.ObligationSources
+        Emission = {held.Emission with
+                        Boundary = {held.Emission.Boundary with ResultHypotheses = [hypothesis]}
+                        Numeric = {held.Emission.Numeric with ForeignResultUses = [account]}} }
+
+let private foreignControlModel () =
+    match (foreignResultControl ()).CurrentClaims[NodeId 940].Body with
+    | ObligationBody.ForeignResultCoverage model -> model
+    | _ -> failwith "Expected a foreign-result model."
+
+[<Fact>]
+let ``foreign result rows retain two ordered current claims and complete sources`` () =
+    Assert.Empty(Integrity.check (foreignResultControl ()))
+
+[<Theory>]
+[<InlineData("duplicate-account", "Application", "duplicated")>]
+[<InlineData("hypothesis", "Hypothesis", "declaration census")>]
+[<InlineData("ordinal", "Arguments", "consecutive")>]
+[<InlineData("missing-role", "Claims", "two distinct ordered")>]
+[<InlineData("duplicate-citizen", "Claims", "two distinct ordered")>]
+[<InlineData("participants", "Participants", "ordered declaration")>]
+[<InlineData("sources", "Sources", "complete ordered source vector")>]
+[<InlineData("missing-account", "Claims", "exact invocation account")>]
+[<InlineData("wrong-model", "Claims", "exact current conditional model")>]
+let ``foreign result rows reject detached or mismatched invocation evidence`` defect suffix (reason: string) =
+    let held = foreignResultControl ()
+    let account = held.Emission.Numeric.ForeignResultUses.Head
+    let uses =
+        match defect with
+        | "duplicate-account" -> [account; account]
+        | "hypothesis" -> [{account with Application = {account.Application with Hypothesis = None}}]
+        | "ordinal" -> [{account with Application = {account.Application with Arguments = [{account.Application.Arguments.Head with Index = 3}]}}]
+        | "missing-role" -> [{account with Claims = [account.Claims.Head]}]
+        | "duplicate-citizen" -> [{account with Claims = [account.Claims.Head; ForeignResultProofRole.AbiNarrowing, snd account.Claims.Head]}]
+        | "participants" -> [{account with Participants = ParticipantEvidence.Established []}]
+        | "missing-account" -> []
+        | _ -> [account]
+    let changed = {held with Emission = {held.Emission with Numeric = {held.Emission.Numeric with ForeignResultUses = uses}}}
+    let changed =
+        if defect = "sources" then {changed with ObligationSources = changed.ObligationSources.Add(NodeId 940, [[NodeId 1]])}
+        elif defect = "wrong-model" then
+            let claim = {changed.CurrentClaims[NodeId 940] with Body = ObligationBody.ForeignResultCoverage {foreignControlModel () with Role = ForeignResultProofRole.AbiNarrowing}}
+            {changed with CurrentClaims = changed.CurrentClaims.Add(NodeId 940, claim)
+                          Obligations = changed.Obligations |> List.map (fun row -> if row.Id = claim.Id then claim else row)}
+        else changed
+    Assert.Contains(Integrity.check changed, fun v ->
+        v.Part = "Emission.Numeric.ForeignResultUses." + suffix && v.Node = Some(NodeId 1) && v.Reason.Contains reason)
+
+[<Theory>]
+[<InlineData("hypothesis")>]
+[<InlineData("abi")>]
+[<InlineData("unbounded-destination")>]
+[<InlineData("argument")>]
+[<InlineData("unbounded-result")>]
+let ``foreign result projection rejects incomplete finite premises`` defect =
+    let model = foreignControlModel ()
+    let changed =
+        match defect with
+        | "hypothesis" -> {model with Application = {model.Application with Hypothesis = None}}
+        | "abi" -> {model with Abi = None}
+        | "unbounded-destination" -> {model with Destination = ValueRange.Unbounded}
+        | "argument" -> {model with Application = {model.Application with Arguments = []}}
+        | _ -> {model with ResultRange = ValueRange.Unbounded}
+    match ForeignResultCoverage.ofModel changed with
+    | Error reason -> Assert.False(System.String.IsNullOrWhiteSpace reason)
+    | Ok _ -> failwithf "The %s negative control was accepted." defect
+
+[<Fact>]
+let ``foreign result queries preserve premises anchors refutation and nonvacuity`` () =
+    let projection = ForeignResultCoverage.ofModel (foreignControlModel ()) |> projected
+    let premises = ForeignResultCoverage.premisesQuery projection
+    let anchored = ForeignResultCoverage.anchoredPremisesQuery "result_control" projection
+    let refutation = ForeignResultCoverage.refutation "result_control" projection
+    let nonvacuity = ForeignResultCoverage.nonVacuityQuery projection
+    Assert.Contains("(set-logic QF_LIA)", premises)
+    Assert.Contains("(<= foreign_result foreign_arg_0)", premises)
+    Assert.DoesNotContain("(assert (not result_control))", premises)
+    Assert.Equal(premises.Replace("(check-sat)", "(declare-fun result_control () Bool)\n(check-sat)"), anchored)
+    Assert.Equal("(assert (not result_control))", List.last refutation)
+    Assert.Contains(refutation, fun line -> line.StartsWith("(assert (= result_control "))
+    Assert.Contains("(assert (not " + ForeignResultCoverage.smtLib projection.Conclusion + "))", nonvacuity)
+    Assert.DoesNotContain("(assert " + ForeignResultCoverage.smtLib projection.Premises + ")", nonvacuity)
+    let changed = {projection with Conclusion = ForeignResultCoverage.Predicate.And []}
+    Assert.NotEqual<string>(nonvacuity, ForeignResultCoverage.nonVacuityQuery changed)
+    Assert.NotEqual<string list>(refutation, ForeignResultCoverage.refutation "result_control" changed)
+    let changed = {projection with Premises = ForeignResultCoverage.Predicate.And []}
+    Assert.NotEqual<string>(premises, ForeignResultCoverage.premisesQuery changed)
+    Assert.NotEqual<string>(anchored, ForeignResultCoverage.anchoredPremisesQuery "result_control" changed)
+
+let private conditionalOptionalCallback () =
+    let held = boundaryCalleeFacts
+    let callbackType = held.Nodes[NodeId 3].Type
+    let fnType = TypeIdentity.Function(callbackType, callbackType)
+    let entryType = TypeIdentity.Application({Declaration = {Module = []; Name = "FnPtr"}; Parameters = []; NativeKind = Some NTUKind.NTUfnptr}, [fnType])
+    let optionType = TypeIdentity.Application({Declaration = {Module = []; Name = "option"}; Parameters = [TypeParamKind.Type]; NativeKind = None}, [entryType])
+    let intType = TypeIdentity.Application(
+        {Declaration = {Module = []; Name = "int"}; Parameters = []
+         NativeKind = Some(NTUKind.NTUint(NTUWidth.Resolved WidthDimension.Register))}, [])
+    let p role ordinal group number : Participant =
+        {Role = role; Ordinal = ordinal; Group = NodeId group; Node = NodeId number}
+    let fact form text numbers refs parent : BoundaryDeclarationFact =
+        let nodeRefs = refs |> List.map NodeId
+        {Form = form; Text = text; Numbers = numbers; References = nodeRefs; Children = nodeRefs; Parent = parent |> Option.map NodeId; SourceType = unitType}
+    let record fields refs parent = fact "record" fields [] refs (Some parent)
+    let text value parent = fact "string" [value] [] [] (Some parent)
+    let declBinding name child = fact "binding" [name] [0I; 0I] [child] (Some 400)
+    let contractType name = TypeIdentity.Application({Declaration = {Module = ["BAREWire"; "Descriptors"]; Name = name}; Parameters = []; NativeKind = None}, [])
+    let header = {held.SourceReadings.ContextHeaders[NodeId 50] with Identity = NodeId 400; Name = "OptionalControl"}
+    let target : BoundaryPlatformPremise =
+        {Id = "optional-control"; Description = None; Loading = None; LibraryPath = None; SourcePaths = Set.singleton "fixture"
+         Architecture = Some "x86_64"; OS = Some "linux"; RuntimeClaim = None; Substrate = None
+         Dimensions = Map.ofList ["Pointer", 64; "Register", 64]; Representations = Map.empty; EndpointReturns = Map.empty}
+    let premise shape embedded reachable : BoundarySourcePremise =
+        {Shape = shape; EmbeddedTypes = embedded; ConstructorFacts = []; Reachable = reachable; Range = None; ExternLibrary = None; ExternSymbol = None; HasExtern = false; Metadata = Map.empty}
+    let lifetime : ProgramImageCodeLifetime = {Module = NodeId 400; Binding = NodeId 401; Implementation = NodeId 10}
+    let lifetimeParts = [p ParticipantRole.CallableLifetime 0 100 400; p ParticipantRole.CallableLifetime 1 100 401; p ParticipantRole.CallableLifetime 2 100 10]
+    let sourcePremises =
+        [NodeId 400, premise {fact "module" ["OptionalControl"] [] [401] None with Children = []} [] false
+         NodeId 401, premise {fact "binding" ["callback"; "no-declaration-root"] [0I; 0I] [10] (Some 400) with SourceType = fnType} [] true
+         NodeId 10, premise {fact "lambda" ["RegularClosure"; "argument"] [1I; 0I; 0I] [41; 11] (Some 401) with SourceType = fnType} [callbackType] true] |> Map.ofList
+    let contract : CallableContract =
+        {Identity = NodeId 100; Kind = CallableKind.NativeEntry
+         Convention = CallableConvention.CompilerOwnedPortable
+            {Target = target; ParameterConversions = [0, CallableConversion.Identity(ValueRepresentation.Scalar(SettledSlot.Integer(32, None)))]
+             ResultConversion = CallableConversion.Identity(ValueRepresentation.Scalar(SettledSlot.Integer(32, None))); CodeLifetime = lifetime}
+         ParameterTypes = [callbackType]; OmittedParameters = []; ParameterRepresentations = [0, ValueRepresentation.Scalar(SettledSlot.Integer(32, None))]
+         ResultType = callbackType; ResultRepresentation = ValueRepresentation.Scalar(SettledSlot.Integer(32, None)); EnvironmentBytes = None; SourcePremises = sourcePremises
+         Participants = [p ParticipantRole.CallableContract 0 100 100; p ParticipantRole.Source 0 100 400; p ParticipantRole.Source 1 100 401; p ParticipantRole.Source 2 100 10] @ lifetimeParts}
+    let carrier : CallableCarrier =
+        {Occurrence = NodeId 30; Kind = CallableKind.NativeEntry; Formation = NodeId 30; EnvironmentValue = None
+         Contract = Ok(NodeId 100); Lifetime = lifetimeParts; SourceType = entryType; Implementation = NodeId 10
+         Parameters = ["argument", callbackType, NodeId 41]; ParameterShapes = [CallableValueShape.Data(NodeId 41)]
+         OmittedParameters = Set.empty; Result = NodeId 11; ResultShape = CallableValueShape.Data(NodeId 11); Environment = None}
+    let slot : CallableAggregateSlot =
+        {Identity = NodeId 101; AggregateType = optionType; Declaration = None; DeclarationFacts = []
+         Path = [CallableAggregatePathStep.UnionPayload(1, 0)]; SourceType = entryType; Contract = Ok(NodeId 100)
+         Participants = [p ParticipantRole.AggregateSlot 0 101 101; p ParticipantRole.CallableContract 0 101 100]}
+    let alternative : CallableAggregateAlternative =
+        {Ordinal = 0; Carrier = NodeId 30; Formation = NodeId 30; EnvironmentValue = None; Contract = NodeId 100; Adapter = None; EnvironmentPlacement = None}
+    let selector = Some {Lower = 0; UpperExclusive = 1; Storage = None; Slot = None; ByteOffset = None}
+    let tagSome : CallableAggregateTag =
+        {Constructor = NodeId 2; TagRead = None; CaseOrdinal = 1; PayloadOrdinal = Some 0; Payload = Some(NodeId 30)
+         Participants = [p ParticipantRole.AggregateConstructor 0 2 2; p ParticipantRole.AggregatePayload 0 2 30]}
+    let tagNone : CallableAggregateTag =
+        {Constructor = NodeId 4; TagRead = None; CaseOrdinal = 0; PayloadOrdinal = None; Payload = None
+         Participants = [p ParticipantRole.AggregateConstructor 0 4 4]}
+    let constructSome : CallableAggregateValue =
+        {Occurrence = NodeId 2; Aggregate = NodeId 2; Slot = NodeId 101; Alternatives = [alternative]; Selector = selector
+         FormationInputs = [NodeId 30]; Value = Some(NodeId 30); SelectedAlternative = Some 0
+         Operation = CallableAggregateOperation.Construct; Frontier = None; Tag = Some tagSome; Selection = None
+         ResultRetirement = None; Bytes = 0; Alignment = 1
+         Participants =
+            [p ParticipantRole.AggregateValue 0 2 2; p ParticipantRole.AggregateSource 0 2 2
+             p ParticipantRole.AggregateSlot 0 2 101; p ParticipantRole.AggregateInput 0 2 30
+             p ParticipantRole.AggregateWrite 0 2 30; p ParticipantRole.CallableCarrier 0 2 30
+             p ParticipantRole.CallableFormation 0 2 30; p ParticipantRole.CallableContract 0 2 100]}
+    let constructNone : CallableAggregateValue =
+        {Occurrence = NodeId 4; Aggregate = NodeId 4; Slot = NodeId 101; Alternatives = []; Selector = None
+         FormationInputs = []; Value = None; SelectedAlternative = None
+         Operation = CallableAggregateOperation.Construct; Frontier = None; Tag = Some tagNone; Selection = None
+         ResultRetirement = None; Bytes = 0; Alignment = 1
+         Participants =
+            [p ParticipantRole.AggregateValue 0 4 4; p ParticipantRole.AggregateSource 0 4 4
+             p ParticipantRole.AggregateSlot 0 4 101]}
+    let selected : CallableAggregateValue =
+        {Occurrence = NodeId 3; Aggregate = NodeId 3; Slot = NodeId 101; Alternatives = [alternative]; Selector = selector
+         FormationInputs = [NodeId 20; NodeId 2; NodeId 4]; Value = None; SelectedAlternative = None
+         Operation = CallableAggregateOperation.Select; Frontier = None; Tag = None
+         Selection = Some {Condition = NodeId 20; WhenTrue = NodeId 2; WhenFalse = NodeId 4}
+         ResultRetirement = None; Bytes = 0; Alignment = 1
+         Participants =
+            [p ParticipantRole.AggregateValue 0 3 3; p ParticipantRole.AggregateSource 0 3 3
+             p ParticipantRole.AggregateSlot 0 3 101; p ParticipantRole.CallableCarrier 0 3 30
+             p ParticipantRole.CallableFormation 0 3 30; p ParticipantRole.CallableContract 0 3 100
+             p ParticipantRole.AggregateInput 0 3 20; p ParticipantRole.AggregateInput 1 3 2; p ParticipantRole.AggregateInput 2 3 4
+             p ParticipantRole.Source 0 3 21; p ParticipantRole.Source 1 3 300]}
+    let nodes =
+        [{node 1 (SemanticKind.Application(NodeId 201, [NodeId 3])) [201; 3; 99] with Type = unitType; Parent = Some(NodeId 300)}
+         node 201 (SemanticKind.VarRef("receive", None)) []
+         {node 99 (SemanticKind.DUGetTag(NodeId 3, optionType)) [3] with Type = intType; ValueRange = Some(ValueRange.Bounded(0I, 1I)); Parent = Some(NodeId 1)}
+         {node 3 (SemanticKind.IfThenElse(NodeId 20, NodeId 2, Some(NodeId 4))) [20; 2; 4] with Type = optionType; Parent = Some(NodeId 1)}
+         {node 20 (SemanticKind.VarRef("flag", Some(NodeId 21))) [] with Type = boolType; Parent = Some(NodeId 3)}
+         {node 2 (SemanticKind.UnionCase("Some", 1, Some(NodeId 30))) [30] with Type = optionType; Parent = Some(NodeId 3)}
+         {node 4 (SemanticKind.UnionCase("None", 0, None)) [] with Type = optionType; Parent = Some(NodeId 3)}
+         {node 30 (SemanticKind.Application(NodeId 403, [NodeId 402])) [403; 402] with Type = entryType; Parent = Some(NodeId 2)}
+         {node 402 (SemanticKind.VarRef("callback", Some(NodeId 401))) [] with Type = fnType}
+         node 403 (SemanticKind.Intrinsic {Module = IntrinsicModule.FnPtr; Operation = "ofFunction"; Category = IntrinsicCategory.Pure; FullName = "FnPtr.ofFunction"}) []
+         {node 401 (SemanticKind.Binding("callback", false, false, None)) [10] with Type = fnType; Parent = Some(NodeId 400)}
+         {node 10 (SemanticKind.Lambda(["argument", callbackType, NodeId 41], NodeId 11, [], Some "callback", LambdaContext.RegularClosure)) [41; 11] with Type = fnType; Parent = Some(NodeId 401)}
+         {node 41 (SemanticKind.PatternBinding "argument") [] with Type = callbackType; Parent = Some(NodeId 10)}
+         {node 11 (SemanticKind.Literal(NativeLiteral.Int(1L, NTUKind.NTUint(NTUWidth.Fixed 32)))) [] with Type = callbackType; Parent = Some(NodeId 10)}
+         {node 21 (SemanticKind.PatternBinding "flag") [] with Type = boolType; Parent = Some(NodeId 300)}
+         {node 300 (SemanticKind.Lambda(["flag", boolType, NodeId 21], NodeId 1, [], Some "caller", LambdaContext.RegularClosure)) [21; 1] with Type = TypeIdentity.Function(boolType, unitType)}]
+    let baseRevision = revision nodes
+    let allNodes = baseRevision.Nodes
+    let declName = CallableSymbolName.RootBinding "callback"
+    let declaration : CallableEmissionDeclaration =
+        {Lookup = NodeId 10; Implementation = NodeId 10; Parameters = ["argument", callbackType, NodeId 41]; Result = NodeId 11
+         Context = LambdaContext.RegularClosure; Captures = []; Name = declName; Parent = Some(NodeId 401)
+         Participants = Set.ofList [NodeId 10; NodeId 11; NodeId 41; NodeId 401]}
+    let mkAccount site (accountValues: CallableAggregateValue list) : CallableAggregateDependencyAccount =
+        let accountCarriers = if accountValues |> List.exists (fun row -> not row.Alternatives.IsEmpty) then [carrier] else []
+        let participants =
+            slot.Participants @
+            (accountValues |> List.collect (fun row -> row.Participants @ (row.Tag |> Option.map _.Participants |> Option.defaultValue []))) @
+            (accountCarriers |> List.collect _.Lifetime) @
+            contract.Participants
+        let sources =
+            participants |> List.map _.Node |> List.distinct |> List.filter (sourcePremises.ContainsKey >> not)
+            |> List.choose (fun id -> allNodes.TryFind id |> Option.map (fun n -> {Node = id; Kind = n.Kind; Type = n.Type; Children = n.Children; Anchors = n.ObligationAnchors}))
+        let symbols = if accountCarriers.IsEmpty then [] else [NodeId 10, declName]
+        {Occurrence = site; Slots = [slot]; Values = accountValues; Carriers = accountCarriers; Contracts = [contract]
+         Flows = []; Joins = []; Participants = participants; Sources = sources; Claims = []; Symbols = symbols
+         Inactivity = []; MemoryPolicy = None}
+    let accounts =
+        Map.ofList
+            [NodeId 2, mkAccount (NodeId 2) [constructSome]
+             NodeId 3, mkAccount (NodeId 3) [selected; constructSome; constructNone]
+             NodeId 4, mkAccount (NodeId 4) [constructNone]]
+    let callable =
+        {baseRevision.Emission.Callable with
+            Contracts = Map.ofList [NodeId 100, contract]
+            Carriers = Map.ofList [NodeId 30, carrier]
+            AggregateSlots = Map.ofList [NodeId 101, slot]
+            AggregateValues = Map.ofList [NodeId 2, [constructSome]; NodeId 3, [selected]; NodeId 4, [constructNone]]
+            AggregateDependencies = accounts
+            Declarations = Map.ofList [NodeId 10, declaration]
+            SignatureData = Map.ofList [NodeId 10, Set.ofList [NodeId 41; NodeId 11]]
+            ClosedData = Set.ofList [NodeId 11; NodeId 41]
+            NativeEntries = Map.ofList [NodeId 10, "callback"]
+            Symbols = Map.ofList [NodeId 10, declName; NodeId 300, CallableSymbolName.Anonymous(NodeId 300)]}
+    let facts =
+        [210, record ["Parameters"] [212] 213
+         213, fact "quotation" [] [] [210] (Some 214)
+         214, declBinding "receiveDescriptor" 213
+         211, {fact "formal" ["callback"] [] [] (Some 215) with SourceType = optionType}
+         215, fact "lambda" ["receive"; "callback"] [1I; 0I; 0I] [211; 216] (Some 217)
+         216, fact "unit" [] [] [] (Some 215)
+         217, declBinding "receive" 215
+         212, fact "array" [] [] [218] (Some 210)
+         218, record ["Type"; "PassBy"] [219; 229] 212
+         219, fact "case" ["Entry"] [] [220] (Some 218)
+         229, fact "case" ["Value"] [] [] (Some 218)
+         220, {fact "quotation" [] [1I] [222] (Some 221) with SourceType = contractType "CallbackInvocationContract"}
+         221, {declBinding "receiveCallbackInvocation" 220 with SourceType = contractType "CallbackInvocationContract"}
+         222, {record ["Binding"; "Parameter"; "Signature"; "Hypothesis"; "Scope"] [223; 224; 225; 226; 227] 220 with SourceType = contractType "CallbackInvocationContract"}
+         223, text "OptionalControl.receive" 222
+         224, fact "integer" [] [0I] [] (Some 222)
+         225, record ["Parameters"; "ReturnType"; "CallingConvention"] [233; 238; 235] 222
+         233, fact "array" [] [] [236] (Some 225)
+         235, fact "case" ["CDecl"] [] [] (Some 225)
+         236, record ["Name"; "Type"; "PassBy"] [237; 238; 239] 233
+         237, text "argument" 236
+         238, fact "case" ["Integer"] [] [240] (Some 236)
+         239, fact "case" ["Value"] [] [] (Some 236)
+         240, fact "tuple" [] [] [241; 242] (Some 238)
+         241, fact "case" ["Signed"] [] [] (Some 240)
+         242, fact "integer" [] [32I] [] (Some 240)
+         226, record ["Identity"; "Version"; "Source"] [230; 231; 232] 222
+         227, text "during_call" 222
+         230, text "invoke" 226; 231, text "1" 226; 232, text "fixture" 226
+         400, sourcePremises[NodeId 400].Shape
+         401, sourcePremises[NodeId 401].Shape
+         500, {fact "quotation" [] [1I] [502] (Some 501) with SourceType = contractType "Descriptors.CallbackAbsenceContract"}
+         501, {declBinding "receiveCallbackAbsence" 500 with SourceType = contractType "Descriptors.CallbackAbsenceContract"}
+         502, {record ["Binding"; "Parameter"; "Hypothesis"] [503; 504; 505] 500 with SourceType = contractType "Descriptors.CallbackAbsenceContract"}
+         503, text "OptionalControl.receive" 502
+         504, fact "integer" [] [0I] [] (Some 502)
+         505, record ["Identity"; "Version"; "Source"] [506; 507; 508] 502
+         506, text "absence" 505; 507, text "1" 505; 508, text "fixture" 505
+         600, {fact "quotation" [] [1I] [602] (Some 601) with SourceType = contractType "ScopedCallbackDescriptor"}
+         601, {declBinding "during_call" 600 with SourceType = contractType "ScopedCallbackDescriptor"}
+         602, {record ["Binding"; "Parameter"] [603; 604] 600 with SourceType = contractType "ScopedCallbackDescriptor"}
+         603, text "OptionalControl.receive" 602; 604, text "callback" 602]
+        |> List.map (fun (id, item) -> NodeId id, item) |> Map.ofList
+    let imported : BoundaryImport =
+        {Identity = NodeId 210; Binding = NodeId 217; Scope = NodeId 400; Library = "c"; Symbol = "receive"; CallingConvention = "CDecl"
+         DeclarationPath = [NodeId 217]; Parameters = [NodeId 211, BoundaryScalar.Entry(NodeId 220)]; Result = None
+         Participants = facts.Keys |> Set.ofSeq; SourceTypes = Map.ofList [NodeId 211, optionType]; DeclarationFacts = facts}
+    let receiver : BoundaryCallbackInvocation =
+        {Identity = NodeId 220; Import = NodeId 210; Parameter = 0; Formal = NodeId 211; Scope = NodeId 600
+         Contract = {Binding = "OptionalControl.receive"; Parameter = 0
+                     Signature = {Parameters = [|{Name = "argument"; Type = BAREWire.Descriptors.TypeRef.Integer(BAREWire.Descriptors.Signedness.Signed, 32); PassBy = BAREWire.Descriptors.PassBy.Value}|]
+                                  ReturnType = BAREWire.Descriptors.TypeRef.Integer(BAREWire.Descriptors.Signedness.Signed, 32); CallingConvention = BAREWire.Descriptors.CallConv.CDecl}
+                     Hypothesis = {Identity = "invoke"; Version = "1"; Source = "fixture"}; Scope = "during_call"}
+         Signature = {Parameters = [BoundaryScalar.Integer(32, true)]; Result = Some(BoundaryScalar.Integer(32, true)); CallingConvention = "CDecl"}
+         Extent = BoundaryCallbackExtent.DuringCall; Participants = facts.Keys |> Set.ofSeq}
+    let absence : BoundaryCallbackAbsence =
+        {Quote = NodeId 500; DescriptorBinding = NodeId 501; Record = NodeId 502; Import = NodeId 210; Parameter = 0; Formal = NodeId 211; Invocation = NodeId 220
+         Contract = {Binding = "OptionalControl.receive"; Parameter = 0; Hypothesis = {Identity = "absence"; Version = "1"; Source = "fixture"}}
+         SourcePath = [NodeId 500; NodeId 502]
+         Inputs = [CallbackAbsenceInputRole.Binding, [NodeId 503]; CallbackAbsenceInputRole.Parameter, [NodeId 504]
+                   CallbackAbsenceInputRole.Hypothesis, [NodeId 505]; CallbackAbsenceInputRole.HypothesisIdentity, [NodeId 506]
+                   CallbackAbsenceInputRole.HypothesisVersion, [NodeId 507]; CallbackAbsenceInputRole.HypothesisSource, [NodeId 508]]
+         DeclarationFacts = [500..508] |> List.map (fun id -> NodeId id, facts[NodeId id]) |> Map.ofList}
+    let entry : BoundaryClosedEntry =
+        {Formation = NodeId 30; Operand = NodeId 402; Declaration = NodeId 401; Implementation = NodeId 10; Formals = [NodeId 41]; Body = NodeId 11
+         Lifetime = lifetime; Invocation = NodeId 220; ParameterAdaptations = [None]; ResultAdaptation = None; Registrations = Map.empty
+         Transport = Set.ofList [NodeId 30; NodeId 402]
+         Participants = Set.union receiver.Participants (Set.ofList [NodeId 30; NodeId 402; NodeId 403; NodeId 10; NodeId 401; NodeId 41; NodeId 11; NodeId 400; NodeId 100; NodeId 220])}
+    let whenTrue : BoundaryOptionalEntry =
+        {Construction = NodeId 2; CaseOrdinal = 1; Payload = Some(NodeId 30); Formation = Some(NodeId 30)
+         Transport = Set.ofList [NodeId 2; NodeId 3]; Obligation = NodeId 404}
+    let whenFalse : BoundaryOptionalEntry =
+        {Construction = NodeId 4; CaseOrdinal = 0; Payload = None; Formation = None
+         Transport = Set.ofList [NodeId 4; NodeId 3]; Obligation = NodeId 405}
+    let choice = BoundaryOptionalEntryChoice.Conditional(NodeId 3, NodeId 99, whenTrue, whenFalse)
+    let own = accounts[NodeId 3].Sources |> List.map _.Node |> Set.ofList
+    let extra = [500..508] |> List.map NodeId |> Set.ofList
+    let supportTrue = Set.unionMany [own; whenTrue.Transport; Set.ofList [NodeId 1; NodeId 210; NodeId 201; NodeId 3; NodeId 211; NodeId 2]; imported.Participants; receiver.Participants]
+    let supportFalse = Set.unionMany [own; whenFalse.Transport; Set.ofList [NodeId 1; NodeId 210; NodeId 201; NodeId 3; NodeId 211; NodeId 4]; imported.Participants; receiver.Participants; extra]
+    let pendingClaim id reasons : ObligationInfo =
+        {Id = id; Kind = "foreign-optional-entry-conversion-0"; Logic = ""
+         Statement = "The exact source Option selection requires an admitted target boundary conversion."
+         Source = "integrity-control"; Refs = []; Body = ObligationBody.Pending reasons}
+    let claimTrue = pendingClaim "optional-conditional-some" ["Selected-target optional-entry conversion remains Pending."]
+    let claimFalse = pendingClaim "optional-conditional-none" ["Selected-target optional-entry conversion and the foreign nullable-acceptance premise remain Pending."]
+    let call : BoundaryCall =
+        {Site = NodeId 1; Import = NodeId 210; Callee = NodeId 201; Entry = None; Resource = None
+         Arguments = [{Actual = NodeId 3; Formal = NodeId 211; Abi = BoundaryScalar.Entry(NodeId 220); Adaptation = None; OptionalEntry = Some choice}]
+         ErasedUnitArguments = []; Result = None; ResultAdaptation = None
+         Participants = Set.unionMany [supportTrue; supportFalse; Set.ofList [NodeId 99; NodeId 404; NodeId 405]]
+         SourceTypes = Map.ofList [NodeId 3, optionType]}
+    let boundary =
+        {baseRevision.Emission.Boundary with
+            Imports = Map.ofList [NodeId 210, imported]
+            Calls = Map.ofList [NodeId 1, call]
+            CallbackInvocations = Map.ofList [NodeId 220, receiver]
+            CallbackAbsences = Map.ofList [NodeId 500, absence]
+            ClosedEntries = Map.ofList [NodeId 30, entry]}
+    let optionRep = ValueRepresentation.Union(["None", []; "Some", [ValueRepresentation.CallableComponent(NodeId 101, ValueRepresentation.Record([], Some([], 0, 1)))]], Some(1, 1, 1))
+    let prepared =
+        {baseRevision with
+            Platform = {Register = Ok 64; Pointer = Ok 64}
+            CurrentClaims = Map.ofList [NodeId 404, claimTrue; NodeId 405, claimFalse]
+            Obligations = [claimTrue; claimFalse]
+            ObligationSources = Map.ofList [NodeId 404, [List.distinct (NodeId 1 :: Set.toList supportTrue)]; NodeId 405, [List.distinct (NodeId 1 :: Set.toList supportFalse)]]
+            Codata = {baseRevision.Codata with
+                        CallableContracts = callable.Contracts; CallableCarriers = callable.Carriers
+                        CallableAggregateSlots = callable.AggregateSlots; CallableAggregateValues = callable.AggregateValues
+                        CallableAggregateDependencies = callable.AggregateDependencies
+                        FunctionPointers = Map.ofList [NodeId 30, FunctionPointerPlan.Address("callback", NodeId 10)]}
+            Emission = {baseRevision.Emission with Callable = callable; Boundary = boundary}}
+        |> covered
+    let source =
+        {prepared.SourceReadings with
+            ContextHeaders = prepared.SourceReadings.ContextHeaders.Add(NodeId 400, header)
+            Contexts = prepared.SourceReadings.Contexts.Add(NodeId 400, [[]])
+            Ports = prepared.SourceReadings.Ports.Add((NodeId 400, OccurrencePort.ModuleDeclaration), header.Ports[OccurrencePort.ModuleDeclaration])}
+    let tagCarrier : ScalarCarrier =
+        {held.Emission.Numeric.Values[NodeId 3] with
+            Site = NodeId 99; SourceType = intType
+            Slot = SettledSlot.Integer(64, Some "int"); Range = ValueRange.Bounded(0I, 1I)
+            Participants = Set.ofList [NodeId 99; NodeId 3]; Obligations = []}
+    let scalar site =
+        {held.Emission.Numeric.Values[NodeId 3] with
+            Site = NodeId site; SourceType = callbackType; Declaration = None
+            Participants = Set.singleton(NodeId site); Obligations = []}
+    let numeric = prepared.Emission.Numeric
+    {prepared with
+        SourceReadings = source
+        Emission = {prepared.Emission with
+                        Numeric = {numeric with
+                                       Values = numeric.Values.Add(NodeId 99, tagCarrier).Add(NodeId 11, scalar 11).Add(NodeId 41, scalar 41)
+                                       OccurrenceRepresentations =
+                                           numeric.OccurrenceRepresentations
+                                               .Add(NodeId 2, Ok optionRep)
+                                               .Add(NodeId 3, Ok optionRep)
+                                               .Add(NodeId 4, Ok optionRep)
+                                               .Add(NodeId 11, Ok(ValueRepresentation.Scalar(SettledSlot.Integer(32, None))))
+                                               .Add(NodeId 41, Ok(ValueRepresentation.Scalar(SettledSlot.Integer(32, None))))}}}
+
+[<Theory>]
+[<InlineData("valid")>]
+[<InlineData("swapped-arms")>]
+[<InlineData("duplicate-obligation")>]
+[<InlineData("missing-select")>]
+[<InlineData("select-true")>]
+[<InlineData("select-false")>]
+[<InlineData("transport")>]
+let ``conditional optional callback retains exact arm order select row and transport`` defect =
+    let held = conditionalOptionalCallback ()
+    let boundary = held.Emission.Boundary
+    let call = boundary.Calls[NodeId 1]
+    let operand = call.Arguments.Head
+    let choice =
+        match operand.OptionalEntry.Value with
+        | BoundaryOptionalEntryChoice.Conditional(selection, tag, whenTrue, whenFalse) ->
+            let left, right =
+                match defect with
+                | "swapped-arms" -> whenFalse, whenTrue
+                | "duplicate-obligation" -> whenTrue, {whenFalse with Obligation = whenTrue.Obligation}
+                | "transport" -> {whenTrue with Transport = Set.empty}, whenFalse
+                | _ -> whenTrue, whenFalse
+            BoundaryOptionalEntryChoice.Conditional(selection, tag, left, right)
+        | _ -> failwith "Expected a conditional optional callback."
+    let callable = held.Emission.Callable
+    let selected = callable.AggregateValues[NodeId 3].Head
+    let selected =
+        match defect with
+        | "select-true" -> {selected with Selection = selected.Selection |> Option.map (fun row -> {row with WhenTrue = NodeId 4})}
+        | "select-false" -> {selected with Selection = selected.Selection |> Option.map (fun row -> {row with WhenFalse = NodeId 3})}
+        | _ -> selected
+    let values = if defect = "missing-select" then [] else [selected]
+    let account3 = callable.AggregateDependencies[NodeId 3]
+    let accountValues =
+        if defect = "missing-select" then account3.Values |> List.filter (fun row -> row.Operation <> CallableAggregateOperation.Select)
+        else account3.Values |> List.map (fun row -> if row.Operation = CallableAggregateOperation.Select then selected else row)
+    let changedCallable =
+        {callable with
+            AggregateValues = callable.AggregateValues.Add(NodeId 3, values)
+            AggregateDependencies = callable.AggregateDependencies.Add(NodeId 3, {account3 with Values = accountValues})}
+    let changed =
+        {held with Emission = {held.Emission with
+                                  Boundary = {boundary with Calls = boundary.Calls.Add(call.Site, {call with Arguments = {operand with OptionalEntry = Some choice} :: call.Arguments.Tail})}
+                                  Callable = changedCallable}}
+    let violations = Integrity.check changed
+    let selectionViolation (v: IntegrityViolation) =
+        v.Part = "Emission.Boundary.Calls.OptionalEntry" && v.Node = Some(NodeId 1) &&
+        v.Reason = "The conditional optional entry differs from its exact source selection, option-tag projection, actual transport, arm order or claim identities."
+    if defect = "valid" then Assert.Empty(violations)
+    else Assert.Contains(violations, selectionViolation)
+
+[<Theory>]
+[<InlineData(false, false)>]
+[<InlineData(false, true)>]
+[<InlineData(true, false)>]
+[<InlineData(true, true)>]
+let ``finite optional claims reject detached and duplicate operand owners`` absent duplicate =
+    let held = conditionalOptionalCallback ()
+    let boundary = held.Emission.Boundary
+    let call = boundary.Calls[NodeId 1]
+    let original = held.CurrentClaims[NodeId 404]
+    let body =
+        if absent then ObligationBody.OptionalEntryAbsenceArgumentConversion(absentPlan None)
+        else ObligationBody.OptionalEntryArgumentConversion(presentPlan None)
+    let claim = {original with Body = body}
+    let operand = call.Arguments.Head
+    let optional =
+        match operand.OptionalEntry.Value with
+        | BoundaryOptionalEntryChoice.Conditional(selection, tag, whenTrue, whenFalse) ->
+            if duplicate then BoundaryOptionalEntryChoice.Conditional(selection, tag, whenTrue, {whenFalse with Obligation = whenTrue.Obligation})
+            else BoundaryOptionalEntryChoice.Conditional(selection, tag, {whenTrue with Obligation = NodeId 405}, whenFalse)
+        | _ -> failwith "Expected a conditional optional callback."
+    let changed =
+        {held with CurrentClaims = held.CurrentClaims.Add(NodeId 404, claim)
+                   Obligations = held.Obligations |> List.map (fun row -> if row.Id = original.Id then claim else row)
+                   Emission = {held.Emission with Boundary = {boundary with Calls = boundary.Calls.Add(call.Site, {call with Arguments = {operand with OptionalEntry = Some optional} :: call.Arguments.Tail})}}}
+    let violation = within "CurrentClaims.OptionalEntry" (Integrity.check changed)
+    Assert.Equal(Some(NodeId 404), violation.Node)
+    Assert.Equal("A finite optional-entry source plan requires one exact current per-call operand owner.", violation.Reason)
+
+let private stackCheckedText () =
+    let held = snapshotFacts
+    let memory = held.Emission.Memory
+    let view =
+        match memory.Operations[NodeId 1] with
+        | MemoryWitnessOperation.StringView row -> row
+        | _ -> failwith "Expected the snapshot fixture's string view."
+    let allocation =
+        match memory.Operations[NodeId 11] with
+        | MemoryWitnessOperation.ArrayAllocation row -> row
+        | _ -> failwith "Expected the snapshot fixture's allocation."
+    let construction : CheckedStringConstruction =
+        { Owner = NodeId 21; Input = NodeId 1; Snapshot = NodeId 6; Length = NodeId 5
+          Validation = NodeId 24; Decision = NodeId 26; Text = NodeId 20
+          Success = NodeId 22; Failure = NodeId 23; Retirement = NodeId 25
+          Validator = "RFC3629-v1"; Returned = None }
+    let unionType = TypeIdentity.Application(
+        {Declaration = {Module = []; Name = "CheckedTextControl"}; Parameters = []; NativeKind = None}, [])
+    let intrinsic id operation =
+        let info : IntrinsicInfo =
+            {Module = IntrinsicModule.String; Operation = operation
+             Category = IntrinsicCategory.StringOp; FullName = "String." + operation}
+        node id (SemanticKind.Intrinsic info) []
+    let nodes =
+        [node 20 (SemanticKind.Application(NodeId 29, [NodeId 6])) [29;6]
+         node 21 (SemanticKind.Sequential [NodeId 26]) [26]
+         {node 22 (SemanticKind.DUConstruct("ValueSome", 1, Some(NodeId 20), None)) [20] with Type = unionType}
+         {node 23 (SemanticKind.DUConstruct("ValueNone", 0, None, None)) [] with Type = unionType}
+         node 24 (SemanticKind.Application(NodeId 28, [NodeId 6])) [28;6]
+         node 25 (SemanticKind.Application(NodeId 31, [NodeId 6])) [31;6]
+         node 26 (SemanticKind.IfThenElse(NodeId 24, NodeId 22, Some(NodeId 27))) [24;22;27]
+         node 27 (SemanticKind.Sequential [NodeId 25; NodeId 23]) [25;23]
+         intrinsic 28 "validateUtf8"; intrinsic 29 "fromBytes"; intrinsic 31 "retireSnapshot"
+         node 30 (SemanticKind.Lambda([], NodeId 21, [], Some "checked", LambdaContext.RegularClosure)) [21]]
+    let residence = MemoryResidence.Stack(NodeId 30, NodeId 5521)
+    let allocation = {allocation with Residence = residence; Participants = allocation.Participants.Add(NodeId 901)}
+    let storage = MemoryCheckedSnapshotStorage.Allocated allocation
+    let copy = memory.ArrayCopies[NodeId 6]
+    let stored site layout capacity : MemoryConstructedValueWitness =
+        {Site = NodeId site; Owner = construction.Owner; SourceType = unionType; Residence = residence
+         Uses = Set.singleton(NodeId site); Construction = construction; Platform = NodeId 8000
+         Layout = NodeId layout; Capacity = NodeId capacity}
+    let operations =
+        [NodeId 11, MemoryWitnessOperation.ArrayAllocation allocation
+         NodeId 20, MemoryWitnessOperation.StringView
+             {view with
+                 Site = NodeId 20; Source = NodeId 6; Owner = construction.Owner
+                 Direction = MemoryStringViewDirection.FromBytes; Checked = Some construction}
+         NodeId 22, MemoryWitnessOperation.ConstructedValue(stored 22 902 903)
+         NodeId 23, MemoryWitnessOperation.ConstructedValue(stored 23 904 905)
+         NodeId 24, MemoryWitnessOperation.Utf8Validation {Site = NodeId 24; Construction = construction; Copy = copy; Storage = storage; SourceCarrier = view.SourceCarrier}
+         NodeId 25, MemoryWitnessOperation.SnapshotRetirement {Site = NodeId 25; Construction = construction; Storage = storage}]
+        |> Map.ofList
+    let claims =
+        [901, ObligationBody.CapacityFits(16L, 128L), [11;30;5521]
+         902, ObligationBody.ContinuationLayout([0,16,8],16,8), [22;8000;30;5521]
+         903, ObligationBody.CapacityFits(16L,128L), [22;8000;30;5521]
+         904, ObligationBody.ContinuationLayout([0,16,8],16,8), [23;8000;30;5521]
+         905, ObligationBody.CapacityFits(16L,128L), [23;8000;30;5521]]
+        |> List.map (fun (id, body, sources) ->
+            NodeId id, {Id = sprintf "checked-%d" id; Kind = "checked-text-control"; Logic = "QF_LIA"
+                        Statement = "The stored checked text layout fits its declared space."; Source = "fixture"; Refs = []; Body = body},
+            [sources |> List.map NodeId])
+    let numeric = held.Emission.Numeric
+    {held with
+        Nodes = nodes |> List.fold (fun rows node -> Map.add node.Id node rows) held.Nodes
+        CurrentClaims = claims |> List.fold (fun rows (id, claim, _) -> Map.add id claim rows) held.CurrentClaims
+        Obligations = held.Obligations @ (claims |> List.map (fun (_, claim, _) -> claim))
+        ObligationSources = claims |> List.fold (fun rows (id, _, sources) -> Map.add id sources rows) held.ObligationSources
+        Emission = {held.Emission with
+                        Memory = {memory with Operations = operations; Required = Set.ofList [NodeId 11; NodeId 20]}
+                        Numeric = {numeric with
+                                       SourceTypes = nodes |> List.fold (fun rows node -> Map.add node.Id node.Type rows) numeric.SourceTypes
+                                       Layouts = numeric.Layouts.Add(unionType, SettledLayout.Union(["ValueNone",None; "ValueSome",Some SettledSlot.Bool], Some 8, Some 16, Some 8))
+                                       OccurrenceRepresentations = numeric.OccurrenceRepresentations.Add(NodeId 6, Ok view.SourceCarrier).Add(NodeId 20, Ok view.ResultCarrier)}}}
+    |> covered
+
+[<Fact>]
+let ``stack checked text retains validation private snapshot storage and retirement`` () =
+    Assert.Empty(Integrity.check (stackCheckedText ()))
+
+[<Theory>]
+[<InlineData("validator", "validator/view/retirement")>]
+[<InlineData("retire-snapshot", "validator/view/retirement")>]
+[<InlineData("cleanup-order", "discard-before-ValueNone")>]
+[<InlineData("capacity", "capacity proof")>]
+let ``stack checked text rejects validator retirement ordering and capacity defects`` defect (reason: string) =
+    let held = stackCheckedText ()
+    let memory = held.Emission.Memory
+    let changeConstruction (row: CheckedStringConstruction) = {row with Validator = "other-validator"}
+    let changed =
+        match defect with
+        | "validator" ->
+            let operations = memory.Operations |> Map.map (fun _ operation ->
+                match operation with
+                | MemoryWitnessOperation.StringView row -> MemoryWitnessOperation.StringView {row with Checked = row.Checked |> Option.map changeConstruction}
+                | MemoryWitnessOperation.Utf8Validation row -> MemoryWitnessOperation.Utf8Validation {row with Construction = changeConstruction row.Construction}
+                | MemoryWitnessOperation.ConstructedValue row -> MemoryWitnessOperation.ConstructedValue {row with Construction = changeConstruction row.Construction}
+                | MemoryWitnessOperation.SnapshotRetirement row -> MemoryWitnessOperation.SnapshotRetirement {row with Construction = changeConstruction row.Construction}
+                | _ -> operation)
+            {held with Emission = {held.Emission with Memory = {memory with Operations = operations}}}
+        | "retire-snapshot" ->
+            {held with Nodes = held.Nodes.Add(NodeId 25, {held.Nodes[NodeId 25] with Kind = SemanticKind.Application(NodeId 31, [NodeId 1]); Children = [NodeId 31; NodeId 1]})}
+        | "cleanup-order" ->
+            {held with Nodes = held.Nodes.Add(NodeId 27, {held.Nodes[NodeId 27] with Kind = SemanticKind.Sequential [NodeId 23; NodeId 25]; Children = [NodeId 23; NodeId 25]})}
+        | _ ->
+            let old = held.CurrentClaims[NodeId 903]
+            let claim = {old with Body = ObligationBody.CapacityFits(16L, 8L)}
+            {held with CurrentClaims = held.CurrentClaims.Add(NodeId 903, claim)
+                       Obligations = held.Obligations |> List.map (fun row -> if row.Id = old.Id then claim else row)}
+    Assert.Contains(Integrity.check changed, fun v ->
+        v.Part.StartsWith("Emission.Memory.Operations.") && v.Reason.Contains reason)
+
+let private returnedCheckedText empty =
+    let held = stackCheckedText ()
+    let memory = held.Emission.Memory
+    let validation =
+        match memory.Operations[NodeId 24] with
+        | MemoryWitnessOperation.Utf8Validation row -> row
+        | _ -> failwith "Expected a checked validator."
+    let allocation =
+        match validation.Storage with
+        | MemoryCheckedSnapshotStorage.Allocated row -> row
+        | _ -> failwith "Expected an allocated snapshot."
+    let unionType = held.Nodes[NodeId 22].Type
+    let lifetime : MemoryCheckedResultLifetime =
+        {Application = NodeId 40; Callee = NodeId 41; Declaration = NodeId 42; Implementation = NodeId 30
+         Argument = NodeId 1; Formal = NodeId 43; Body = NodeId 21; Caller = NodeId 44; Actual = NodeId 45
+         Elimination = NodeId 46; SomeUse = NodeId 49; NoneUse = NodeId 65
+         SomeBackingRetirement = NodeId 53; SomeCarrierRetirement = NodeId 54; NoneCarrierRetirement = NodeId 55
+         Uses = [NodeId 40; NodeId 45]; Policy = optionalPlanRetirement.Policy
+         Platform = NodeId 8000; Space = NodeId 5521; MaximumLiveBytes = if empty then 16L else 32L
+         Capacity = NodeId 906}
+    let construction = {validation.Construction with Returned = Some lifetime}
+    let residence = MemoryResidence.Heap(lifetime.Application, lifetime.Space)
+    let count = if empty then {validation.Copy.CountCarrier with Range = ValueRange.Bounded(0I,0I)} else validation.Copy.CountCarrier
+    let copy = {validation.Copy with CountCarrier = count}
+    let allocation = {allocation with Residence = residence}
+    let emptyStorage : MemoryEmptySnapshotWitness =
+        {Site = NodeId 11; Snapshot = NodeId 6; Owner = NodeId 21; Count = NodeId 5
+         SourceType = held.Nodes[NodeId 11].Type; Declaration = NodeId 64}
+    let storage = if empty then MemoryCheckedSnapshotStorage.Empty emptyStorage else MemoryCheckedSnapshotStorage.Allocated allocation
+    let arm pattern body : CaseArm = {Pattern = pattern; Bindings = []; Guard = None; Body = NodeId body}
+    let somePattern = Pattern.Union("ValueSome", 1, Some Pattern.Wildcard, unionType)
+    let nonePattern = Pattern.Union("ValueNone", 0, None, unionType)
+    let intrinsic id operation =
+        let info : IntrinsicInfo =
+            {Module = IntrinsicModule.String; Operation = operation; Category = IntrinsicCategory.StringOp; FullName = "String." + operation}
+        node id (SemanticKind.Intrinsic info) []
+    let nodes =
+        [node 30 (SemanticKind.Lambda(["input", unitType, NodeId 43], NodeId 21, [], Some "checked", LambdaContext.RegularClosure)) [43;21]
+         node 40 (SemanticKind.Application(NodeId 41, [NodeId 1])) [41;1]
+         node 41 (SemanticKind.VarRef("checked", Some(NodeId 42))) []
+         node 42 (SemanticKind.Binding("checked", false, false, None)) [30]
+         node 43 (SemanticKind.PatternBinding "input") []
+         node 44 (SemanticKind.Lambda([], NodeId 46, [], Some "caller", LambdaContext.RegularClosure)) [46]
+         node 45 (SemanticKind.VarRef("result", Some(NodeId 68))) []
+         node 68 (SemanticKind.Binding("result", false, false, None)) [40]
+         node 46 (SemanticKind.CaseElimination(NodeId 45, [arm somePattern 47; arm Pattern.Wildcard 60])) [45;47;60]
+         node 47 (SemanticKind.Sequential [NodeId 48;NodeId 53;NodeId 54;NodeId 52]) [48;53;54;52]
+         node 48 (SemanticKind.Binding("length", false, false, None)) [49]
+         node 49 (SemanticKind.Application(NodeId 50, [NodeId 51])) [50;51]
+         intrinsic 50 "length"
+         node 51 (SemanticKind.DUEliminate(NodeId 45, 1, "ValueSome", unionType)) [45]
+         node 52 (SemanticKind.VarRef("length", Some(NodeId 48))) []
+         node 53 (SemanticKind.Application(NodeId 56, [NodeId 51])) [56;51]
+         node 54 (SemanticKind.Application(NodeId 57, [NodeId 45])) [57;45]
+         node 55 (SemanticKind.Application(NodeId 57, [NodeId 45])) [57;45]
+         intrinsic 56 "retireCheckedBacking"; intrinsic 57 "retireCheckedCarrier"
+         node 58 (SemanticKind.Literal NativeLiteral.Unit) []
+         node 59 (SemanticKind.CaseElimination(NodeId 45, [arm nonePattern 66; arm Pattern.Wildcard 67])) [45;66;67]
+         node 60 (SemanticKind.Sequential [NodeId 58;NodeId 61]) [58;61]
+         node 61 (SemanticKind.CaseElimination(NodeId 45, [arm nonePattern 62])) [45;62]
+         node 62 (SemanticKind.Sequential [NodeId 63;NodeId 55;NodeId 64]) [63;55;64]
+         node 63 (SemanticKind.Binding("none", false, false, None)) [65]
+         node 64 (SemanticKind.VarRef("none", Some(NodeId 63))) []
+         node 65 (SemanticKind.Literal NativeLiteral.Unit) []
+         node 66 (SemanticKind.Literal(NativeLiteral.Bool true)) []
+         node 67 (SemanticKind.Literal(NativeLiteral.Bool false)) []]
+    let operations = memory.Operations |> Map.map (fun _ operation ->
+        match operation with
+        | MemoryWitnessOperation.ArrayAllocation _ ->
+            if empty then MemoryWitnessOperation.EmptySnapshot emptyStorage else MemoryWitnessOperation.ArrayAllocation allocation
+        | MemoryWitnessOperation.StringView row -> MemoryWitnessOperation.StringView {row with Checked = Some construction; Extent = count}
+        | MemoryWitnessOperation.Utf8Validation row -> MemoryWitnessOperation.Utf8Validation {row with Construction = construction; Storage = storage; Copy = copy}
+        | MemoryWitnessOperation.SnapshotRetirement row -> MemoryWitnessOperation.SnapshotRetirement {row with Construction = construction; Storage = storage}
+        | MemoryWitnessOperation.ConstructedValue row -> MemoryWitnessOperation.ConstructedValue {row with Construction = construction; Residence = residence}
+        | _ -> operation)
+    let cleanup site value target : MemoryWitnessOperation =
+        MemoryWitnessOperation.CheckedResultRetirement {Site = NodeId site; Value = NodeId value; Target = target; Construction = construction}
+    let operations =
+        operations.Add(NodeId 53, cleanup 53 51 (if empty then MemoryCheckedRetirementTarget.EmptyBacking else MemoryCheckedRetirementTarget.Backing))
+                  .Add(NodeId 54, cleanup 54 45 MemoryCheckedRetirementTarget.Carrier)
+                  .Add(NodeId 55, cleanup 55 45 MemoryCheckedRetirementTarget.Carrier)
+    let requirement : RequirementWitness =
+        {Site = NodeId 58; Condition = NodeId 59; Diagnostic = "Expected ValueNone"; Frontier = NodeId 60
+         Continuation = NodeId 61; PatternTest = Some(NodeId 59); Participants = [NodeId 60;NodeId 58;NodeId 59;NodeId 61]}
+    let capacity =
+        {held.CurrentClaims[NodeId 903] with Id = "checked-return-capacity"; Body = ObligationBody.CapacityFits(lifetime.MaximumLiveBytes,128L)}
+    let sources = held.ObligationSources |> Map.map (fun id groups ->
+        if List.contains id [NodeId 901;NodeId 902;NodeId 903;NodeId 904;NodeId 905] then
+            groups |> List.map (List.map (fun node -> if node = NodeId 30 then NodeId 40 else node))
+        else groups)
+    {held with
+        Nodes = nodes |> List.fold (fun rows node -> Map.add node.Id node rows) held.Nodes
+        CurrentClaims = held.CurrentClaims.Add(NodeId 906, capacity)
+        Obligations = held.Obligations @ [capacity]
+        ObligationSources = sources.Add(NodeId 906, [[NodeId 40;NodeId 8000;NodeId 5521]])
+        Emission =
+            {held.Emission with
+                Memory = {memory with Operations = operations; ArrayCopies = memory.ArrayCopies.Add(NodeId 6, copy)}
+                Numeric = {held.Emission.Numeric with Values = held.Emission.Numeric.Values.Add(NodeId 5, count)}
+                Callable = {held.Emission.Callable with AliasTargets = held.Emission.Callable.AliasTargets.Add(NodeId 45, NodeId 40)}
+                Storage = {held.Emission.Storage with
+                               Requirements = held.Emission.Storage.Requirements.Add(NodeId 58, requirement)
+                               PatternRequirements = held.Emission.Storage.PatternRequirements.Add(NodeId 61, NodeId 58)}}}
+    |> covered
+    |> fun revision ->
+        {revision with Emission = {revision.Emission with
+                                      Callable = {revision.Emission.Callable with AliasTargets = revision.Emission.Callable.AliasTargets.Add(NodeId 45,NodeId 40)}}}
+
+[<Theory>]
+[<InlineData(false)>]
+[<InlineData(true)>]
+let ``returned checked text retains heap or empty snapshot and complete caller cleanup`` empty =
+    Assert.Empty(Integrity.check (returnedCheckedText empty))
+
+[<Theory>]
+[<InlineData("some-order", "scalar-before-cleanup ordering on its exact Some arm")>]
+[<InlineData("none-order", "scalar-before-cleanup ordering on its exact None arm")>]
+[<InlineData("capacity", "combined live-byte capacity claim")>]
+[<InlineData("residence", "allocated or affirmative empty snapshot")>]
+let ``returned checked text rejects cleanup capacity and residence defects`` defect (reason: string) =
+    let held = returnedCheckedText false
+    let changed =
+        match defect with
+        | "some-order" | "none-order" ->
+            let site, order = if defect = "some-order" then 47, [53;48;54;52] else 62, [55;63;64]
+            let ids = List.map NodeId order
+            {held with Nodes = held.Nodes.Add(NodeId site, {held.Nodes[NodeId site] with Kind = SemanticKind.Sequential ids; Children = ids})}
+        | "capacity" ->
+            let old = held.CurrentClaims[NodeId 906]
+            let claim = {old with Body = ObligationBody.CapacityFits(32L, 8L)}
+            {held with CurrentClaims = held.CurrentClaims.Add(NodeId 906, claim)
+                       Obligations = held.Obligations |> List.map (fun row -> if row.Id = old.Id then claim else row)}
+        | _ ->
+            let memory = held.Emission.Memory
+            let operation =
+                match memory.Operations[NodeId 11] with
+                | MemoryWitnessOperation.ArrayAllocation row -> MemoryWitnessOperation.ArrayAllocation {row with Residence = MemoryResidence.Stack(NodeId 30,NodeId 5521)}
+                | _ -> failwith "Expected the returned snapshot allocation."
+            {held with Emission = {held.Emission with Memory = {memory with Operations = memory.Operations.Add(NodeId 11, operation)}}}
+    let expectedNode = if defect = "none-order" then NodeId 61 else NodeId 21
+    Assert.Contains(Integrity.check changed, fun v ->
+        v.Part.EndsWith(".Returned") && v.Node = Some expectedNode && v.Reason.Contains reason)
+
+// Declaration quotations are stored source facts, including their exact parents.
+let private controlFact form text numbers references parent : BoundaryDeclarationFact =
+    {Form = form; Text = text; Numbers = numbers; References = List.map NodeId references
+     Children = List.map NodeId references; Parent = Option.map NodeId parent; SourceType = unitType}
+
+let private controlClaim id kind body : ObligationInfo =
+    {Id = id; Kind = kind; Logic = "QF_LIA"; Statement = "Current source correspondence."
+     Source = "integrity-control"; Refs = []; Body = body}
+
+let private writableBufferControl relational =
+    let held = snapshotFacts
+    let basis = boundaryCalleeFacts.Emission.Boundary
+    let integerType name kind =
+        TypeIdentity.Application({Declaration = {Module = []; Name = name}; Parameters = []; NativeKind = Some kind}, [])
+    let byteType = integerType "uint8" (NTUKind.NTUuint(NTUWidth.Fixed 8))
+    let countType = integerType "uint64" (NTUKind.NTUuint(NTUWidth.Fixed 64))
+    let resultType = integerType "int64" (NTUKind.NTUint(NTUWidth.Fixed 64))
+    let arrayType = TypeIdentity.Application({Declaration = {Module = []; Name = "array"}; Parameters = [TypeParamKind.Type]; NativeKind = None}, [byteType])
+    let header = boundaryCalleeFacts.SourceReadings.ContextHeaders[NodeId 50]
+    let bindingName = header.Name + ".fill"
+    let record fields ids parent = controlFact "record" fields [] ids (Some parent)
+    let binding name child = controlFact "binding" [name] [0I;0I] [child] (Some 50)
+    let text value parent = controlFact "string" [value] [] [] (Some parent)
+    let number value parent = controlFact "integer" [] [value] [] (Some parent)
+    let case name refs parent = controlFact "case" [name] [] refs (Some parent)
+    let facts =
+        [2, binding "fill" 1003
+         1003, controlFact "lambda" ["fill";"buffer";"count"] [2I;0I;0I] [1004;1005;1006] (Some 2)
+         1004, {controlFact "formal" ["buffer"] [] [] (Some 1003) with SourceType = arrayType}
+         1005, {controlFact "formal" ["count"] [] [] (Some 1003) with SourceType = countType}
+         1006, controlFact "unit" [] [] [] (Some 1003)
+         1073, binding "fillDescriptor" 1072
+         1072, controlFact "quotation" [] [] [72] (Some 1073)
+         72, record ["Parameters";"CName"] [1010;1020] 1072
+         1010, controlFact "array" [] [] [1011;1012] (Some 72)
+         1011, record ["Type";"PassBy"] [1013;1016] 1010
+         1012, record ["Type";"PassBy"] [1017;1019] 1010
+         1013, case "Integer" [1014] 1011
+         1014, controlFact "tuple" [] [] [1015;1018] (Some 1013)
+         1015, case "Unsigned" [] 1014
+         1018, number 8I 1014
+         1016, case "Reference" [] 1011
+         1017, case "Integer" [1021] 1012
+         1021, controlFact "tuple" [] [] [1022;1023] (Some 1017)
+         1022, case "Unsigned" [] 1021
+         1023, number 64I 1021
+         1019, case "Value" [] 1012
+         1020, text "fill" 72
+         1101, binding "fillWritableBufferDescriptor" 1100
+         1100, controlFact "quotation" [] [] [1102] (Some 1101)
+         1102, record ["Binding";"Parameter";"CountParameter";"Hypothesis"] [1103;1104;1105;1106] 1100
+         1103, text bindingName 1102
+         1104, number 0I 1102
+         1105, number 1I 1102
+         1106, record ["Identity";"Version";"Source"] [1107;1108;1109] 1102
+         1107, text "writable-fill" 1106
+         1108, text "1" 1106
+         1109, text "fixture" 1106
+         1200, record ["Name";"Family";"Bits"] [1201;1202;1203] 72
+         1201, text "uint8" 1200
+         1202, text "uint" 1200
+         1203, number 8I 1200]
+        |> List.map (fun (id, fact) -> NodeId id, fact) |> Map.ofList
+    let declaration : BoundaryWritableBufferDeclaration =
+        {Identity = NodeId 1100; Declaration = NodeId 2; Body = NodeId 1006
+         Formals = [NodeId 1004;NodeId 1005]; Descriptor = NodeId 72; Parameter = 0; CountParameter = 1
+         BufferFormal = NodeId 1004; CountFormal = NodeId 1005
+         Contract = {Binding = bindingName; Parameter = 0; CountParameter = 1
+                     Hypothesis = {Identity = "writable-fill"; Version = "1"; Source = "fixture"}}
+         DeclarationFacts = facts; Participants = facts.Keys |> Set.ofSeq}
+    let imported =
+        {basis.Imports[NodeId 72] with
+            Symbol = "fill"; Parameters = [NodeId 1004, BoundaryScalar.WritableBytes(NodeId 1100);NodeId 1005, BoundaryScalar.Integer(64,false)]
+            Result = if relational then Some(BoundaryScalar.Integer(64,true)) else None
+            DeclarationFacts = facts; Participants = declaration.Participants
+            SourceTypes = Map.ofList [NodeId 1004,arrayType;NodeId 1005,countType;NodeId 1,(if relational then resultType else unitType)]}
+    let call =
+        {basis.Calls[NodeId 1] with
+            Arguments = [{Actual = NodeId 3; Formal = NodeId 1004; Abi = BoundaryScalar.WritableBytes(NodeId 1100); Adaptation = None; OptionalEntry = None}
+                         {Actual = NodeId 4; Formal = NodeId 1005; Abi = BoundaryScalar.Integer(64,false); Adaptation = None; OptionalEntry = None}]
+            Result = imported.Result; SourceTypes = imported.SourceTypes; Participants = declaration.Participants}
+    let allocation =
+        match held.Emission.Memory.Operations[NodeId 11] with
+        | MemoryWitnessOperation.ArrayAllocation row -> row
+        | _ -> failwith "Expected the original allocation."
+    let capacity = {allocation.CountCarrier with Range = ValueRange.Bounded(4I,4I); Obligations = []}
+    let allocation =
+        {allocation with Element = SettledSlot.Integer(8,Some "uint8"); ElementBytes = 1; Alignment = 1
+                         MinimumCount = 4I; MaximumCount = 4I; CountCarrier = capacity}
+    let count =
+        {held.Emission.Numeric.Values[NodeId 4] with
+            Slot = SettledSlot.Integer(64,Some "uint64"); SourceType = countType
+            Range = ValueRange.Bounded(4I,4I); Obligations = []}
+    let result =
+        {held.Emission.Numeric.Values[NodeId 1] with
+            Slot = SettledSlot.Integer(64,Some "int64"); SourceType = resultType
+            Range = ValueRange.Bounded(-1I,4I); Obligations = []}
+    let hypothesis : ForeignResultHypothesis =
+        {Quote = NodeId 1106; Declaration = NodeId 2; Identity = "fill-result"; Version = "1"; Source = "fixture"
+         Lower = ForeignResultBound.Constant -1I; Upper = ForeignResultBound.Argument 1}
+    let application : ForeignResultApplication =
+        {Declaration = NodeId 2; Call = NodeId 1; Context = []; Hypothesis = Some hypothesis
+         Arguments = [{Index = 0; Node = NodeId 3; Enclosure = ValueRange.Unbounded};{Index = 1; Node = NodeId 4; Enclosure = count.Range}]}
+    let p role ordinal id : Participant = {Role = role; Ordinal = ordinal; Group = NodeId 1; Node = NodeId id}
+    let participants =
+        [p ParticipantRole.ForeignResultDeclaration 0 2; p ParticipantRole.ForeignResultCall 0 1
+         p ParticipantRole.ForeignResultHypothesis 0 1106; p ParticipantRole.ForeignResultActual 0 3; p ParticipantRole.ForeignResultActual 1 4
+         p ParticipantRole.ForeignResultAbi 0 72; p ParticipantRole.ForeignResultDestination 0 64
+         p ParticipantRole.ForeignResultAbi 1 72; p ParticipantRole.ForeignResultDestination 1 64]
+    let resultClaims =
+        if not relational then [] else
+        [ForeignResultProofRole.LogicalCoverage,NodeId 941; ForeignResultProofRole.AbiNarrowing,NodeId 942]
+        |> List.map (fun (role,id) ->
+            let model : ForeignResultCoverageModel =
+                {Application = application; Role = role; ResultRange = result.Range; Destination = ValueRange.Bounded(-(1I<<<63),(1I<<<63)-1I)
+                 DestinationDeclaration = Some(NodeId 64); Abi = Some(NodeId 72); AbiRange = ValueRange.Bounded(-(1I<<<63),(1I<<<63)-1I)
+                 AbiIdentity = Some "fill-abi-1"; DestinationIdentity = Some "fill-result-1"}
+            id, controlClaim (sprintf "fill-%A" role) "foreign-result-coverage" (ObligationBody.ForeignResultCoverage model))
+    let resultUse : ForeignResultUse =
+        {Application = application; Participants = ParticipantEvidence.Established participants
+         Claims = [ForeignResultProofRole.LogicalCoverage,NodeId 941; ForeignResultProofRole.AbiNarrowing,NodeId 942]}
+    let support = [NodeId 1;NodeId 1100;NodeId 3;NodeId 4;NodeId 11;NodeId 5;NodeId 1200]
+    let proof role body =
+        {controlClaim ("fill-"+role) ("foreign-writable-buffer-"+role) body with Refs = ["writable-fill";"1";"fixture"]}
+    let claims =
+        [NodeId 931,proof "count" (ObligationBody.IntegerRepresentationCoverage(4I,4I,0I,4I))
+         NodeId 932,proof "storage" (ObligationBody.IntegerRepresentationCoverage(0I,255I,0I,255I))] @ resultClaims
+    let use' : BoundaryWritableBufferUse =
+        {Call = NodeId 1; Declaration = NodeId 1100; Parameter = 0; CountParameter = 1; Buffer = NodeId 3; Count = NodeId 4
+         Allocation = NodeId 11; Capacity = NodeId 5; ByteFormat = NodeId 1200; CountCoverage = NodeId 931; StorageCoverage = NodeId 932
+         Participants = Set.ofList (support @ List.map fst claims @ (if relational then List.map (fun (p: Participant) -> p.Node) participants else []))}
+    let nodes =
+        [ {held.Nodes[NodeId 1] with Type = if relational then resultType else unitType}
+          {node 3 (SemanticKind.VarRef("buffer",Some(NodeId 1300))) [] with Type = arrayType}
+          {node 4 (SemanticKind.Literal(NativeLiteral.UInt(4UL,NTUKind.NTUuint(NTUWidth.Fixed 64)))) [] with Type = countType}
+          {node 11 (SemanticKind.ArrayAllocate(NodeId 5)) [5] with Type = arrayType}
+          {node 1300 (SemanticKind.Binding("buffer",false,false,None)) [1301] with Type = arrayType}
+          {node 1301 (SemanticKind.TypeAnnotation(NodeId 11,arrayType)) [11] with Type = arrayType}]
+    let numeric = held.Emission.Numeric
+    let values = numeric.Values.Remove(NodeId 3).Remove(NodeId 1).Add(NodeId 4,count).Add(NodeId 5,capacity)
+    let memory = held.Emission.Memory
+    {held with
+        Nodes = nodes |> List.fold (fun rows node -> Map.add node.Id node rows) held.Nodes
+        CurrentClaims = claims |> List.fold (fun rows (id,claim) -> Map.add id claim rows) held.CurrentClaims
+        Obligations = held.Obligations @ List.map snd claims
+        ObligationSources = claims |> List.fold (fun rows (id,_) -> Map.add id [if id=NodeId 931 || id=NodeId 932 then support else List.map (fun (p: Participant) -> p.Node) participants] rows) held.ObligationSources
+        SourceReadings = {held.SourceReadings with
+                              ContextHeaders = held.SourceReadings.ContextHeaders.Add(NodeId 50,header)
+                              Contexts = held.SourceReadings.Contexts.Add(NodeId 50,[[]])
+                              Ports = held.SourceReadings.Ports.Add((NodeId 50,OccurrencePort.ModuleDeclaration),header.Ports[OccurrencePort.ModuleDeclaration])}
+        Emission =
+            {held.Emission with
+                Boundary = {basis with Imports = Map.ofList [NodeId 72,imported]; Calls = Map.ofList [NodeId 1,call]
+                                       WritableBufferDeclarations = Map.ofList [NodeId 1100,declaration]
+                                       WritableBufferUses = Map.ofList [(NodeId 1,0),use']
+                                       ResultHypotheses = if relational then [hypothesis] else []}
+                Numeric = {numeric with Operations = Map.empty; OperationRequired = Set.empty
+                                        ResultSites = if relational then Set.singleton(NodeId 1) else Set.empty
+                                        Required = Set.ofList (if relational then [NodeId 1;NodeId 4;NodeId 5] else [NodeId 4;NodeId 5])
+                                        Values = if relational then values.Add(NodeId 1,result) else values
+                                        Elements = numeric.Elements.Add(NodeId 3,allocation.Element)
+                                        ForeignResultUses = if relational then [resultUse] else []}
+                Memory = {memory with Operations = Map.ofList [NodeId 11,MemoryWitnessOperation.ArrayAllocation allocation]
+                                      Required = Set.singleton(NodeId 11)
+                                      ArrayCopies = memory.ArrayCopies.Add(NodeId 6,{memory.ArrayCopies[NodeId 6] with CountCarrier = capacity})}}}
+    |> covered
+    |> fun revision ->
+        let source =
+            {revision.SourceReadings with
+                ContextHeaders = revision.SourceReadings.ContextHeaders.Add(NodeId 50,header)
+                Contexts = revision.SourceReadings.Contexts.Add(NodeId 50,[[]])
+                Ports = revision.SourceReadings.Ports.Add((NodeId 50,OccurrencePort.ModuleDeclaration),header.Ports[OccurrencePort.ModuleDeclaration])}
+        {revision with SourceReadings = source}
+
+[<Theory>]
+[<InlineData(false)>]
+[<InlineData(true)>]
+let ``writable buffers retain fixed storage and exact nonrelational or relational accounts`` relational =
+    Assert.Empty(Integrity.check (writableBufferControl relational))
+
+[<Theory>]
+[<InlineData("quote", "WritableBufferDeclarations.Contract", "immutable quotation")>]
+[<InlineData("sibling", "WritableBufferDeclarations.Declaration", "sibling FunctionDescriptor")>]
+[<InlineData("reference", "WritableBufferDeclarations.Element", "unsigned-8 Reference")>]
+[<InlineData("signed-byte", "WritableBufferDeclarations.Element", "unsigned-8 Reference")>]
+[<InlineData("byte-width", "WritableBufferDeclarations.Element", "unsigned-8 Reference")>]
+[<InlineData("alias", "WritableBufferUses.Storage", "alias lineage")>]
+[<InlineData("element-bytes", "WritableBufferUses.Storage", "alias lineage")>]
+[<InlineData("format", "WritableBufferUses.Storage", "selected byte declaration")>]
+[<InlineData("missing-use", "Calls.WritableBuffer", "per-use account")>]
+[<InlineData("different-use", "Calls.WritableBuffer", "per-use account")>]
+[<InlineData("count-proof", "WritableBufferUses.Claims", "count/storage proof citizens")>]
+[<InlineData("storage-proof", "WritableBufferUses.Claims", "count/storage proof citizens")>]
+[<InlineData("count-range", "WritableBufferUses.Bounds", "byte capacity")>]
+let ``writable buffers reject declaration storage call and proof defects`` defect (part: string) (reason: string) =
+    for relational in [false;true] do
+        let held = writableBufferControl relational
+        let boundary = held.Emission.Boundary
+        let declaration = boundary.WritableBufferDeclarations[NodeId 1100]
+        let use' = boundary.WritableBufferUses[NodeId 1,0]
+        let facts = declaration.DeclarationFacts
+        let withFacts facts =
+            let changedBoundary =
+                {boundary with
+                    WritableBufferDeclarations = boundary.WritableBufferDeclarations.Add(NodeId 1100,{declaration with DeclarationFacts = facts})
+                    Imports = boundary.Imports.Add(NodeId 72,{boundary.Imports[NodeId 72] with DeclarationFacts = facts})}
+            {held with Emission = {held.Emission with Boundary = changedBoundary}}
+        let withClaim id body =
+            let old = held.CurrentClaims[NodeId id]
+            let claim = {old with Body = body}
+            {held with CurrentClaims = held.CurrentClaims.Add(NodeId id,claim)
+                       Obligations = held.Obligations |> List.map (fun row -> if row.Id=old.Id then claim else row)}
+        let changed =
+            match defect with
+            | "quote" -> withFacts (facts.Add(NodeId 1103,{facts[NodeId 1103] with Text = ["wrong.fill"]}))
+            | "sibling" -> withFacts (facts.Add(NodeId 1073,{facts[NodeId 1073] with Text = ["otherDescriptor"]}))
+            | "reference" -> withFacts (facts.Add(NodeId 1016,{facts[NodeId 1016] with Text = ["Value"]}))
+            | "signed-byte" -> withFacts (facts.Add(NodeId 1015,{facts[NodeId 1015] with Text = ["Signed"]}))
+            | "byte-width" -> withFacts (facts.Add(NodeId 1018,{facts[NodeId 1018] with Numbers = [16I]}))
+            | "alias" -> {held with Nodes = held.Nodes.Add(NodeId 1301,{held.Nodes[NodeId 1301] with Kind = SemanticKind.Literal NativeLiteral.Unit; Children = []})}
+            | "element-bytes" ->
+                let memory = held.Emission.Memory
+                let operation =
+                    match memory.Operations[NodeId 11] with
+                    | MemoryWitnessOperation.ArrayAllocation row -> MemoryWitnessOperation.ArrayAllocation {row with ElementBytes = 2}
+                    | _ -> failwith "Expected the writable allocation."
+                {held with Emission = {held.Emission with Memory = {memory with Operations = memory.Operations.Add(NodeId 11,operation)}}}
+            | "format" -> withFacts (facts.Add(NodeId 1203,{facts[NodeId 1203] with Numbers = [16I]}))
+            | "missing-use" -> {held with Emission = {held.Emission with Boundary = {boundary with WritableBufferUses = Map.empty}}}
+            | "different-use" ->
+                {held with Emission = {held.Emission with Boundary = {boundary with WritableBufferUses = boundary.WritableBufferUses.Add((NodeId 1,0),{use' with Declaration = NodeId 72})}}}
+            | "count-proof" -> withClaim 931 (ObligationBody.IntegerRepresentationCoverage(5I,5I,0I,4I))
+            | "storage-proof" -> withClaim 932 (ObligationBody.IntegerRepresentationCoverage(0I,256I,0I,255I))
+            | _ ->
+                let numeric = held.Emission.Numeric
+                {held with Emission = {held.Emission with Numeric = {numeric with Values = numeric.Values.Add(NodeId 4,{numeric.Values[NodeId 4] with Range = ValueRange.Bounded(5I,5I)})}}}
+        let expectedReason = if defect="count-range" && not relational then "four-byte capacity" else reason
+        Assert.Contains(Integrity.check changed, fun v ->
+            v.Part="Emission.Boundary."+part && v.Node=Some(if part.StartsWith("WritableBufferDeclarations") then NodeId 1100 else NodeId 1) &&
+            v.Reason.Contains expectedReason)
+
+[<Theory>]
+[<InlineData("missing")>]
+[<InlineData("endpoint")>]
+[<InlineData("claim")>]
+let ``relational writable buffers require their exact foreign result use`` defect =
+    let held = writableBufferControl true
+    let numeric = held.Emission.Numeric
+    let account = numeric.ForeignResultUses.Head
+    let uses =
+        match defect with
+        | "missing" -> []
+        | "endpoint" -> [{account with Application = {account.Application with Hypothesis = account.Application.Hypothesis |> Option.map (fun h -> {h with Upper = ForeignResultBound.Constant 4I})}}]
+        | _ -> [{account with Claims = [account.Claims.Head]}]
+    let changed = {held with Emission = {held.Emission with Numeric = {numeric with ForeignResultUses = uses}}}
+    Assert.Contains(Integrity.check changed, fun v ->
+        v.Part="Emission.Boundary.WritableBufferUses.Account" && v.Node=Some(NodeId 1) && v.Reason.Contains "current result account")
+
+let private optionalBoundaryControl absent =
+    let held = ordinaryResultReturnedWrite ()
+    let callbackType = boundaryCalleeFacts.Nodes[NodeId 3].Type
+    let fnType = TypeIdentity.Function(callbackType,callbackType)
+    let entryType = TypeIdentity.Application({Declaration = {Module = [];Name = "FnPtr"};Parameters = [];NativeKind = Some NTUKind.NTUfnptr},[fnType])
+    let optionType = TypeIdentity.Application({Declaration = {Module = [];Name = "option"};Parameters = [TypeParamKind.Type];NativeKind = None},[entryType])
+    let p role ordinal group id : Participant = {Role=role;Ordinal=ordinal;Group=NodeId group;Node=NodeId id}
+    let lifetime : ProgramImageCodeLifetime = {Module=NodeId 400;Binding=NodeId 401;Implementation=NodeId 10}
+    let lifetimeParts = [p ParticipantRole.CallableLifetime 0 100 400;p ParticipantRole.CallableLifetime 1 100 401;p ParticipantRole.CallableLifetime 2 100 10]
+    let header = {boundaryCalleeFacts.SourceReadings.ContextHeaders[NodeId 50] with Identity=NodeId 400;Name="OptionalControl"}
+    let target : BoundaryPlatformPremise =
+        {Id="optional-control";Description=None;Loading=None;LibraryPath=None;SourcePaths=Set.singleton "fixture"
+         Architecture=Some "x86_64";OS=Some "linux";RuntimeClaim=None;Substrate=None
+         Dimensions=Map.ofList ["Pointer",64;"Register",64];Representations=Map.empty;EndpointReturns=Map.empty}
+    let premise shape embedded reachable : BoundarySourcePremise =
+        {Shape=shape;EmbeddedTypes=embedded;ConstructorFacts=[];Reachable=reachable;Range=None;ExternLibrary=None;ExternSymbol=None;HasExtern=false;Metadata=Map.empty}
+    let sourcePremises =
+        [NodeId 400,premise {controlFact "module" ["OptionalControl"] [] [401] None with Children=[]} [] false
+         NodeId 401,premise {controlFact "binding" ["callback";"no-declaration-root"] [0I;0I] [10] (Some 400) with SourceType=fnType} [] true
+         NodeId 10,premise {controlFact "lambda" ["RegularClosure";"argument"] [1I;0I;0I] [41;11] (Some 401) with SourceType=fnType} [callbackType] true] |> Map.ofList
+    let contract =
+        {held.Emission.Callable.Contracts[NodeId 100] with
+            Kind=CallableKind.NativeEntry
+            Convention=CallableConvention.CompilerOwnedPortable
+                {Target=target;ParameterConversions=[0,CallableConversion.Identity(ValueRepresentation.Scalar(SettledSlot.Integer(32,None)))]
+                 ResultConversion=CallableConversion.Identity(ValueRepresentation.Scalar(SettledSlot.Integer(32,None)));CodeLifetime=lifetime}
+            ParameterTypes=[callbackType];ParameterRepresentations=[0,ValueRepresentation.Scalar(SettledSlot.Integer(32,None))]
+            ResultType=callbackType;ResultRepresentation=ValueRepresentation.Scalar(SettledSlot.Integer(32,None));SourcePremises=sourcePremises
+            Participants=[p ParticipantRole.CallableContract 0 100 100;p ParticipantRole.Source 0 100 400;p ParticipantRole.Source 1 100 401;p ParticipantRole.Source 2 100 10] @ lifetimeParts}
+    let carrier =
+        {held.Emission.Callable.Carriers[NodeId 30] with
+            Kind=CallableKind.NativeEntry;SourceType=entryType;Lifetime=lifetimeParts
+            Parameters=["argument",callbackType,NodeId 41];ParameterShapes=[CallableValueShape.Data(NodeId 41)]}
+    let retirement : CallableAggregateResultRetirement =
+        {Application=NodeId 1;Caller=NodeId 300;Construction=NodeId 2;Actual=NodeId 1;Receiver=NodeId 200
+         Policy=optionalPlanRetirement.Policy;Uses=[NodeId 1;NodeId 200]}
+    let tag : CallableAggregateTag =
+        {Constructor=NodeId 2;TagRead=None;CaseOrdinal=if absent then 0 else 1
+         PayloadOrdinal=(if absent then None else Some 0);Payload=(if absent then None else Some(NodeId 30))
+         Participants=[p ParticipantRole.AggregateConstructor 0 2 2] @ (if absent then [] else [p ParticipantRole.AggregatePayload 0 2 30])}
+    let slot = {held.Emission.Callable.AggregateSlots[NodeId 101] with AggregateType=optionType;SourceType=entryType;Path=[CallableAggregatePathStep.UnionPayload(1,0)]}
+    let changeValue (row: CallableAggregateValue) =
+        let inputs = if absent then row.FormationInputs |> List.filter ((<>) (NodeId 30)) else row.FormationInputs
+        let parts =
+            row.Participants |> List.filter (fun part ->
+                not absent || not(List.contains part.Role [ParticipantRole.AggregateWrite;ParticipantRole.CallableCarrier;ParticipantRole.CallableFormation;ParticipantRole.AggregatePayload]) &&
+                              not(part.Role=ParticipantRole.AggregateInput && part.Node=NodeId 30))
+        let parts =
+            parts @ (if row.Operation=CallableAggregateOperation.Result then
+                         [p ParticipantRole.Source 10 1 300;p ParticipantRole.Source 11 1 1;p ParticipantRole.Source 12 1 200]
+                     else [])
+        {row with Tag=Some tag;FormationInputs=inputs;Participants=parts
+                  Value=if absent then None else row.Value
+                  Alternatives=if absent then [] else row.Alternatives
+                  SelectedAlternative=if absent then None else row.SelectedAlternative
+                  Selector=if absent then None else row.Selector
+                  ResultRetirement=if row.Operation=CallableAggregateOperation.Result then Some(Ok retirement) else None}
+    let values = held.Emission.Callable.AggregateValues |> Map.map (fun _ rows -> List.map changeValue rows)
+    let nodes =
+        [ {held.Nodes[NodeId 1] with Type=optionType;Parent=Some(NodeId 200)}
+          {held.Nodes[NodeId 2] with
+              Kind=SemanticKind.UnionCase((if absent then "None" else "Some"),(if absent then 0 else 1),(if absent then None else Some(NodeId 30)))
+              Children=(if absent then [] else [NodeId 30]);Type=optionType}
+          {held.Nodes[NodeId 5] with Type=TypeIdentity.Function(unitType,optionType)}
+          {node 10 (SemanticKind.Lambda(["argument",callbackType,NodeId 41],NodeId 11,[],Some "callback",LambdaContext.RegularClosure)) [41;11] with Type=fnType;Parent=Some(NodeId 401)}
+          {node 11 (SemanticKind.Literal(NativeLiteral.Int(1L,NTUKind.NTUint(NTUWidth.Fixed 32)))) [] with Type=callbackType;Parent=Some(NodeId 10)}
+          {node 30 (SemanticKind.Application(NodeId 403,[NodeId 402])) [403;402] with Type=entryType}
+          {node 402 (SemanticKind.VarRef("callback",Some(NodeId 401))) [] with Type=fnType}
+          node 403 (SemanticKind.Intrinsic {Module=IntrinsicModule.FnPtr;Operation="ofFunction";Category=IntrinsicCategory.Pure;FullName="FnPtr.ofFunction"}) []
+          {node 41 (SemanticKind.PatternBinding "argument") [] with Type=callbackType;Parent=Some(NodeId 10)}
+          {node 200 (SemanticKind.Application(NodeId 201,[NodeId 1])) [201;1] with Parent=Some(NodeId 300)}
+          node 201 (SemanticKind.VarRef("receive",None)) []
+          node 300 (SemanticKind.Lambda([],NodeId 200,[],Some "caller",LambdaContext.RegularClosure)) [200]
+          {node 401 (SemanticKind.Binding("callback",false,false,None)) [10] with Type=fnType;Parent=Some(NodeId 400)} ]
+    let allNodes = nodes |> List.fold (fun rows node -> Map.add node.Id node rows) held.Nodes
+    let declaration =
+        {held.Emission.Callable.Declarations[NodeId 10] with
+            Parameters=["argument",callbackType,NodeId 41];Parent=Some(NodeId 401)
+            Participants=Set.ofList [NodeId 10;NodeId 11;NodeId 41;NodeId 401]}
+    let callable =
+        {held.Emission.Callable with
+            Contracts=Map.ofList [NodeId 100,contract];Carriers=Map.ofList [NodeId 30,carrier]
+            AggregateSlots=Map.ofList [NodeId 101,slot];AggregateValues=values
+            Declarations=Map.ofList [NodeId 10,declaration]
+            SignatureData=held.Emission.Callable.SignatureData.Add(NodeId 10,Set.ofList [NodeId 41;NodeId 11])
+            ClosedData=held.Emission.Callable.ClosedData.Add(NodeId 41)
+            NativeEntries=Map.ofList [NodeId 10,"callback"]
+            Symbols=held.Emission.Callable.Symbols.Add(NodeId 300,CallableSymbolName.Anonymous(NodeId 300))}
+    let accounts = callable.AggregateDependencies |> Map.map (fun _ account ->
+        let accountValues = account.Values |> List.map changeValue
+        let participants = slot.Participants @ (accountValues |> List.collect (fun row -> row.Participants @ tag.Participants)) @ (if absent then [] else lifetimeParts) @ contract.Participants
+        let sources = participants |> List.map _.Node |> List.distinct |> List.filter (sourcePremises.ContainsKey >> not) |> List.choose (fun id ->
+            allNodes.TryFind id |> Option.map (fun node -> {Node=id;Kind=node.Kind;Type=node.Type;Children=node.Children;Anchors=node.ObligationAnchors}))
+        {account with Slots=[slot];Values=accountValues;Carriers=(if absent then [] else [carrier]);Contracts=[contract];Participants=participants;Sources=sources
+                      Symbols=if absent then account.Symbols |> List.filter (fun (id,_) -> id<>NodeId 10) else account.Symbols
+                      MemoryPolicy=if account.Occurrence=NodeId 1 then Some retirement.Policy else None})
+    let callable = {callable with AggregateDependencies=accounts}
+    let record fields refs parent = controlFact "record" fields [] refs (Some parent)
+    let text value parent = controlFact "string" [value] [] [] (Some parent)
+    let binding name child = controlFact "binding" [name] [0I;0I] [child] (Some 400)
+    let contractType name = TypeIdentity.Application({Declaration={Module=["BAREWire";"Descriptors"];Name=name};Parameters=[];NativeKind=None},[])
+    let facts =
+        [210,record ["Parameters"] [212] 213
+         213,controlFact "quotation" [] [] [210] (Some 214)
+         214,binding "receiveDescriptor" 213
+         211,{controlFact "formal" ["callback"] [] [] (Some 215) with SourceType=optionType}
+         215,controlFact "lambda" ["receive";"callback"] [1I;0I;0I] [211;216] (Some 217)
+         216,controlFact "unit" [] [] [] (Some 215)
+         217,binding "receive" 215
+         212,controlFact "array" [] [] [218] (Some 210)
+         218,record ["Type";"PassBy"] [219;229] 212
+         219,controlFact "case" ["Entry"] [] [220] (Some 218)
+         229,controlFact "case" ["Value"] [] [] (Some 218)
+         220,{controlFact "quotation" [] [1I] [222] (Some 221) with SourceType=contractType "CallbackInvocationContract"}
+         221,{binding "receiveCallbackInvocation" 220 with SourceType=contractType "CallbackInvocationContract"}
+         222,{record ["Binding";"Parameter";"Signature";"Hypothesis";"Scope"] [223;224;225;226;227] 220 with SourceType=contractType "CallbackInvocationContract"}
+         223,text "OptionalControl.receive" 222
+         224,controlFact "integer" [] [0I] [] (Some 222)
+         225,record ["Parameters";"ReturnType";"CallingConvention"] [233;238;235] 222
+         233,controlFact "array" [] [] [236] (Some 225)
+         235,controlFact "case" ["CDecl"] [] [] (Some 225)
+         236,record ["Name";"Type";"PassBy"] [237;238;239] 233
+         237,text "argument" 236
+         238,controlFact "case" ["Integer"] [] [240] (Some 236)
+         239,controlFact "case" ["Value"] [] [] (Some 236)
+         240,controlFact "tuple" [] [] [241;242] (Some 238)
+         241,controlFact "case" ["Signed"] [] [] (Some 240)
+         242,controlFact "integer" [] [32I] [] (Some 240)
+         226,record ["Identity";"Version";"Source"] [230;231;232] 222
+         227,text "during_call" 222
+         230,text "invoke" 226;231,text "1" 226;232,text "fixture" 226
+         400,sourcePremises[NodeId 400].Shape
+         401,sourcePremises[NodeId 401].Shape
+         500,{controlFact "quotation" [] [1I] [502] (Some 501) with SourceType=contractType "Descriptors.CallbackAbsenceContract"}
+         501,{binding "receiveCallbackAbsence" 500 with SourceType=contractType "Descriptors.CallbackAbsenceContract"}
+         502,{record ["Binding";"Parameter";"Hypothesis"] [503;504;505] 500 with SourceType=contractType "Descriptors.CallbackAbsenceContract"}
+         503,text "OptionalControl.receive" 502
+         504,controlFact "integer" [] [0I] [] (Some 502)
+         505,record ["Identity";"Version";"Source"] [506;507;508] 502
+         506,text "absence" 505;507,text "1" 505;508,text "fixture" 505
+         600,{controlFact "quotation" [] [1I] [602] (Some 601) with SourceType=contractType "ScopedCallbackDescriptor"}
+         601,{binding "during_call" 600 with SourceType=contractType "ScopedCallbackDescriptor"}
+         602,{record ["Binding";"Parameter"] [603;604] 600 with SourceType=contractType "ScopedCallbackDescriptor"}
+         603,text "OptionalControl.receive" 602;604,text "callback" 602]
+        |> List.map (fun (id,fact) -> NodeId id,fact) |> Map.ofList
+    let imported : BoundaryImport =
+        {Identity=NodeId 210;Binding=NodeId 217;Scope=NodeId 400;Library="c";Symbol="receive";CallingConvention="CDecl"
+         DeclarationPath=[NodeId 217];Parameters=[NodeId 211,BoundaryScalar.Entry(NodeId 220)];Result=None
+         Participants=facts.Keys |> Set.ofSeq;SourceTypes=Map.ofList [NodeId 211,optionType];DeclarationFacts=facts}
+    let receiver : BoundaryCallbackInvocation =
+        {Identity=NodeId 220;Import=NodeId 210;Parameter=0;Formal=NodeId 211;Scope=NodeId 600
+         Contract={Binding="OptionalControl.receive";Parameter=0
+                   Signature={Parameters=[|{Name="argument";Type=BAREWire.Descriptors.TypeRef.Integer(BAREWire.Descriptors.Signedness.Signed,32);PassBy=BAREWire.Descriptors.PassBy.Value}|]
+                              ReturnType=BAREWire.Descriptors.TypeRef.Integer(BAREWire.Descriptors.Signedness.Signed,32);CallingConvention=BAREWire.Descriptors.CallConv.CDecl}
+                   Hypothesis={Identity="invoke";Version="1";Source="fixture"};Scope="during_call"}
+         Signature={Parameters=[BoundaryScalar.Integer(32,true)];Result=Some(BoundaryScalar.Integer(32,true));CallingConvention="CDecl"}
+         Extent=BoundaryCallbackExtent.DuringCall;Participants=facts.Keys |> Set.ofSeq}
+    let absence : BoundaryCallbackAbsence =
+        {Quote=NodeId 500;DescriptorBinding=NodeId 501;Record=NodeId 502;Import=NodeId 210;Parameter=0;Formal=NodeId 211;Invocation=NodeId 220
+         Contract={Binding="OptionalControl.receive";Parameter=0;Hypothesis={Identity="absence";Version="1";Source="fixture"}}
+         SourcePath=[NodeId 500;NodeId 502]
+         Inputs=[CallbackAbsenceInputRole.Binding,[NodeId 503];CallbackAbsenceInputRole.Parameter,[NodeId 504]
+                 CallbackAbsenceInputRole.Hypothesis,[NodeId 505];CallbackAbsenceInputRole.HypothesisIdentity,[NodeId 506]
+                 CallbackAbsenceInputRole.HypothesisVersion,[NodeId 507];CallbackAbsenceInputRole.HypothesisSource,[NodeId 508]]
+         DeclarationFacts=[500..508] |> List.map(fun id -> NodeId id,facts[NodeId id]) |> Map.ofList}
+    let entry : BoundaryClosedEntry =
+        {Formation=NodeId 30;Operand=NodeId 402;Declaration=NodeId 401;Implementation=NodeId 10;Formals=[NodeId 41];Body=NodeId 11
+         Lifetime=lifetime;Invocation=NodeId 220;ParameterAdaptations=[None];ResultAdaptation=None;Registrations=Map.empty
+         Transport=Set.ofList [NodeId 30;NodeId 402]
+         Participants=Set.union receiver.Participants (Set.ofList [NodeId 30;NodeId 402;NodeId 403;NodeId 10;NodeId 401;NodeId 41;NodeId 11;NodeId 400;NodeId 100;NodeId 220])}
+    let selected : BoundaryOptionalEntry =
+        {Construction=NodeId 2;CaseOrdinal=(if absent then 0 else 1);Payload=(if absent then None else Some(NodeId 30))
+         Formation=(if absent then None else Some(NodeId 30));Transport=Set.ofList (if absent then [NodeId 1;NodeId 2] else [NodeId 1;NodeId 2;NodeId 30]);Obligation=NodeId 301}
+    let support =
+        Set.unionMany
+            [accounts[NodeId 1].Sources |> List.map _.Node |> Set.ofList
+             selected.Transport
+             Set.ofList [NodeId 200;NodeId 210;NodeId 201;NodeId 1;NodeId 211;NodeId 2]
+             imported.Participants
+             receiver.Participants]
+    let claim =
+        if absent then
+            {controlClaim "optional-none" "foreign-optional-entry-conversion-0"
+                (ObligationBody.OptionalEntryAbsenceArgumentConversion
+                    {Call=NodeId 200;Parameter=0;Actual=NodeId 1;Construction=NodeId 2;SourceCase=0;Absence=NodeId 500
+                     Arms=(absentPlan None).Arms;ResultRetirement=Some retirement}) with
+                Statement="The exact source None selection has complete finite absence-choice correspondence under its external binding hypothesis; target realization remains an artifact obligation."}
+        else
+            {controlClaim "optional-some" "foreign-optional-entry-conversion-0"
+                (ObligationBody.OptionalEntryArgumentConversion
+                    {Call=NodeId 200;Parameter=0;Actual=NodeId 1;Construction=NodeId 2;SourceCase=1;Payload=NodeId 30;Formation=NodeId 30;Invocation=NodeId 220
+                     Arms=[{CaseOrdinal=0;Choice=OptionalEntryPlanChoice.PendingAbsence;Formation=None};{CaseOrdinal=1;Choice=OptionalEntryPlanChoice.ClosedEntry;Formation=Some(NodeId 30)}]
+                     ResultRetirement=Some retirement}) with
+                Statement="The exact source Some selection has complete finite native-choice plan correspondence; target realization remains an artifact obligation."}
+    let call : BoundaryCall =
+        {Site=NodeId 200;Import=NodeId 210;Callee=NodeId 201;Entry=None;Resource=None
+         Arguments=[{Actual=NodeId 1;Formal=NodeId 211;Abi=BoundaryScalar.Entry(NodeId 220);Adaptation=None;OptionalEntry=Some(BoundaryOptionalEntryChoice.Direct selected)}]
+         ErasedUnitArguments=[];Result=None;ResultAdaptation=None;Participants=support.Add(NodeId 301);SourceTypes=Map.ofList [NodeId 1,optionType]}
+    let boundary =
+        {held.Emission.Boundary with
+            Imports=Map.ofList [NodeId 210,imported];Calls=Map.ofList [NodeId 200,call]
+            CallbackInvocations=Map.ofList [NodeId 220,receiver]
+            CallbackAbsences=if absent then Map.ofList [NodeId 500,absence] else Map.empty
+            ClosedEntries=if absent then Map.empty else Map.ofList [NodeId 30,entry]}
+    let representation = ValueRepresentation.Union(["None",[];"Some",[ValueRepresentation.CallableComponent(NodeId 101,ValueRepresentation.Record([],Some([],0,1)))]],Some(1,1,1))
+    {held with
+        Nodes=allNodes;Platform={Register=Ok 64;Pointer=Ok 64}
+        CurrentClaims=Map.ofList [NodeId 301,claim];Obligations=[claim]
+        ObligationSources=Map.ofList [NodeId 301,[List.distinct(NodeId 200 :: Set.toList support)]]
+        Codata={held.Codata with
+                    CallableContracts=callable.Contracts;CallableCarriers=callable.Carriers;CallableAggregateSlots=callable.AggregateSlots
+                    FunctionPointers=Map.ofList [NodeId 30,FunctionPointerPlan.Address("callback",NodeId 10)]
+                    CallableAggregateValues=callable.AggregateValues;CallableAggregateDependencies=accounts}
+        Emission={held.Emission with
+                      Callable=callable;Boundary=boundary
+                      Numeric={held.Emission.Numeric with OccurrenceRepresentations=held.Emission.Numeric.OccurrenceRepresentations.Add(NodeId 1,Ok representation).Add(NodeId 2,Ok representation)}}}
+    |> covered
+    |> fun revision ->
+        let source =
+            {revision.SourceReadings with
+                ContextHeaders=revision.SourceReadings.ContextHeaders.Add(NodeId 400,header)
+                Contexts=revision.SourceReadings.Contexts.Add(NodeId 400,[[]])
+                Ports=revision.SourceReadings.Ports.Add((NodeId 400,OccurrencePort.ModuleDeclaration),header.Ports[OccurrencePort.ModuleDeclaration])}
+        let numeric = revision.Emission.Numeric
+        let scalar site = {boundaryCalleeFacts.Emission.Numeric.Values[NodeId 3] with Site=NodeId site;SourceType=callbackType;Declaration=None;Participants=Set.singleton(NodeId site);Obligations=[]}
+        {revision with SourceReadings=source
+                       Emission={revision.Emission with Numeric={numeric with
+                                                                   Values=numeric.Values.Add(NodeId 11,scalar 11).Add(NodeId 41,scalar 41)
+                                                                   OccurrenceRepresentations=numeric.OccurrenceRepresentations.Add(NodeId 1,Ok representation).Add(NodeId 2,Ok representation)
+                                                                       .Add(NodeId 11,Ok(ValueRepresentation.Scalar(SettledSlot.Integer(32,None))))
+                                                                       .Add(NodeId 41,Ok(ValueRepresentation.Scalar(SettledSlot.Integer(32,None))))}}}
+
+[<Theory>]
+[<InlineData(false)>]
+[<InlineData(true)>]
+let ``finite optional boundary plans retain exact Some or None ownership and retirement`` absent =
+    Assert.Empty(Integrity.check (optionalBoundaryControl absent))
+
+let private changeOptionalClaim change (held: Revision) =
+    let old = held.CurrentClaims[NodeId 301]
+    let claim = change old
+    {held with CurrentClaims = held.CurrentClaims.Add(NodeId 301,claim)
+               Obligations = held.Obligations |> List.map (fun row -> if row.Id=old.Id then claim else row)}
+
+[<Theory>]
+[<InlineData("case-ordinal")>]
+[<InlineData("choice")>]
+[<InlineData("logic")>]
+[<InlineData("missing-retirement")>]
+[<InlineData("retirement-mismatch")>]
+[<InlineData("sources-missing")>]
+[<InlineData("sources-order")>]
+let ``finite optional boundary plans reject changed arms logic retirement and sources`` defect =
+    for absent in [false;true] do
+        let held = optionalBoundaryControl absent
+        Assert.Empty(Integrity.check held)
+        let bodyChange = function
+            | ObligationBody.OptionalEntryArgumentConversion model ->
+                let changed =
+                    match defect with
+                    | "case-ordinal" -> {model with Arms = {model.Arms.Head with CaseOrdinal = 1} :: model.Arms.Tail}
+                    | "choice" -> {model with Arms = {model.Arms.Head with Choice = OptionalEntryPlanChoice.ClosedEntry} :: model.Arms.Tail}
+                    | "missing-retirement" -> {model with ResultRetirement = None}
+                    | "retirement-mismatch" -> {model with ResultRetirement = model.ResultRetirement |> Option.map (fun row -> {row with Actual = NodeId 2})}
+                    | _ -> model
+                ObligationBody.OptionalEntryArgumentConversion changed
+            | ObligationBody.OptionalEntryAbsenceArgumentConversion model ->
+                let changed =
+                    match defect with
+                    | "case-ordinal" -> {model with Arms = {model.Arms.Head with CaseOrdinal = 1} :: model.Arms.Tail}
+                    | "choice" -> {model with Arms = {model.Arms.Head with Choice = OptionalEntryAbsencePlanChoice.RequiresClosedEntry} :: model.Arms.Tail}
+                    | "missing-retirement" -> {model with ResultRetirement = None}
+                    | "retirement-mismatch" -> {model with ResultRetirement = model.ResultRetirement |> Option.map (fun row -> {row with Actual = NodeId 2})}
+                    | _ -> model
+                ObligationBody.OptionalEntryAbsenceArgumentConversion changed
+            | _ -> failwith "Expected a finite optional plan."
+        let changed =
+            held |> changeOptionalClaim (fun claim ->
+                {claim with Body = bodyChange claim.Body; Logic = if defect="logic" then "QF_BV" else claim.Logic})
+        let changed =
+            if defect="sources-missing" then {changed with ObligationSources = changed.ObligationSources.Remove(NodeId 301)}
+            elif defect="sources-order" then
+                {changed with ObligationSources = changed.ObligationSources.Add(NodeId 301,changed.ObligationSources[NodeId 301] |> List.map List.rev)}
+            else changed
+        Assert.Contains(Integrity.check changed, fun v ->
+            v.Part="Emission.Boundary.Calls.OptionalEntry.Obligation" && v.Node=Some(NodeId 200) &&
+            v.Reason="The optional callback requires its exact existing Pending per-call conversion claim.")
+
+[<Theory>]
+[<InlineData("missing")>]
+[<InlineData("invocation")>]
+[<InlineData("hypothesis")>]
+let ``finite None boundary plan requires its exact independent absence quotation`` defect =
+    let held = optionalBoundaryControl true
+    Assert.Empty(Integrity.check held)
+    let boundary = held.Emission.Boundary
+    let absence = boundary.CallbackAbsences[NodeId 500]
+    let absences =
+        match defect with
+        | "missing" -> Map.empty
+        | "invocation" -> Map.ofList [NodeId 500,{absence with Invocation = NodeId 210}]
+        | _ -> Map.ofList [NodeId 500,{absence with Contract = {absence.Contract with Hypothesis = {absence.Contract.Hypothesis with Version = "changed"}}}]
+    let changed = {held with Emission = {held.Emission with Boundary = {boundary with CallbackAbsences = absences}}}
+    Assert.Contains(Integrity.check changed, fun v ->
+        v.Part="Emission.Boundary.Calls.OptionalEntry.Obligation" && v.Node=Some(NodeId 200))
+
+[<Theory>]
+[<InlineData("empty-uses")>]
+[<InlineData("duplicate-use")>]
+[<InlineData("receiver")>]
+let ``finite optional boundary plans reject incomplete shared retirement accounts`` defect =
+    for absent in [false;true] do
+        let held = optionalBoundaryControl absent
+        Assert.Empty(Integrity.check held)
+        let change (row: CallableAggregateResultRetirement) =
+            match defect with
+            | "empty-uses" -> {row with Uses = []}
+            | "duplicate-use" -> {row with Uses = row.Application :: row.Uses}
+            | _ -> {row with Receiver = NodeId 201}
+        let changed = held |> changeOptionalClaim (fun claim ->
+            let body =
+                match claim.Body with
+                | ObligationBody.OptionalEntryArgumentConversion model ->
+                    ObligationBody.OptionalEntryArgumentConversion {model with ResultRetirement = model.ResultRetirement |> Option.map change}
+                | ObligationBody.OptionalEntryAbsenceArgumentConversion model ->
+                    ObligationBody.OptionalEntryAbsenceArgumentConversion {model with ResultRetirement = model.ResultRetirement |> Option.map change}
+                | _ -> failwith "Expected a finite optional plan."
+            {claim with Body = body})
+        let rowChange (row: CallableAggregateValue) =
+            {row with ResultRetirement = row.ResultRetirement |> Option.map (Result.map change)}
+        let callable = changed.Emission.Callable
+        let values = callable.AggregateValues |> Map.map (fun _ rows -> List.map rowChange rows)
+        let accounts = callable.AggregateDependencies |> Map.map (fun _ account -> {account with Values = List.map rowChange account.Values})
+        let changed =
+            {changed with
+                Codata = {changed.Codata with CallableAggregateValues = values; CallableAggregateDependencies = accounts}
+                Emission = {changed.Emission with Callable = {callable with AggregateValues = values; AggregateDependencies = accounts}}}
+        Assert.Contains(Integrity.check changed, fun v ->
+            v.Part="Emission.Callable.Aggregates.I5" && v.Node=Some(NodeId 1) &&
+            v.Reason="The returned optional retirement differs from its exact caller, instance, receiver or closed use inventory.")
+
+let private resourceReleaseSignatureControl returnKind =
+    let held = moduleUnitFacts
+    let header = held.SourceReadings.ContextHeaders[NodeId 50]
+    let handleType = TypeIdentity.NativePointer unitType
+    let resultType =
+        TypeIdentity.Application(
+            {Declaration={Module=[];Name="option"};Parameters=[TypeParamKind.Type];NativeKind=None},
+            [handleType])
+    let acquisitionType = TypeIdentity.Function(unitType,resultType)
+    let releaseResultType =
+        match returnKind with
+        | "void" -> unitType
+        | "pointer64" -> handleType
+        | "signed32" | "unsigned32" | "signed64" ->
+            let bits = if returnKind="signed64" then 64 else 32
+            let kind = if returnKind="unsigned32" then NTUKind.NTUuint(NTUWidth.Fixed bits) else NTUKind.NTUint(NTUWidth.Fixed bits)
+            TypeIdentity.Application({Declaration={Module=[];Name=returnKind};Parameters=[];NativeKind=Some kind},[])
+        | _ -> invalidArg "returnKind" "Unknown resource release signature control."
+    let releaseType = TypeIdentity.Function(handleType,releaseResultType)
+    let record fields refs parent = controlFact "record" fields [] refs (Some parent)
+    let binding name child ty = {controlFact "binding" [name] [0I;0I] [child] (Some 50) with SourceType=ty}
+    let text value parent = controlFact "string" [value] [] [] (Some parent)
+    let releaseReturn =
+        match returnKind with
+        | "void" -> controlFact "case" ["Void"] [] [] (Some 7032)
+        | "pointer64" -> controlFact "case" ["Pointer"] [] [7044] (Some 7032)
+        | _ -> controlFact "case" ["Integer"] [] [7041] (Some 7032)
+    let facts =
+        [7000,controlFact "quotation" [] [1I] [7002] (Some 7001)
+         7001,binding "acquireResourceDescriptor" 7000 unitType
+         7002,record ["Resource";"Hypothesis"] [7003;7007] 7000
+         7003,controlFact "case" ["OwnedNullableReturn"] [] [7004] (Some 7002)
+         7004,record ["Binding";"Parameter"] [7005;7006] 7003
+         7005,text (header.Name+".release") 7004
+         7006,controlFact "integer" [] [0I] [] (Some 7004)
+         7007,record ["Identity";"Version";"Source"] [7008;7009;7010] 7002
+         7008,text "owned-resource" 7007;7009,text "1" 7007;7010,text "fixture" 7007
+         7011,binding "acquire" 7012 acquisitionType
+         7012,{controlFact "lambda" ["acquire";"unit"] [1I;0I;0I] [7013;7014] (Some 7011) with SourceType=acquisitionType}
+         7013,controlFact "formal" ["unit"] [] [] (Some 7012)
+         7014,{controlFact "unit" [] [] [] (Some 7012) with SourceType=resultType}
+         7020,controlFact "quotation" [] [1I] [7022] (Some 7021)
+         7021,binding "acquireDescriptor" 7020 unitType
+         7022,record ["ReturnType";"CallingConvention"] [7023;7025] 7020
+         7023,controlFact "case" ["Pointer"] [] [7024] (Some 7022)
+         7024,controlFact "integer" [] [64I] [] (Some 7023)
+         7025,controlFact "case" ["CDecl"] [] [] (Some 7022)
+         7026,binding "release" 7027 releaseType
+         7027,{controlFact "lambda" ["release";"handle"] [1I;0I;0I] [7028;7029] (Some 7026) with SourceType=releaseType}
+         7028,{controlFact "formal" ["handle"] [] [] (Some 7027) with SourceType=handleType}
+         7029,{controlFact "unit" [] [] [] (Some 7027) with SourceType=releaseResultType}
+         7030,controlFact "quotation" [] [1I] [7032] (Some 7031)
+         7031,binding "releaseDescriptor" 7030 unitType
+         7032,record ["ReturnType";"CallingConvention";"Parameters"] [7040;7033;7034] 7030
+         7033,controlFact "case" ["CDecl"] [] [] (Some 7032)
+         7034,controlFact "array" [] [] [7035] (Some 7032)
+         7035,record ["Type";"PassBy"] [7036;7038] 7034
+         7036,controlFact "case" ["Pointer"] [] [7037] (Some 7035)
+         7037,controlFact "integer" [] [64I] [] (Some 7036)
+         7038,controlFact "case" ["Value"] [] [] (Some 7035)
+         7040,releaseReturn
+         7041,controlFact "tuple" [] [] [7042;7043] (Some 7040)
+         7042,controlFact "case" [(if returnKind="unsigned32" then "Unsigned" else "Signed")] [] [] (Some 7041)
+         7043,controlFact "integer" [] [(if returnKind="signed64" then 64I else 32I)] [] (Some 7041)
+         7044,controlFact "integer" [] [64I] [] (Some 7040)]
+        |> List.map(fun(id,fact)->NodeId id,fact) |> Map.ofList
+    let resource : BoundaryResourceDeclaration =
+        {Identity=NodeId 7000;Acquisition=NodeId 7011;AcquisitionBody=NodeId 7014;AcquisitionDescriptor=NodeId 7022
+         Release=NodeId 7026;ReleaseBody=NodeId 7029;ReleaseDescriptor=NodeId 7032;ReleaseFormal=NodeId 7028
+         ReleaseOrdinal=0;PointerBits=64;AcquisitionType=acquisitionType;ResultType=resultType;HandleType=handleType
+         Contract={Resource=BAREWire.Descriptors.ResourceProtocol.OwnedNullableReturn {Binding=header.Name+".release";Parameter=0}
+                   Hypothesis={Identity="owned-resource";Version="1";Source="fixture"}}
+         DeclarationFacts=facts;Participants=facts.Keys |> Set.ofSeq}
+    {held with Emission={held.Emission with Boundary={held.Emission.Boundary with ResourceDeclarations=Map.ofList [resource.Identity,resource]}}}
+
+[<Theory>]
+[<InlineData("void")>]
+[<InlineData("signed32")>]
+let ``owned nullable resources admit void or signed32 release results`` returnKind =
+    Assert.Empty(Integrity.check (resourceReleaseSignatureControl returnKind))
+
+[<Theory>]
+[<InlineData("unsigned32")>]
+[<InlineData("signed64")>]
+[<InlineData("pointer64")>]
+let ``owned nullable resources reject unsigned wide or pointer release results`` returnKind =
+    Assert.Empty(Integrity.check (resourceReleaseSignatureControl "void"))
+    Assert.Empty(Integrity.check (resourceReleaseSignatureControl "signed32"))
+    let violation = only "Emission.Boundary.ResourceDeclarations.Signature" (Integrity.check (resourceReleaseSignatureControl returnKind))
+    Assert.Equal(Some(NodeId 7000),violation.Node)
