@@ -10,6 +10,9 @@ type BaseMeasure = { Name: string; Module: string list }
 /// Identity is the `Id` and nothing else: equality, hashing and ordering exclude the name, so the
 /// map keys, the lookup partition in `resolve` and the removal in `solveDim` all see one variable
 /// however it is presented (design (b.4) step 4 renames survivors without changing their identity).
+/// Null and mismatched-type branches on `System.IComparable` (`null -> 1`, `_ -> -1`) are
+/// unreachable non-throwing sentinels retained solely for typed F# collection comparison
+/// constraints (`Map<MeasureVar, int>`, `Set<MeasureVar>`).
 [<CustomEquality; CustomComparison>]
 type MeasureVar =
     { Id: int; Name: string option }
@@ -21,11 +24,20 @@ type MeasureVar =
 
     override this.GetHashCode() = this.Id
 
+    interface System.IEquatable<MeasureVar> with
+        member this.Equals(other: MeasureVar) =
+            not (isNull (box other)) && this.Id = other.Id
+
+    interface System.IComparable<MeasureVar> with
+        member this.CompareTo(other: MeasureVar) =
+            if isNull (box other) then 1 else compare this.Id other.Id
+
     interface System.IComparable with
         member this.CompareTo(other: obj) =
             match other with
+            | null -> 1
             | :? MeasureVar as v -> compare this.Id v.Id
-            | _ -> invalidArg "other" "MeasureVar compared with a value of another type"
+            | _ -> -1
 
 /// A point of Z^B (+) Z^M in canonical form: no stored exponent is zero.
 /// Both maps empty is the measure 1. Constructed only through `Dimension.mk`; no other code
