@@ -6,6 +6,7 @@
             it cannot reach back into the compiler that produces it.
     PSG002  The project references something other than BAREWire.
     PSG003  A source opens a file, starts a process, or holds process-wide state.
+    PSG004  A source throws a CLR exception, tests physical identity, or uses %A reflection formatting.
   -->
   <UsingTask TaskName="ValidatePsgContract"
              TaskFactory="RoslynCodeTaskFactory"
@@ -23,6 +24,7 @@
       public override bool Execute() {
         var compiler = new Regex(@"\bClef\s*\.\s*Compiler\b|\bFSharp\s*\.\s*Compiler\b");
         var effects = new Regex(@"\bSystem\.IO\b|\bFile\.|\bDirectory\.|\bSystem\.Diagnostics\.Process\b|\bProcessStartInfo\b|\bEnvironment\.|\bConditionalWeakTable\b|\bmutable\b");
+        var cruft = new Regex(@"\b(failwith|failwithf|invalidArg|invalidOp|nullArg|raise|reraise|ReferenceEquals|PhysicalEquality)\b|%[+0-9.-]*A");
         foreach (var item in Sources) {
           var path = Path.GetFullPath(item.ItemSpec);
           var lines = File.ReadAllLines(path);
@@ -38,6 +40,10 @@
             if (effect.Success)
               Log.LogError(null, "PSG003", null, path, index + 1, 0, 0, 0,
                 "The contract declares data and readings of stored fields. '{0}' is an effect or process-wide state.", effect.Value);
+            var banned = cruft.Match(code);
+            if (banned.Success)
+              Log.LogError(null, "PSG004", null, path, index + 1, 0, 0, 0,
+                "The contract uses closed Result values, structural equality, and explicit formatting. '{0}' is forbidden CLR cruft.", banned.Value);
           }
         }
         var permitted = Path.GetFullPath(PermittedProject);

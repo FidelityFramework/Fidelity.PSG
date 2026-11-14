@@ -3,7 +3,7 @@ module Fidelity.PSG.Tests.GateTests
 open System
 open System.Diagnostics
 open System.IO
-open System.Xml.Linq
+open Fidelity.Data.XML
 open Xunit
 
 // The contract's own source is held to rules that the build checks before every
@@ -14,8 +14,8 @@ let private repository = Path.GetFullPath(Path.Combine(__SOURCE_DIRECTORY__, "..
 let private targets = Path.Combine(repository, "build", "Contract.targets")
 let private permitted = Path.Combine(repository, "..", "BAREWire", "src", "BAREWire.fsproj") |> Path.GetFullPath
 
-let private name (value: string) = XName.Get value
-let private attribute (key: string) (value: string) = XAttribute(name key, value)
+let private elem (tag: string) (attrs: (string * string) list) (children: XmlNode list) : XmlNode =
+    XmlNode.Element(tag, attrs |> List.map (fun (k, v) -> { Name = k; Value = v }), children)
 
 /// The exit code and the output of the check for one source and the references given.
 let private verdict (source: string) (references: string list) : int * string =
@@ -25,15 +25,18 @@ let private verdict (source: string) (references: string list) : int * string =
         let path = Path.Combine(directory, "Probe.fs")
         File.WriteAllText(path, source)
         let project = Path.Combine(directory, "Probe.proj")
-        XDocument(
-            XElement(name "Project",
-                XElement(name "Import", attribute "Project" targets),
-                XElement(name "Target", attribute "Name" "Probe",
-                    XElement(name "ValidatePsgContract",
-                        attribute "Sources" path,
-                        attribute "ProjectReferences" (String.concat ";" references),
-                        attribute "PermittedProject" permitted))))
-            .Save project
+        let doc : XmlDocument =
+            { Declaration = None
+              Root =
+                elem "Project" []
+                    [ elem "Import" [ "Project", targets ] []
+                      elem "Target" [ "Name", "Probe" ]
+                          [ elem "ValidatePsgContract"
+                                [ "Sources", path
+                                  "ProjectReferences", String.concat ";" references
+                                  "PermittedProject", permitted ]
+                                [] ] ] }
+        File.WriteAllText(project, Xml.serialize doc)
         let start = ProcessStartInfo("dotnet", UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true)
         for argument in [ "msbuild"; project; "-nologo"; "-t:Probe" ] do start.ArgumentList.Add argument
         use child = new Process(StartInfo = start)
@@ -85,3 +88,18 @@ let ``the word mutable inside a longer word is accepted`` () =
 let ``a reference to a project other than BAREWire is refused`` () =
     let other = Path.Combine(repository, "..", "clef", "src", "Compiler", "Clef.Compiler.Service.fsproj") |> Path.GetFullPath
     refused "PSG002" "namespace Fidelity.PSG\ntype Probe = { Bits: int }\n" [ permitted; other ]
+
+[<Theory>]
+[<InlineData("let bad () = failwith \"boom\"")>]
+[<InlineData("let bad x = failwithf \"boom %d\" x")>]
+[<InlineData("let bad x = invalidArg \"x\" \"bad\"")>]
+[<InlineData("let bad () = invalidOp \"bad\"")>]
+[<InlineData("let bad () = nullArg \"x\"")>]
+[<InlineData("let bad (ex: exn) = raise ex")>]
+[<InlineData("let bad () = reraise ()")>]
+[<InlineData("let same a b = System.Object.ReferenceEquals(a, b)")>]
+[<InlineData("let same a b = LanguagePrimitives.PhysicalEquality a b")>]
+[<InlineData("let text x = sprintf \"%A\" x")>]
+[<InlineData("let text x = sprintf \"%+A\" x")>]
+let ``a source with CLR exception throws physical equality or reflection formatting is refused`` (line: string) =
+    refused "PSG004" ("module Fidelity.PSG.Probe\n" + line + "\n") []
