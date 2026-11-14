@@ -66,10 +66,24 @@ module internal CallableAggregateIntegrity =
             [lifetime.Module; lifetime.Binding; lifetime.Implementation]
             |> List.mapi (fun ordinal node ->
                 { Node = node; Role = ParticipantRole.CallableLifetime; Ordinal = ordinal; Group = identity })
+        let cHandle = function
+            | ValueRepresentation.Scalar(SettledSlot.CHandle(_, bits, alignment)) ->
+                bits > 0 && alignment > 0 &&
+                (match revision.Platform.Pointer with Ok ptrBits -> bits = ptrBits | Error _ -> false)
+            | _ -> false
+        let nullableCHandle = function
+            | ValueRepresentation.Union([("None", []); ("Some", [inner])], Some _) -> cHandle inner
+            | _ -> false
         let scalar = function
             | ValueRepresentation.Scalar(SettledSlot.Integer(bits, _) | SettledSlot.Real bits) -> bits > 0
             | ValueRepresentation.Scalar(SettledSlot.Bool | SettledSlot.Char) -> true
-            | _ -> false
+            | rep -> cHandle rep
+        let nativeBufferElement = function
+            | ValueRepresentation.Scalar(SettledSlot.Integer(8, _)) -> true
+            | rep -> cHandle rep || nullableCHandle rep
+        let nativeParameter = function
+            | ValueRepresentation.Buffer(None, elem) -> nativeBufferElement elem
+            | rep -> scalar rep || nullableCHandle rep
         let conventionChecks (contract: CallableContract) =
             let site = contract.Identity
             [ match contract.Kind, contract.Convention with
@@ -87,7 +101,8 @@ module internal CallableAggregateIntegrity =
                      convention.ResultConversion <> CallableConversion.Identity contract.ResultRepresentation ||
                      (not contract.OmittedParameters.IsEmpty && not unitParameterOmission) || contract.EnvironmentBytes.IsSome ||
                      (contract.ParameterRepresentations |> List.map fst) <> (if unitParameterOmission then [] else [0 .. contract.ParameterTypes.Length - 1]) ||
-                     (contract.ParameterRepresentations |> List.exists (snd >> scalar >> not)) || not (scalar contract.ResultRepresentation || unitResult) then
+                     (contract.ParameterRepresentations |> List.exists (snd >> nativeParameter >> not)) ||
+                     not (scalar contract.ResultRepresentation || nullableCHandle contract.ResultRepresentation || unitResult) then
                       yield failure "I4" site "The compiler-owned portable convention lacks exact scalar identity conversions or explicit environment absence."
                   let dimension name declared =
                       match convention.Target.Dimensions.TryFind name, declared with

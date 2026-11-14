@@ -1400,6 +1400,67 @@ let ``I4 internally matching pointer representations do not authorize the scalar
     {changed with Emission = {changed.Emission with Numeric = numeric}}
     |> renew |> failure "I4" "The compiler-owned portable convention lacks exact scalar identity conversions or explicit environment absence."
 
+[<Theory>]
+[<InlineData(32)>]
+[<InlineData(64)>]
+let ``I4 CHandle representation authorizes scalar native convention only when width matches target pointer`` width =
+    let held = nativeSingleton width
+    Assert.Empty(Integrity.callableAggregates held)
+    let marker = TypeIdentity.Application({ Declaration = { Module = []; Name = "sqlite3_context" }; Parameters = []; NativeKind = None }, [])
+    let cHandle = TypeIdentity.Application({ Declaration = { Module = []; Name = "CHandle" }; Parameters = [TypeParamKind.Type]; NativeKind = Some NTUKind.NTUptr }, [marker])
+    let validHandle = ValueRepresentation.Scalar(SettledSlot.CHandle(cHandle, width, width / 8))
+    let setHandleRep rep =
+        let baseRev =
+            held
+            |> changeContract (fun contract -> { contract with ParameterRepresentations = [0, rep] })
+            |> changeNativeConvention (fun convention -> { convention with ParameterConversions = [0, CallableConversion.Identity rep] })
+        let numeric =
+            { baseRev.Emission.Numeric with
+                OccurrenceRepresentations = baseRev.Emission.Numeric.OccurrenceRepresentations.Add(NodeId 41, Ok rep) }
+        { baseRev with Emission = { baseRev.Emission with Numeric = numeric } }
+        |> renew
+    Assert.Empty(Integrity.callableAggregates (setHandleRep validHandle))
+    let mismatchedWidth = if width = 64 then 32 else 64
+    let wrongHandle = ValueRepresentation.Scalar(SettledSlot.CHandle(cHandle, mismatchedWidth, mismatchedWidth / 8))
+    setHandleRep wrongHandle
+    |> failure "I4" "The compiler-owned portable convention lacks exact scalar identity conversions or explicit environment absence."
+
+[<Theory>]
+[<InlineData(32)>]
+[<InlineData(64)>]
+let ``I4 nullable CHandle and bounded callback Buffer views authorize native parameter convention while CallableComponent stays rejected`` width =
+    let held = nativeSingleton width
+    Assert.Empty(Integrity.callableAggregates held)
+    let marker = TypeIdentity.Application({ Declaration = { Module = []; Name = "sqlite3_value" }; Parameters = []; NativeKind = None }, [])
+    let cHandle = TypeIdentity.Application({ Declaration = { Module = []; Name = "CHandle" }; Parameters = [TypeParamKind.Type]; NativeKind = Some NTUKind.NTUptr }, [marker])
+    let validHandle = ValueRepresentation.Scalar(SettledSlot.CHandle(cHandle, width, width / 8))
+    let nullableHandle = ValueRepresentation.Union(["None", []; "Some", [validHandle]], Some(1, 0, width / 8))
+    let setParamRep rep =
+        let baseRev =
+            held
+            |> changeContract (fun contract -> { contract with ParameterRepresentations = [0, rep] })
+            |> changeNativeConvention (fun convention -> { convention with ParameterConversions = [0, CallableConversion.Identity rep] })
+        let numeric =
+            { baseRev.Emission.Numeric with
+                OccurrenceRepresentations = baseRev.Emission.Numeric.OccurrenceRepresentations.Add(NodeId 41, Ok rep) }
+        { baseRev with Emission = { baseRev.Emission with Numeric = numeric } }
+        |> renew
+    Assert.Empty(Integrity.callableAggregates (setParamRep nullableHandle))
+    Assert.Empty(Integrity.callableAggregates (setParamRep (ValueRepresentation.Buffer(None, ValueRepresentation.Scalar(SettledSlot.Integer(8, None))))))
+    Assert.Empty(Integrity.callableAggregates (setParamRep (ValueRepresentation.Buffer(None, validHandle))))
+    Assert.Empty(Integrity.callableAggregates (setParamRep (ValueRepresentation.Buffer(None, nullableHandle))))
+    let mismatchedWidth = if width = 64 then 32 else 64
+    let wrongHandle = ValueRepresentation.Scalar(SettledSlot.CHandle(cHandle, mismatchedWidth, mismatchedWidth / 8))
+    setParamRep (ValueRepresentation.Union(["None", []; "Some", [wrongHandle]], Some(1, 0, mismatchedWidth / 8)))
+    |> failure "I4" "The compiler-owned portable convention lacks exact scalar identity conversions or explicit environment absence."
+    setParamRep (ValueRepresentation.Buffer(Some 4, validHandle))
+    |> failure "I4" "The compiler-owned portable convention lacks exact scalar identity conversions or explicit environment absence."
+    setParamRep (ValueRepresentation.Buffer(None, ValueRepresentation.Scalar(SettledSlot.Pointer 1)))
+    |> failure "I4" "The compiler-owned portable convention lacks exact scalar identity conversions or explicit environment absence."
+    let closureSlot = ValueRepresentation.CallableComponent(NodeId 101, ValueRepresentation.Record([], Some([], 0, 1)))
+    setParamRep closureSlot
+    |> failure "I4" "The compiler-owned portable convention lacks exact scalar identity conversions or explicit environment absence."
+
 [<Fact>]
 let ``I4 native target and callable kind cannot be substituted`` () =
     let held = nativeSingleton 64
