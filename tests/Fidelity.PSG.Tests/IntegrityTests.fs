@@ -2732,6 +2732,77 @@ let ``finite optional plans reject incomplete result retirement`` defect =
     Assert.Equal<Result<ResourceProof.Projection, string>>(expected, OptionalEntryArgumentProof.project (presentPlan (Some changed)))
     Assert.Equal<Result<ResourceProof.Projection, string>>(expected, OptionalEntryArgumentProof.projectAbsence (absentPlan (Some changed)))
 
+let private bufferAbsencePlan sourceCase : BufferAbsenceArgumentConversionModel =
+    { Call = NodeId 1
+      Parameter = 0
+      Actual = NodeId 3
+      Construction = NodeId 3
+      SourceCase = sourceCase
+      Absence = NodeId 700
+      Arms =
+          [ { CaseOrdinal = 0; Choice = BufferAbsencePlanChoice.AbsentNull }
+            { CaseOrdinal = 1; Choice = BufferAbsencePlanChoice.RequiresNonNullBuffer } ] }
+
+[<Theory>]
+[<InlineData(0)>]
+[<InlineData(1)>]
+let ``buffer absence plans project None and Some with canonical participant roles and refutation`` sourceCase =
+    let model = bufferAbsencePlan sourceCase
+    let projection = BufferAbsenceArgumentProof.project model |> projected
+    let expectedRoles =
+        [ "source_case", "buffer_absence_case"
+          "choice", "buffer_absence_choice"
+          "absence", "buffer_absence_accepted_700" ]
+    Assert.Equal<(string * ResourceProof.Sort) list>(
+        [ "buffer_absence_case", ResourceProof.Sort.Integer
+          "buffer_absence_choice", ResourceProof.Sort.Integer
+          "buffer_absence_accepted_700", ResourceProof.Sort.Boolean ],
+        projection.Declarations)
+    Assert.Equal<(string * string) list>(expectedRoles, projection.ParticipantRoles)
+    Assert.Equal<(string * string) list>(
+        expectedRoles,
+        ObligationBody.participantRoles (ObligationBody.BufferAbsenceArgumentConversion model))
+    Assert.Equal<ResourceProof.Expr list>(
+        [ ResourceProof.Expr.Equal(ResourceProof.Expr.Variable "buffer_absence_case", ResourceProof.Expr.Integer(bigint sourceCase)) ],
+        projection.Alternatives)
+    Assert.Empty(ResourceProof.missingParticipantVariables projection)
+    let smt = ResourceProof.refutation "buf_abs_ctrl" projection
+    Assert.Equal(6, smt.Length)
+    let premises = ResourceProof.anchoredPremisesQueries "buf_abs_ctrl" projection
+    Assert.Single(premises) |> ignore
+    Assert.Contains(sprintf "(= buffer_absence_case %d)" sourceCase, premises.Head)
+    let nonVacuity = ResourceProof.anchoredNonVacuityQueries "buf_abs_ctrl" projection
+    Assert.Equal(2, nonVacuity.Length)
+
+[<Theory>]
+[<InlineData("parameter")>]
+[<InlineData("missing")>]
+[<InlineData("duplicate")>]
+[<InlineData("ordinal")>]
+[<InlineData("choice")>]
+let ``buffer absence plan rejects negative parameter or invalid arms`` defect =
+    let model = bufferAbsencePlan 0
+    let badModel, expectedMsg =
+        match defect with
+        | "parameter" ->
+            { model with Parameter = -1 }, "The buffer absence conversion requires a non-negative parameter ordinal."
+        | "missing" ->
+            { model with Arms = [ model.Arms.Head ] }, "The buffer absence conversion plan requires exact AbsentNull and RequiresNonNullBuffer arms."
+        | "duplicate" ->
+            { model with Arms = model.Arms @ [ model.Arms.Head ] }, "The buffer absence conversion plan requires exact AbsentNull and RequiresNonNullBuffer arms."
+        | "ordinal" ->
+            { model with Arms = [ { model.Arms.Head with CaseOrdinal = 1 }; model.Arms[1] ] }, "The buffer absence conversion plan requires exact AbsentNull and RequiresNonNullBuffer arms."
+        | _ ->
+            { model with Arms = [ { model.Arms.Head with Choice = BufferAbsencePlanChoice.RequiresNonNullBuffer }; model.Arms[1] ] }, "The buffer absence conversion plan requires exact AbsentNull and RequiresNonNullBuffer arms."
+    Assert.Equal<Result<ResourceProof.Projection, string>>(
+        Error expectedMsg,
+        BufferAbsenceArgumentProof.project badModel)
+    Assert.Equal<(string * string) list>(
+        [ "source_case", "buffer_absence_case"
+          "choice", "buffer_absence_choice"
+          "absence", "buffer_absence_accepted_700" ],
+        ObligationBody.participantRoles (ObligationBody.BufferAbsenceArgumentConversion badModel))
+
 let private foreignResultControl () =
     let held = boundaryCalleeFacts
     let hypothesis : ForeignResultHypothesis =

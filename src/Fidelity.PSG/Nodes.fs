@@ -1610,6 +1610,50 @@ type BufferAbsenceArgumentConversionModel = {
     Arms: BufferAbsencePlanArm list
 }
 
+/// Finite source Option<'Buffer> absence-to-choice correspondence at the call boundary.
+module BufferAbsenceArgumentProof =
+    /// Canonical ResourceProof projection for BufferAbsenceArgumentConversion.
+    let project (model: BufferAbsenceArgumentConversionModel) : Result<ResourceProof.Projection, string> =
+        let number (value: int) = ResourceProof.Expr.Integer(bigint value)
+        let equal left right = ResourceProof.Expr.Equal(left, right)
+        let all values = ResourceProof.Expr.And values
+        let sourceCase = ResourceProof.Expr.Variable "buffer_absence_case"
+        let choice = ResourceProof.Expr.Variable "buffer_absence_choice"
+        let promiseName = sprintf "buffer_absence_accepted_%d" (NodeId.value model.Absence)
+        let promise = ResourceProof.Expr.Variable promiseName
+        let selected = model.Arms |> List.map (fun arm ->
+            ResourceProof.Expr.IfThenElse(equal sourceCase (number arm.CaseOrdinal), number 1, number 0))
+        let armPremises = model.Arms |> List.map (fun arm ->
+            let armChoice =
+                match arm.Choice with
+                | BufferAbsencePlanChoice.AbsentNull -> number 0
+                | BufferAbsencePlanChoice.RequiresNonNullBuffer -> number 1
+            ResourceProof.Expr.Implies(equal sourceCase (number arm.CaseOrdinal), equal choice armChoice))
+        let arm0 = model.Arms |> List.tryFind (fun arm -> arm.CaseOrdinal = 0)
+        let arm1 = model.Arms |> List.tryFind (fun arm -> arm.CaseOrdinal = 1)
+        if model.Parameter < 0 then
+            Error "The buffer absence conversion requires a non-negative parameter ordinal."
+        else
+            match model.Arms.Length, arm0, arm1 with
+            | 2, Some { Choice = BufferAbsencePlanChoice.AbsentNull }, Some { Choice = BufferAbsencePlanChoice.RequiresNonNullBuffer } ->
+                Ok {
+                    Declarations =
+                        [ "buffer_absence_case", ResourceProof.Sort.Integer
+                          "buffer_absence_choice", ResourceProof.Sort.Integer
+                          promiseName, ResourceProof.Sort.Boolean ]
+                    ParticipantRoles =
+                        [ "source_case", "buffer_absence_case"
+                          "choice", "buffer_absence_choice"
+                          "absence", promiseName ]
+                    Premises = all ([equal sourceCase (number model.SourceCase); promise] @ armPremises)
+                    Conclusion = all [
+                        equal (ResourceProof.Expr.Add selected) (number 1)
+                        equal choice (ResourceProof.Expr.IfThenElse(all [equal sourceCase (number 0); promise], number 0, number 1))
+                    ]
+                    Alternatives = [equal sourceCase (number model.SourceCase)]
+                }
+            | _ -> Error "The buffer absence conversion plan requires exact AbsentNull and RequiresNonNullBuffer arms."
+
 [<RequireQualifiedAccess>]
 type ObligationBody =
     /// Finite program initialization phases supplied by Baker. This arithmetic
@@ -1742,6 +1786,13 @@ module ObligationBody =
             match ForeignResultCoverage.ofModel model with
             | Ok projection -> projection.ParticipantRoles
             | Error _ -> ForeignResultCoverage.baseParticipantRoles
+        | ObligationBody.BufferAbsenceArgumentConversion model ->
+            match BufferAbsenceArgumentProof.project model with
+            | Ok projection -> projection.ParticipantRoles
+            | Error _ ->
+                [ "source_case", "buffer_absence_case"
+                  "choice", "buffer_absence_choice"
+                  "absence", sprintf "buffer_absence_accepted_%d" (NodeId.value model.Absence) ]
         | _ -> []
 
 /// The obligation record carried by an Obligation node.
