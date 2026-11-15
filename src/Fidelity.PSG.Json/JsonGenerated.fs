@@ -4,7 +4,7 @@ open Fidelity.Data.JSON
 module internal JsonGenerated =
     open JsonRuntime
     [<Literal>]
-    let NamedTypes = 383
+    let NamedTypes = 384
     let rec write_BAREWire_Descriptors_BorrowInvalidation (value: global.BAREWire.Descriptors.BorrowInvalidation) : JsonValue =
         match value with
         | global.BAREWire.Descriptors.BorrowInvalidation.``OwnerCall``(a0) -> union "OwnerCall" [("Item", write_BAREWire_Descriptors_ResourceRelease a0)]
@@ -1030,8 +1030,13 @@ module internal JsonGenerated =
     and write_Fidelity_PSG_IntrinsicWriteCall (value: global.Fidelity.PSG.IntrinsicWriteCall) : JsonValue =
         JsonValue.Object [("Site", write_Fidelity_PSG_NodeId value.``Site``); ("Import", write_Fidelity_PSG_NodeId value.``Import``); ("Callee", write_Fidelity_PSG_NodeId value.``Callee``); ("Fd", write_Fidelity_PSG_NodeId value.``Fd``); ("Buffer", write_Fidelity_PSG_NodeId value.``Buffer``); ("Count", write_Fidelity_PSG_NodeId value.``Count``); ("FdAdaptation", (writeOption write_Fidelity_PSG_Meet) value.``FdAdaptation``); ("CountAdaptation", (writeOption write_Fidelity_PSG_Meet) value.``CountAdaptation``); ("ResultAdaptation", (writeOption write_Fidelity_PSG_Meet) value.``ResultAdaptation``); ("Participants", (writeSet write_Fidelity_PSG_NodeId) value.``Participants``)]
 
+    and write_Fidelity_PSG_IntrinsicWriteEndpoint (value: global.Fidelity.PSG.IntrinsicWriteEndpoint) : JsonValue =
+        match value with
+        | global.Fidelity.PSG.IntrinsicWriteEndpoint.``SyscallNumber``(a0) -> union "SyscallNumber" [("Item", writeBigInteger a0)]
+        | global.Fidelity.PSG.IntrinsicWriteEndpoint.``HostApiSymbol``(a0) -> union "HostApiSymbol" [("Item", writeString a0)]
+
     and write_Fidelity_PSG_IntrinsicWriteImport (value: global.Fidelity.PSG.IntrinsicWriteImport) : JsonValue =
-        JsonValue.Object [("Identity", write_Fidelity_PSG_NodeId value.``Identity``); ("Scope", write_Fidelity_PSG_NodeId value.``Scope``); ("Symbol", writeString value.``Symbol``); ("Fd", write_Fidelity_PSG_BoundaryScalar value.``Fd``); ("Count", write_Fidelity_PSG_BoundaryScalar value.``Count``); ("Result", write_Fidelity_PSG_BoundaryScalar value.``Result``); ("ByteRepresentation", write_Fidelity_PSG_NumericRepresentation value.``ByteRepresentation``); ("Core", write_Fidelity_PSG_NodeId value.``Core``); ("ReturnContract", write_Fidelity_PSG_NodeId value.``ReturnContract``); ("Endpoint", write_Fidelity_PSG_NodeId value.``Endpoint``); ("Surface", write_Fidelity_PSG_NodeId value.``Surface``); ("SyscallNumber", writeBigInteger value.``SyscallNumber``); ("Participants", (writeSet write_Fidelity_PSG_NodeId) value.``Participants``)]
+        JsonValue.Object [("Identity", write_Fidelity_PSG_NodeId value.``Identity``); ("Scope", write_Fidelity_PSG_NodeId value.``Scope``); ("Symbol", writeString value.``Symbol``); ("Fd", write_Fidelity_PSG_BoundaryScalar value.``Fd``); ("Count", write_Fidelity_PSG_BoundaryScalar value.``Count``); ("Result", write_Fidelity_PSG_BoundaryScalar value.``Result``); ("ByteRepresentation", write_Fidelity_PSG_NumericRepresentation value.``ByteRepresentation``); ("Core", write_Fidelity_PSG_NodeId value.``Core``); ("ReturnContract", write_Fidelity_PSG_NodeId value.``ReturnContract``); ("Endpoint", write_Fidelity_PSG_NodeId value.``Endpoint``); ("Surface", write_Fidelity_PSG_NodeId value.``Surface``); ("Target", write_Fidelity_PSG_IntrinsicWriteEndpoint value.``Target``); ("Participants", (writeSet write_Fidelity_PSG_NodeId) value.``Participants``)]
 
     and write_Fidelity_PSG_IntrinsicWriteProof (value: global.Fidelity.PSG.IntrinsicWriteProof) : JsonValue =
         JsonValue.Object [("Site", write_Fidelity_PSG_NodeId value.``Site``); ("Obligation", write_Fidelity_PSG_NodeId value.``Obligation``); ("Ordinal", writeInt32 value.``Ordinal``); ("Body", write_Fidelity_PSG_ObligationBody value.``Body``); ("Participants", (writeSet write_Fidelity_PSG_NodeId) value.``Participants``)]

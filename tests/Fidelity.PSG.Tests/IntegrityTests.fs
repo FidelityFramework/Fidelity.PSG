@@ -1943,13 +1943,27 @@ let private intrinsicContextFacts =
          Count = BoundaryScalar.Integer(64, false); Result = BoundaryScalar.Integer(64, true)
          ByteRepresentation = {Name = "byte"; Capability = "native"; Family = "uint"; Bits = 8; MinMagnitude = "0"; MaxMagnitude = "255"; Boundary = "wrap"}
          Core = NodeId 4454; ReturnContract = NodeId 4476; Endpoint = NodeId 4536; Surface = NodeId 4608
-         SyscallNumber = 1I; Participants = Set.ofList [NodeId 4454; NodeId 4476; NodeId 4536; NodeId 4608; NodeId 8000]}
+         Target = IntrinsicWriteEndpoint.SyscallNumber 1I; Participants = Set.ofList [NodeId 4454; NodeId 4476; NodeId 4536; NodeId 4608; NodeId 8000]}
     {moduleUnitFacts with Emission = {moduleUnitFacts.Emission with Boundary = {moduleUnitFacts.Emission.Boundary with IntrinsicWriteImports = Map.ofList [NodeId 2, imported]}}}
 
 [<Fact>]
 let ``an intrinsic import carries physical facts and declaration provenance without source bodies`` () =
     Assert.Empty(Integrity.check intrinsicContextFacts)
     for id in [4454; 4476; 4536; 4608] do Assert.False(intrinsicContextFacts.Nodes.ContainsKey(NodeId id))
+
+[<Fact>]
+let ``an intrinsic import accepts host API symbols and rejects malformed targets`` () =
+    let imported = intrinsicContextFacts.Emission.Boundary.IntrinsicWriteImports[NodeId 2]
+    let withTarget target =
+        let boundary = {intrinsicContextFacts.Emission.Boundary with IntrinsicWriteImports = Map.ofList [NodeId 2, {imported with Target = target}]}
+        {intrinsicContextFacts with Emission = {intrinsicContextFacts.Emission with Boundary = boundary}}
+    let hostApi = withTarget (IntrinsicWriteEndpoint.HostApiSymbol "WriteFile")
+    Assert.Empty(Integrity.check hostApi)
+    let encoded = Binary.encode BinaryTests.limits hostApi |> BinaryTests.take
+    Assert.Equal(Result.Ok hostApi, Binary.decode BinaryTests.limits encoded)
+    for malformed in [IntrinsicWriteEndpoint.SyscallNumber -1I; IntrinsicWriteEndpoint.HostApiSymbol ""] do
+        let violation = within "Emission.Boundary.IntrinsicWriteImports.Target" (Integrity.check (withTarget malformed))
+        Assert.Equal(Some(NodeId 2), violation.Node)
 
 [<Fact>]
 let ``an intrinsic import requires its exact context header`` () =

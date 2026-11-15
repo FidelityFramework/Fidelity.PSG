@@ -5372,6 +5372,21 @@ module Integrity =
                         "SourceReadings.ContextHeaders"
                         imported.Scope
                         (revision.SourceReadings.ContextHeaders.ContainsKey imported.Scope)
+
+                match imported.Target with
+                | IntrinsicWriteEndpoint.SyscallNumber number when number < 0I ->
+                    yield
+                        defect
+                            "Emission.Boundary.IntrinsicWriteImports.Target"
+                            key
+                            "An intrinsic write syscall number cannot be negative."
+                | IntrinsicWriteEndpoint.HostApiSymbol symbol when System.String.IsNullOrWhiteSpace symbol ->
+                    yield
+                        defect
+                            "Emission.Boundary.IntrinsicWriteImports.Target"
+                            key
+                            "An intrinsic write host API symbol cannot be empty."
+                | _ -> ()
         ]
 
     /// Source-authored artifact correspondence is data. These comparisons do

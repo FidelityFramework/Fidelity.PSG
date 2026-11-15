@@ -5,11 +5,11 @@ module internal BinaryGenerated =
     [<Literal>]
     let Format = 2u
     [<Literal>]
-    let Schema = 55
+    let Schema = 56
     [<Literal>]
-    let Fingerprint = "8E49266136E32ADFFEC41159F6CA8F60298F150E1D6FD6CEC5EE942A020A5AC9"
+    let Fingerprint = "98BAC942EDCBBFDFE857CADD1085A81DF5209C057455C2CF3D744A18B0BE4A56"
     [<Literal>]
-    let NamedTypes = 396
+    let NamedTypes = 397
     [<Literal>]
     let RevisionFields = 17
     [<Literal>]
@@ -4104,6 +4104,22 @@ module internal BinaryGenerated =
         return leaveWrite state
     }
 
+    and write_Fidelity_PSG_IntrinsicWriteEndpoint (state: WriteState) (value: global.Fidelity.PSG.IntrinsicWriteEndpoint) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        return!
+            match value with
+            | global.Fidelity.PSG.IntrinsicWriteEndpoint.``SyscallNumber``(a0) -> result {
+                let! state = writeTag state 0
+                let! state = writeBigInteger state a0
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.IntrinsicWriteEndpoint.``HostApiSymbol``(a0) -> result {
+                let! state = writeTag state 1
+                let! state = writeString state a0
+                return leaveWrite state
+              }
+    }
+
     and write_Fidelity_PSG_IntrinsicWriteImport (state: WriteState) (value: global.Fidelity.PSG.IntrinsicWriteImport) : Result<WriteState, BinaryError> = result {
         let! state = enterWrite state
         let! state = write_Fidelity_PSG_NodeId state value.``Identity``
@@ -4117,7 +4133,7 @@ module internal BinaryGenerated =
         let! state = write_Fidelity_PSG_NodeId state value.``ReturnContract``
         let! state = write_Fidelity_PSG_NodeId state value.``Endpoint``
         let! state = write_Fidelity_PSG_NodeId state value.``Surface``
-        let! state = writeBigInteger state value.``SyscallNumber``
+        let! state = write_Fidelity_PSG_IntrinsicWriteEndpoint state value.``Target``
         let! state = (writeSet write_Fidelity_PSG_NodeId) state value.``Participants``
         return leaveWrite state
     }
@@ -12368,6 +12384,22 @@ module internal BinaryGenerated =
         return! finishRead ({ ``Site`` = a0; ``Import`` = a1; ``Callee`` = a2; ``Fd`` = a3; ``Buffer`` = a4; ``Count`` = a5; ``FdAdaptation`` = a6; ``CountAdaptation`` = a7; ``ResultAdaptation`` = a8; ``Participants`` = a9 } : global.Fidelity.PSG.IntrinsicWriteCall) state
     }
 
+    and read_Fidelity_PSG_IntrinsicWriteEndpoint (state: ReadState) : Result<global.Fidelity.PSG.IntrinsicWriteEndpoint * ReadState, BinaryError> = result {
+        let! state = enterReadCases 2 state
+        let! tag, state = readTag state
+        return!
+            match tag with
+            | 0 -> result {
+                let! a0, state = readBigInteger state
+                return! finishRead (global.Fidelity.PSG.IntrinsicWriteEndpoint.``SyscallNumber``(a0)) state
+              }
+            | 1 -> result {
+                let! a0, state = readString state
+                return! finishRead (global.Fidelity.PSG.IntrinsicWriteEndpoint.``HostApiSymbol``(a0)) state
+              }
+            | _ -> malformed state "Unknown Fidelity.PSG.IntrinsicWriteEndpoint case"
+    }
+
     and read_Fidelity_PSG_IntrinsicWriteImport (state: ReadState) : Result<global.Fidelity.PSG.IntrinsicWriteImport * ReadState, BinaryError> = result {
         let! state = enterReadFields 13 state
         let! a0, state = read_Fidelity_PSG_NodeId state
@@ -12381,9 +12413,9 @@ module internal BinaryGenerated =
         let! a8, state = read_Fidelity_PSG_NodeId state
         let! a9, state = read_Fidelity_PSG_NodeId state
         let! a10, state = read_Fidelity_PSG_NodeId state
-        let! a11, state = readBigInteger state
+        let! a11, state = read_Fidelity_PSG_IntrinsicWriteEndpoint state
         let! a12, state = (readSet read_Fidelity_PSG_NodeId) state
-        return! finishRead ({ ``Identity`` = a0; ``Scope`` = a1; ``Symbol`` = a2; ``Fd`` = a3; ``Count`` = a4; ``Result`` = a5; ``ByteRepresentation`` = a6; ``Core`` = a7; ``ReturnContract`` = a8; ``Endpoint`` = a9; ``Surface`` = a10; ``SyscallNumber`` = a11; ``Participants`` = a12 } : global.Fidelity.PSG.IntrinsicWriteImport) state
+        return! finishRead ({ ``Identity`` = a0; ``Scope`` = a1; ``Symbol`` = a2; ``Fd`` = a3; ``Count`` = a4; ``Result`` = a5; ``ByteRepresentation`` = a6; ``Core`` = a7; ``ReturnContract`` = a8; ``Endpoint`` = a9; ``Surface`` = a10; ``Target`` = a11; ``Participants`` = a12 } : global.Fidelity.PSG.IntrinsicWriteImport) state
     }
 
     and read_Fidelity_PSG_IntrinsicWriteProof (state: ReadState) : Result<global.Fidelity.PSG.IntrinsicWriteProof * ReadState, BinaryError> = result {
