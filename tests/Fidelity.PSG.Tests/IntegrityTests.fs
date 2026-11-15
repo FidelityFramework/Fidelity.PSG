@@ -6474,3 +6474,248 @@ let ``BufferAbsences maps ReadOnlyBuffer Parameter across leading PassBy Fixed f
     let badAbsence = { absence with Parameter = 0; Contract = { absence.Contract with Parameter = 0 } }
     let badRev = { revision with Emission = { revision.Emission with Boundary = { revision.Emission.Boundary with BufferAbsences = Map.ofList [NodeId 700, badAbsence] } } }
     Assert.NotEmpty(Integrity.check badRev)
+
+[<Theory>]
+[<InlineData("acquire-nullable", "")>]
+[<InlineData("acquire-nullable-adapted", "Emission.Boundary.ReadOnlyBufferUses.Account")>]
+[<InlineData("release-owned", "Emission.Boundary.ReadOnlyBufferUses.Account")>]
+let ``read-only buffer use admits AcquireNullable without result adaptation and rejects ReleaseOwned`` mode expectedPart =
+    let held = snapshotFacts
+    let basis = boundaryCalleeFacts.Emission.Boundary
+    let header = boundaryCalleeFacts.SourceReadings.ContextHeaders[NodeId 50]
+    let integerType name kind =
+        TypeIdentity.Application({ Declaration = { Module = []; Name = name }; Parameters = []; NativeKind = Some kind }, [])
+    let byteType = integerType "uint8" (NTUKind.NTUuint(NTUWidth.Fixed 8))
+    let arrayType = TypeIdentity.Application({ Declaration = { Module = []; Name = "array" }; Parameters = [TypeParamKind.Type]; NativeKind = None }, [byteType])
+    let unitType = held.Nodes[NodeId 1].Type
+    let handleType = TypeIdentity.NativePointer unitType
+    let resultType = TypeIdentity.Application({ Declaration = { Module = []; Name = "option" }; Parameters = [TypeParamKind.Type]; NativeKind = None }, [handleType])
+    let acquisitionType = TypeIdentity.Function(arrayType, resultType)
+    let releaseType = TypeIdentity.Function(handleType, unitType)
+    let record fields ids parent = controlFact "record" fields [] ids (Some parent)
+    let binding name child = controlFact "binding" [name] [0I; 0I] [child] (Some 50)
+    let text value parent = controlFact "string" [value] [] [] (Some parent)
+    let number value parent = controlFact "integer" [] [value] [] (Some parent)
+    let case name refs parent = controlFact "case" [name] [] refs (Some parent)
+    let facts =
+        [ 2, { binding "fopen" 1003 with SourceType = acquisitionType }
+          1003, { controlFact "lambda" ["fopen"; "path"] [1I; 0I; 0I] [1004; 1006] (Some 2) with SourceType = acquisitionType }
+          1004, { controlFact "formal" ["path"] [] [] (Some 1003) with SourceType = arrayType }
+          1006, { controlFact "unit" [] [] [] (Some 1003) with SourceType = resultType }
+          1073, binding "fopenDescriptor" 1072
+          1072, controlFact "quotation" [] [] [72] (Some 1073)
+          72, record ["ReturnType"; "CallingConvention"; "Parameters"; "CName"] [7023; 7025; 1010; 1020] 1072
+          7023, case "Pointer" [7024] 72
+          7024, number 64I 7023
+          7025, case "CDecl" [] 72
+          1010, controlFact "array" [] [] [1011] (Some 72)
+          1011, record ["Type"; "PassBy"] [1013; 1016] 1010
+          1013, case "Integer" [1014] 1011
+          1014, controlFact "tuple" [] [] [1015; 1018] (Some 1013)
+          1015, case "Unsigned" [] 1014
+          1018, number 8I 1014
+          1016, case "ReadOnlyReference" [] 1011
+          1020, text "fopen" 72
+          1101, binding "fopenReadOnlyDescriptor" 1100
+          1100, controlFact "quotation" [] [] [1102] (Some 1101)
+          1102, record ["Binding"; "Parameter"; "Extent"; "Content"; "Retention"; "Hypothesis"] [1103; 1104; 1105; 1115; 1111; 1106] 1100
+          1103, text (header.Name + ".fopen") 1102
+          1104, number 0I 1102
+          1105, case "UncountedNulTerminated" [] 1102
+          1115, case "Utf8Text" [] 1102
+          1111, case "DuringCall" [] 1102
+          1106, record ["Identity"; "Version"; "Source"] [1107; 1108; 1109] 1102
+          1107, text "fopen-path" 1106
+          1108, text "1" 1106
+          1109, text "fixture" 1106
+          7001, binding "fopenResourceDescriptor" 7000
+          7000, controlFact "quotation" [] [1I] [7002] (Some 7001)
+          7002, record ["Resource"; "Hypothesis"] [7003; 7007] 7000
+          7003, case "OwnedNullableReturn" [7004] 7002
+          7004, record ["Binding"; "Parameter"] [7005; 7006] 7003
+          7005, text (header.Name + ".fclose") 7004
+          7006, number 0I 7004
+          7007, record ["Identity"; "Version"; "Source"] [7008; 7009; 7010] 7002
+          7008, text "fopen-resource" 7007
+          7009, text "1" 7007
+          7010, text "fixture" 7007
+          7026, { binding "fclose" 7027 with SourceType = releaseType }
+          7027, { controlFact "lambda" ["fclose"; "handle"] [1I; 0I; 0I] [7028; 7029] (Some 7026) with SourceType = releaseType }
+          7028, { controlFact "formal" ["handle"] [] [] (Some 7027) with SourceType = handleType }
+          7029, { controlFact "unit" [] [] [] (Some 7027) with SourceType = unitType }
+          7031, binding "fcloseDescriptor" 7030
+          7030, controlFact "quotation" [] [1I] [7032] (Some 7031)
+          7032, record ["ReturnType"; "CallingConvention"; "Parameters"] [7040; 7033; 7034] 7030
+          7040, case "Void" [] 7032
+          7033, case "CDecl" [] 7032
+          7034, controlFact "array" [] [] [7035] (Some 7032)
+          7035, record ["Type"; "PassBy"] [7036; 7038] 7034
+          7036, case "Pointer" [7037] 7035
+          7037, number 64I 7036
+          7038, case "Value" [] 7035 ]
+        |> List.map (fun (id, fact) -> NodeId id, fact) |> Map.ofList
+    let resourceDecl : BoundaryResourceDeclaration =
+        { Identity = NodeId 7000; Acquisition = NodeId 2; AcquisitionBody = NodeId 1006; AcquisitionDescriptor = NodeId 72
+          Release = NodeId 7026; ReleaseBody = NodeId 7029; ReleaseDescriptor = NodeId 7032; ReleaseFormal = NodeId 7028
+          ReleaseOrdinal = 0; PointerBits = 64; AcquisitionType = acquisitionType; ResultType = resultType; HandleType = handleType
+          Contract =
+            { Resource = BAREWire.Descriptors.ResourceProtocol.OwnedNullableReturn { Binding = header.Name + ".fclose"; Parameter = 0 }
+              Hypothesis = { Identity = "fopen-resource"; Version = "1"; Source = "fixture" } }
+          DeclarationFacts = facts; Participants = facts.Keys |> Set.ofSeq }
+    let roDecl : BoundaryReadOnlyBufferDeclaration =
+        { Identity = NodeId 1100; Declaration = NodeId 2; Body = NodeId 1006
+          Formals = [NodeId 1004]; Descriptor = NodeId 72
+          Parameter = 0; CountParameter = None
+          BufferFormal = NodeId 1004; CountFormal = None
+          Contract =
+            { Binding = header.Name + ".fopen"; Parameter = 0
+              Extent = BAREWire.Descriptors.ReadOnlyBufferExtent.UncountedNulTerminated
+              Content = BAREWire.Descriptors.BorrowedContent.Utf8Text
+              Retention = BAREWire.Descriptors.BufferRetention.DuringCall
+              Hypothesis = { Identity = "fopen-path"; Version = "1"; Source = "fixture" } }
+          DeclarationFacts = facts
+          Participants = ParticipantEvidence.Established
+            [ { Role = ParticipantRole.ReadOnlyBufferDeclaration; Node = NodeId 1100; Ordinal = 0; Group = NodeId 1100 }
+              { Role = ParticipantRole.ReadOnlyBufferFormal; Node = NodeId 1004; Ordinal = 0; Group = NodeId 1100 } ] }
+    let imported =
+        { basis.Imports[NodeId 72] with
+            Binding = NodeId 2; Symbol = "fopen"
+            Parameters = [NodeId 1004, BoundaryScalar.ReadOnlyBytes(NodeId 1100)]
+            Result = Some(BoundaryScalar.ResourceHandle(NodeId 7000, true))
+            DeclarationFacts = facts; Participants = facts.Keys |> Set.ofSeq
+            SourceTypes = Map.ofList [NodeId 1004, arrayType; NodeId 1, resultType] }
+    let acquireAccount : BoundaryResourceAcquisition =
+        { Declaration = NodeId 7000; Tag = SettledSlot.Integer(8, None)
+          NoneCase = 0; SomeCase = 1; Conversion = NodeId 970; Cleanup = NodeId 971 }
+    let releaseAccount : BoundaryResourceRelease =
+        { Declaration = NodeId 7000; Acquisition = NodeId 1; Cleanup = NodeId 971 }
+    let resourceUse =
+        match mode with
+        | "release-owned" -> Some(BoundaryResourceUse.ReleaseOwned releaseAccount)
+        | _ -> Some(BoundaryResourceUse.AcquireNullable acquireAccount)
+    let resultAdaptation =
+        if mode = "acquire-nullable-adapted" then
+            Some { Consumer = NodeId 1; Operand = NodeId 1; From = 32; To = 64; Adapt = MeetKind.ExtendSigned }
+        else None
+    let call =
+        { basis.Calls[NodeId 1] with
+            Callee = NodeId 2; Resource = resourceUse; ResultAdaptation = resultAdaptation
+            Arguments = [ { Actual = NodeId 3; Formal = NodeId 1004; Abi = BoundaryScalar.ReadOnlyBytes(NodeId 1100); Adaptation = None; OptionalEntry = None; BufferAbsence = None } ]
+            Result = Some(BoundaryScalar.ResourceHandle(NodeId 7000, true))
+            SourceTypes = imported.SourceTypes; Participants = facts.Keys |> Set.ofSeq }
+    let conversionModel : ResourceConversionModel =
+        { Acquisition = NodeId 1; Declaration = NodeId 7000; Import = NodeId 72
+          OptionType = resultType; HandleType = handleType; Core = NodeId 3
+          PointerBits = 64; SelectedPointerBits = 64; HandleBytes = 8; HandleAlignment = 8
+          TagBits = 8; TagBytes = 1; NoneCase = 0; SomeCase = 1; CaseCount = 2
+          PayloadOffset = 8; OptionBytes = 16; OptionAlignment = 8
+          Arms =
+            [ { NativeNonNull = false; CaseOrdinal = 0; PayloadOrigin = None }
+              { NativeNonNull = true; CaseOrdinal = 1; PayloadOrigin = Some(NodeId 1) } ] }
+    let rootRelation : ResourceEvaluationRelation =
+        { Role = ResourceEvaluationRole.Root; Ordinal = 0; Sources = [NodeId 20; NodeId 21]; Target = NodeId 1 }
+    let cleanupModel : ResourceCleanupModel =
+        { Acquisition = NodeId 1; Declaration = NodeId 7000; Release = NodeId 7026
+          Conversion = NodeId 970; ConversionModel = conversionModel; Entry = 0
+          Points = []; Relations = [rootRelation]; Edges = []; Cases = []; LiteralGuards = []; Exits = [0] }
+    let conversionClaim = controlClaim "res-conv" "foreign-resource-nullable-conversion" (ObligationBody.ResourceConversion conversionModel)
+    let cleanupClaim = controlClaim "res-clean" "foreign-resource-cleanup" (ObligationBody.ResourceCleanup cleanupModel)
+    let retentionClaim =
+        controlClaim "ro-ret" "foreign-buffer-retention-domination"
+            (ObligationBody.BufferRetentionDomination
+                { Call = NodeId 1; Declaration = NodeId 1100; Buffer = NodeId 3; Residence = NodeId 11
+                  Mode = BufferRetentionMode.DuringCall; AcquireOrder = 1; RetirementOrders = [] })
+    let termClaim =
+        controlClaim "ro-term" "foreign-uncounted-path-termination"
+            (ObligationBody.UncountedPathTermination
+                { Call = NodeId 1; Declaration = NodeId 1100; Parameter = 0; Source = NodeId 3
+                  Mode = UncountedPathStagingMode.StaticImageZeroCopy 0; ByteLength = 4I
+                  RequiresNoInteriorNul = true; RequiresTrailingNul = true })
+    let roUse : BoundaryReadOnlyBufferUse =
+        { Call = NodeId 1; Declaration = NodeId 1100; Parameter = 0; Buffer = NodeId 3
+          Residence = NodeId 11; Retirements = []; Copies = 0
+          Crossing = BoundaryReadOnlyBufferCrossing.StaticImageNulBorrowed(0, NodeId 3, 4I, NodeId 953)
+          RetentionProof = NodeId 952; AccessExclusivityProof = None
+          Participants = ParticipantEvidence.Established
+            [ { Role = ParticipantRole.ReadOnlyBufferCall; Node = NodeId 1; Ordinal = 0; Group = NodeId 1 }
+              { Role = ParticipantRole.ReadOnlyBufferDeclaration; Node = NodeId 1100; Ordinal = 0; Group = NodeId 1 }
+              { Role = ParticipantRole.ReadOnlyBufferActual; Node = NodeId 3; Ordinal = 0; Group = NodeId 1 }
+              { Role = ParticipantRole.ReadOnlyBufferResidence; Node = NodeId 11; Ordinal = 0; Group = NodeId 1 } ] }
+    let pool : StaticStringPool =
+        { Symbol = ".rodata.str"; Bytes = [byte 'a'; byte 'b'; byte 'c'; byte 'd'; 0uy]; Alignment = 1; Size = 5; UsedSize = 5
+          Entries = [{ NodeIds = [NodeId 3]; Content = "abcd"; Offset = 0; Length = 4; StorageLength = 5 }]
+          SpaceName = "rodata"; Capacity = 5L; SpaceAlignment = 1; Granularity = 1; DeclarationNode = NodeId 2 }
+    let premise : BoundarySourcePremise =
+        { Shape = { Form = "unit"; Text = []; Numbers = []; References = []; Children = []; Parent = None; SourceType = unitType }
+          EmbeddedTypes = []; ConstructorFacts = []; Reachable = true; Range = None
+          ExternLibrary = None; ExternSymbol = None; HasExtern = false; Metadata = Map.empty }
+    let evidence : BoundaryResourceEvidence =
+        { Platform = NodeId 4; Core = NodeId 3
+          Premises = Map.ofList [NodeId 3, premise; NodeId 4, premise]
+          Roots = [NodeId 20, NodeId 21, NodeId 1]
+          Relations = [rootRelation]
+          Accesses = [] }
+    let n20 = { node 20 (SemanticKind.Binding("root", false, false, None)) [21] with Type = unitType }
+    let n21 = { node 21 (SemanticKind.Lambda([], NodeId 1, [], None, LambdaContext.RegularClosure)) [1] with Type = unitType }
+    let callNode = { held.Nodes[NodeId 1] with Kind = SemanticKind.Application(NodeId 2, [NodeId 3]); Children = [NodeId 2; NodeId 3]; Type = resultType }
+    let resourceSources = [NodeId 1; NodeId 20; NodeId 21] @ (facts.Keys |> Seq.toList)
+    let optionRepr =
+        ValueRepresentation.Union(
+            [ ("None", []); ("Some", [ValueRepresentation.Scalar(SettledSlot.CHandle(handleType, 64, 8))]) ],
+            Some(8, 16, 8))
+    let revision =
+        { held with
+            StaticStringPool = Some pool
+            LiteralStorage = held.LiteralStorage.Add(NodeId 3, LiteralStorage.Materialized 0)
+            Nodes = held.Nodes.Add(NodeId 1, callNode).Add(NodeId 20, n20).Add(NodeId 21, n21)
+            CurrentClaims =
+                held.CurrentClaims
+                    .Add(NodeId 952, retentionClaim)
+                    .Add(NodeId 953, termClaim)
+                    .Add(NodeId 970, conversionClaim)
+                    .Add(NodeId 971, cleanupClaim)
+            Obligations = held.Obligations @ [retentionClaim; termClaim; conversionClaim; cleanupClaim]
+            ObligationSources =
+                held.ObligationSources
+                    .Add(NodeId 952, [[NodeId 1; NodeId 3]])
+                    .Add(NodeId 953, [[NodeId 1; NodeId 3]])
+                    .Add(NodeId 970, [resourceSources])
+                    .Add(NodeId 971, [resourceSources])
+            Emission =
+                { held.Emission with
+                    Boundary =
+                        { basis with
+                            Imports = Map.ofList [NodeId 72, imported]
+                            Calls = Map.ofList [NodeId 1, call]
+                            ResourceDeclarations = Map.ofList [NodeId 7000, resourceDecl]
+                            ResourceEvidence = Some evidence
+                            ReadOnlyBufferDeclarations = Map.ofList [NodeId 1100, roDecl]
+                            ReadOnlyBufferUses = Map.ofList [(NodeId 1, 0), roUse] }
+                    Memory =
+                        { held.Emission.Memory with
+                            Operations = Map.empty
+                            ArrayCopies = Map.empty
+                            Required = Set.empty }
+                    Numeric =
+                        { held.Emission.Numeric with
+                            Operations = Map.empty; OperationRequired = Set.empty; ResultSites = Set.empty
+                            Required = Set.empty; Values = held.Emission.Numeric.Values.Remove(NodeId 1) } } }
+        |> covered
+    let revision =
+        { revision with
+            Platform = { revision.Platform with Pointer = Ok 64 }
+            Emission =
+                { revision.Emission with
+                    Numeric =
+                        { revision.Emission.Numeric with
+                            OccurrenceRepresentations = revision.Emission.Numeric.OccurrenceRepresentations.Add(NodeId 1, Ok optionRepr) } }
+            SourceReadings =
+                { revision.SourceReadings with
+                    ContextHeaders = revision.SourceReadings.ContextHeaders.Add(NodeId 50, header)
+                    Contexts = revision.SourceReadings.Contexts.Add(NodeId 50, [[]])
+                    Ports = revision.SourceReadings.Ports.Add((NodeId 50, OccurrencePort.ModuleDeclaration), header.Ports[OccurrencePort.ModuleDeclaration]) } }
+    let violations = Integrity.check revision
+    if expectedPart = "" then
+        Assert.Empty violations
+    else
+        Assert.Contains(violations, fun v -> v.Part = expectedPart)

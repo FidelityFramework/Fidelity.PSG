@@ -2551,8 +2551,13 @@ module Integrity =
             let account =
                 match original, call with
                 | Some declaration, Some call ->
+                    let resourceAllowed =
+                        match call.Resource with
+                        | None -> true
+                        | Some(BoundaryResourceUse.AcquireNullable _) -> call.ResultAdaptation.IsNone
+                        | Some(BoundaryResourceUse.ReleaseOwned _) -> false
                     row.Call = site && row.Parameter = ordinal && row.Parameter = declaration.Parameter &&
-                    row.Copies = 0 && call.Entry.IsNone && call.Resource.IsNone &&
+                    row.Copies = 0 && call.Entry.IsNone && resourceAllowed &&
                     not (boundary.WritableBufferUses.ContainsKey(site, ordinal)) &&
                     (nonFixedFormalIndex declaration.DeclarationFacts declaration.Descriptor ordinal
                      |> Option.bind (fun fi -> List.tryItem fi call.Arguments)
