@@ -871,7 +871,7 @@ let ``binary codec roundtrips separated witness region digests and proof support
     let bytes = Binary.encode limits expected |> take
     let roundtripped = Binary.decode limits bytes |> take
     let reencoded = Binary.encode limits roundtripped |> take
-    Assert.Equal<byte array>(bytes, reencoded)
+    Assert.Equal<byte>(bytes, reencoded)
     Assert.Equal<WitnessSegmentation option>(expected.Codata.WitnessSegmentation, roundtripped.Codata.WitnessSegmentation)
     let substituted =
         let badRegions = regions |> List.map (fun r ->

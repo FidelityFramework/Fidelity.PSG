@@ -5373,6 +5373,11 @@ module Integrity =
                         imported.Scope
                         (revision.SourceReadings.ContextHeaders.ContainsKey imported.Scope)
 
+                let isAsciiIdentifier (value: string) =
+                    not (System.String.IsNullOrEmpty value)
+                    && (System.Char.IsAsciiLetter value[0] || value[0] = '_')
+                    && (value |> Seq.forall (fun ch -> System.Char.IsAsciiLetterOrDigit ch || ch = '_'))
+
                 match imported.Target with
                 | IntrinsicWriteEndpoint.SyscallNumber number when number < 0I ->
                     yield
@@ -5380,12 +5385,12 @@ module Integrity =
                             "Emission.Boundary.IntrinsicWriteImports.Target"
                             key
                             "An intrinsic write syscall number cannot be negative."
-                | IntrinsicWriteEndpoint.HostApiSymbol symbol when System.String.IsNullOrWhiteSpace symbol ->
+                | IntrinsicWriteEndpoint.HostApiSymbol symbol when not (isAsciiIdentifier symbol) ->
                     yield
                         defect
                             "Emission.Boundary.IntrinsicWriteImports.Target"
                             key
-                            "An intrinsic write host API symbol cannot be empty."
+                            "An intrinsic write host API symbol must be a non-empty ASCII identifier."
                 | _ -> ()
         ]
 

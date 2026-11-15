@@ -1961,7 +1961,14 @@ let ``an intrinsic import accepts host API symbols and rejects malformed targets
     Assert.Empty(Integrity.check hostApi)
     let encoded = Binary.encode BinaryTests.limits hostApi |> BinaryTests.take
     Assert.Equal(Result.Ok hostApi, Binary.decode BinaryTests.limits encoded)
-    for malformed in [IntrinsicWriteEndpoint.SyscallNumber -1I; IntrinsicWriteEndpoint.HostApiSymbol ""] do
+    for malformed in
+        [ IntrinsicWriteEndpoint.SyscallNumber -1I
+          IntrinsicWriteEndpoint.HostApiSymbol ""
+          IntrinsicWriteEndpoint.HostApiSymbol "   "
+          IntrinsicWriteEndpoint.HostApiSymbol "Write File"
+          IntrinsicWriteEndpoint.HostApiSymbol "9WriteFile"
+          IntrinsicWriteEndpoint.HostApiSymbol "Write-File"
+          IntrinsicWriteEndpoint.HostApiSymbol "Writeλ" ] do
         let violation = within "Emission.Boundary.IntrinsicWriteImports.Target" (Integrity.check (withTarget malformed))
         Assert.Equal(Some(NodeId 2), violation.Node)
 

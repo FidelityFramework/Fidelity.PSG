@@ -2,6 +2,10 @@
 bin/
 obj/
 out/
+artifacts/
+
+# Agent / workspace state
+.serena/
 
 # NuGet packages
 *.nupkg
