@@ -2943,8 +2943,9 @@ let private conditionalOptionalCallback () =
     let header = {held.SourceReadings.ContextHeaders[NodeId 50] with Identity = NodeId 400; Name = "OptionalControl"}
     let target : BoundaryPlatformPremise =
         {Id = "optional-control"; Description = None; Loading = None; LibraryPath = None; SourcePaths = Set.singleton "fixture"
-         Architecture = Some "x86_64"; OS = Some "linux"; RuntimeClaim = None; Substrate = None
-         Dimensions = Map.ofList ["Pointer", 64; "Register", 64]; Representations = Map.empty; EndpointReturns = Map.empty}
+         Architecture = Some "x86_64"; OS = Some "linux"; Endianness = None; RuntimeClaim = None; Substrate = None
+         Dimensions = Map.ofList ["Pointer", 64; "Register", 64]; Representations = Map.empty; EndpointReturns = Map.empty
+         Spaces = []; Buffers = []; SharedBufferRegions = []}
     let premise shape embedded reachable : BoundarySourcePremise =
         {Shape = shape; EmbeddedTypes = embedded; ConstructorFacts = []; Reachable = reachable; Range = None; ExternLibrary = None; ExternSymbol = None; HasExtern = false; Metadata = Map.empty}
     let lifetime : ProgramImageCodeLifetime = {Module = NodeId 400; Binding = NodeId 401; Implementation = NodeId 10}
@@ -3811,8 +3812,9 @@ let private optionalBoundaryControl absent =
     let header = {boundaryCalleeFacts.SourceReadings.ContextHeaders[NodeId 50] with Identity=NodeId 400;Name="OptionalControl"}
     let target : BoundaryPlatformPremise =
         {Id="optional-control";Description=None;Loading=None;LibraryPath=None;SourcePaths=Set.singleton "fixture"
-         Architecture=Some "x86_64";OS=Some "linux";RuntimeClaim=None;Substrate=None
-         Dimensions=Map.ofList ["Pointer",64;"Register",64];Representations=Map.empty;EndpointReturns=Map.empty}
+         Architecture=Some "x86_64";OS=Some "linux";Endianness=None;RuntimeClaim=None;Substrate=None
+         Dimensions=Map.ofList ["Pointer",64;"Register",64];Representations=Map.empty;EndpointReturns=Map.empty
+         Spaces=[];Buffers=[];SharedBufferRegions=[]}
     let premise shape embedded reachable : BoundarySourcePremise =
         {Shape=shape;EmbeddedTypes=embedded;ConstructorFacts=[];Reachable=reachable;Range=None;ExternLibrary=None;ExternSymbol=None;HasExtern=false;Metadata=Map.empty}
     let sourcePremises =
@@ -6737,21 +6739,50 @@ let ``read-only buffer use admits AcquireNullable without result adaptation and 
 [<InlineData("same-space-overlap", "Emission.Boundary.SharedBufferPlacements.Extent")>]
 [<InlineData("view-slot-mismatch", "Emission.Boundary.SharedBufferViewUses.Account")>]
 [<InlineData("view-obligation-mismatch", "Emission.Boundary.SharedBufferViewUses.Obligations")>]
+[<InlineData("unmapped-call", "Emission.Boundary.SharedBufferViewUses.Account")>]
+[<InlineData("duplicate-role-node", "Emission.Boundary.SharedBufferViewUses.Account")>]
+[<InlineData("missing-release-call", "Emission.Boundary.SharedBufferViewUses.Account")>]
+[<InlineData("order-violation", "Emission.Boundary.SharedBufferViewUses.Account")>]
+[<InlineData("readonly-write-projection", "Emission.Boundary.SharedBufferViewUses.Account")>]
+[<InlineData("unquoted-declaration-facts", "Emission.Boundary.SharedBufferPlacements.Account")>]
+[<InlineData("element-type-mismatch", "Emission.Boundary.SharedBufferViewUses.Account")>]
+[<InlineData("platform-endianness-mismatch", "Emission.Boundary.SharedBufferPlacements.Layout")>]
+[<InlineData("duplicate-placement-name", "Emission.Boundary.SharedBufferPlacements.Account")>]
+[<InlineData("premise-mismatch", "Emission.Boundary.SharedBufferPlacements.Account")>]
+[<InlineData("sync-order-collision", "Emission.Boundary.SharedBufferViewUses.Account")>]
+[<InlineData("unbracketed-foreign-use", "Emission.Boundary.SharedBufferViewUses.Account")>]
+[<InlineData("sequential-order-inversion", "Emission.Boundary.SharedBufferViewUses.Account")>]
+[<InlineData("unrooted-projection", "Emission.Boundary.SharedBufferViewUses.Account")>]
+[<InlineData("space-notes-drift", "Emission.Boundary.SharedBufferPlacements.Account")>]
+[<InlineData("buffer-slot-drift", "Emission.Boundary.SharedBufferPlacements.Account")>]
+[<InlineData("release-arg-scalar-projection", "Emission.Boundary.SharedBufferViewUses.Account")>]
+[<InlineData("unlisted-graph-write", "Emission.Boundary.SharedBufferViewUses.Account")>]
+[<InlineData("nested-index-write", "Emission.Boundary.SharedBufferViewUses.Account")>]
+[<InlineData("upcast-handle-escape", "Emission.Boundary.SharedBufferViewUses.Account")>]
+[<InlineData("mutable-binding-alias", "Emission.Boundary.SharedBufferViewUses.Account")>]
+[<InlineData("release-inside-loop", "Emission.Boundary.SharedBufferViewUses.Account")>]
+[<InlineData("valid-entrypoint-lambda", "")>]
+[<InlineData("entrypoint-lambda-leaked", "Emission.Boundary.SharedBufferPlacements.Lifetime")>]
+[<InlineData("non-entry-lambda-leaked", "Emission.Boundary.SharedBufferViewUses.Account")>]
+[<InlineData("closure-capture-projection", "Emission.Boundary.SharedBufferViewUses.Account")>]
+[<InlineData("fieldset-store-handle", "Emission.Boundary.SharedBufferViewUses.Account")>]
+[<InlineData("branch-alias-escape", "Emission.Boundary.SharedBufferViewUses.Account")>]
+[<InlineData("closure-return-handle", "Emission.Boundary.SharedBufferViewUses.Account")>]
 let ``shared buffer placement and view use enforce FS9220-FS9223 zero-copy contracts`` mode expectedPart =
-    let held = bindingWithLiteral
-    let unitType = held.Nodes[NodeId 1].Type
+    let isReadOnlyViewMode = (mode = "readonly-write-projection")
+    let fieldAccess = if isReadOnlyViewMode then BAREWire.Hardware.AccessKind.ReadOnly else BAREWire.Hardware.AccessKind.ReadWrite
     let fields : BAREWire.Hardware.FieldDescriptor array =
         if mode = "raw-pointer" then
-            [| { Name = "ptr"; Offset = 0; Repr = BAREWire.Hardware.Repr.Pointer; Count = 1; Access = BAREWire.Hardware.AccessKind.ReadWrite; BitFields = [||]; Documentation = None }
-               { Name = "timestamp"; Offset = 8; Repr = BAREWire.Hardware.Repr.U64; Count = 1; Access = BAREWire.Hardware.AccessKind.ReadWrite; BitFields = [||]; Documentation = None } |]
+            [| { Name = "ptr"; Offset = 0; Repr = BAREWire.Hardware.Repr.Pointer; Count = 1; Access = fieldAccess; BitFields = [||]; Documentation = None }
+               { Name = "timestamp"; Offset = 8; Repr = BAREWire.Hardware.Repr.U64; Count = 1; Access = fieldAccess; BitFields = [||]; Documentation = None } |]
         elif mode = "overlapping-fields" then
-            [| { Name = "left"; Offset = 0; Repr = BAREWire.Hardware.Repr.U64; Count = 1; Access = BAREWire.Hardware.AccessKind.ReadWrite; BitFields = [||]; Documentation = None }
-               { Name = "right"; Offset = 4; Repr = BAREWire.Hardware.Repr.F32; Count = 1; Access = BAREWire.Hardware.AccessKind.ReadWrite; BitFields = [||]; Documentation = None }
-               { Name = "timestamp"; Offset = 8; Repr = BAREWire.Hardware.Repr.U64; Count = 1; Access = BAREWire.Hardware.AccessKind.ReadWrite; BitFields = [||]; Documentation = None } |]
+            [| { Name = "left"; Offset = 0; Repr = BAREWire.Hardware.Repr.U64; Count = 1; Access = fieldAccess; BitFields = [||]; Documentation = None }
+               { Name = "right"; Offset = 4; Repr = BAREWire.Hardware.Repr.F32; Count = 1; Access = fieldAccess; BitFields = [||]; Documentation = None }
+               { Name = "timestamp"; Offset = 8; Repr = BAREWire.Hardware.Repr.U64; Count = 1; Access = fieldAccess; BitFields = [||]; Documentation = None } |]
         else
-            [| { Name = "left"; Offset = 0; Repr = BAREWire.Hardware.Repr.F32; Count = 1; Access = BAREWire.Hardware.AccessKind.ReadWrite; BitFields = [||]; Documentation = None }
-               { Name = "right"; Offset = 4; Repr = BAREWire.Hardware.Repr.F32; Count = 1; Access = BAREWire.Hardware.AccessKind.ReadWrite; BitFields = [||]; Documentation = None }
-               { Name = "timestamp"; Offset = 8; Repr = BAREWire.Hardware.Repr.U64; Count = 1; Access = BAREWire.Hardware.AccessKind.ReadWrite; BitFields = [||]; Documentation = None } |]
+            [| { Name = "left"; Offset = 0; Repr = BAREWire.Hardware.Repr.F32; Count = 1; Access = fieldAccess; BitFields = [||]; Documentation = None }
+               { Name = "right"; Offset = 4; Repr = BAREWire.Hardware.Repr.F32; Count = 1; Access = fieldAccess; BitFields = [||]; Documentation = None }
+               { Name = "timestamp"; Offset = 8; Repr = BAREWire.Hardware.Repr.U64; Count = 1; Access = fieldAccess; BitFields = [||]; Documentation = None } |]
     let structLayout : BAREWire.Hardware.StructDescriptor =
         { Name = "AudioFrame"
           Layout =
@@ -6761,6 +6792,7 @@ let ``shared buffer placement and view use enforce FS9220-FS9223 zero-copy contr
           MayAlias = false
           FlexibleArray = None
           Documentation = None }
+    let platformAccess = if isReadOnlyViewMode then BAREWire.Platform.Access.ReadOnly else BAREWire.Platform.Access.ReadWrite
     let space : BAREWire.Platform.MemorySpace =
         { Name = "audio_ring"
           Kind = BAREWire.Platform.MemoryKind.ViewBacked
@@ -6768,19 +6800,30 @@ let ``shared buffer placement and view use enforce FS9220-FS9223 zero-copy contr
           Alignment = 64
           Granularity = 64
           Growth = BAREWire.Platform.Growth.Fixed
-          Access = BAREWire.Platform.Access.ReadWrite
+          Access = platformAccess
           Base = None
           Notes = ""
           MapKind = ""
           Since = ""
           Until = "" }
+    let bufferSchema : BAREWire.Platform.BufferSchema =
+        { Name = "AudioFrameRing"
+          Schema = "AudioFrameRing"
+          Capacity = 16384L
+          Framing = "unframed"
+          Delimiter = 0
+          TrimDelimiter = false
+          Space = "audio_ring"
+          Lifetime = "process"
+          Access = platformAccess
+          Slot = 0 }
     let elemCount = if mode = "extent-overflow" then 2048 else 1024
     let regionExtent = 16384
     let regionAlign = if mode = "alignment" then 4 else 64
     let retentionEnd = if mode = "lifetime-escape" then 3 else 2
-    let leaked = (mode = "lifetime-leak")
+    let leaked = (mode = "lifetime-leak" || mode = "entrypoint-lambda-leaked" || mode = "non-entry-lambda-leaked")
     let concurrentRace = (mode = "exclusivity-race")
-    let spaceAccess = if mode = "exclusivity-readonly" then "ReadOnly" else "ReadWrite"
+    let spaceAccess = if mode = "exclusivity-readonly" || isReadOnlyViewMode then "ReadOnly" else "ReadWrite"
     let spaceDesc : BAREWire.Descriptors.MemorySpaceDescriptor =
         { Space = "audio_ring"
           MemoryRegion = BAREWire.Hardware.MemoryRegionKind.SRAM
@@ -6796,7 +6839,7 @@ let ``shared buffer placement and view use enforce FS9220-FS9223 zero-copy contr
         { Schema = "AudioFrameRing"
           Element = BAREWire.Hardware.Repr.F32
           Alignment = 8
-          Access = BAREWire.Hardware.AccessKind.ReadWrite }
+          Access = fieldAccess }
     let placement : BAREWire.Platform.SharedBufferPlacement =
         { Name = "audio_ring_frames"
           SpaceDescriptor = spaceDesc
@@ -6815,24 +6858,32 @@ let ``shared buffer placement and view use enforce FS9220-FS9223 zero-copy contr
           UnmapDepth = 3
           LeakedAtExit = leaked
           ConcurrentClefMutation = concurrentRace
-          LibraryMutatesBuffer = true
+          LibraryMutatesBuffer = not isReadOnlyViewMode
           OverlappingMutableShare = false
           MaxAccessedElementIndex = 1023 }
+    let regionDesc : BAREWire.Descriptors.SharedBufferRegionDescriptor =
+        { Placement = "audio_ring_frames"
+          Acquire = "Audio.acquireRing"
+          Release = if leaked then None else Some "Audio.releaseRing"
+          Sync = [| "Audio.syncRing" |]
+          ForeignUses = [| "Audio.processRing" |] }
+    let platformEndianness = if mode = "platform-endianness-mismatch" then "big" else "little"
     let desc : BAREWire.Platform.PlatformDescription =
         { Id = "test-desc"
           DisplayName = "Test Platform"
           Substrate = "cpu"
-          Core = Some (BAREWire.Platform.TargetCore.create "linux" "x86_64" 64 "little" "glibc")
+          Core = Some (BAREWire.Platform.TargetCore.create "linux" "x86_64" 64 platformEndianness "glibc")
           Spaces = [| space |]
           ProgramLifetime = None
           Surfaces = [||]
-          Buffers = [||]
+          Buffers = [| bufferSchema |]
           Transports = [||]
           Lifecycle = { Clocks = [||]; Resets = [||]; Entry = ""; Teardown = ""; Persistence = BAREWire.Platform.Persistence.Volatile }
           Notes = [||]
           Limits = [||] }
     if mode = "valid" then
         Assert.Empty(BAREWire.Platform.Check.checkSharedBufferPlacement desc placement)
+        Assert.Empty(BAREWire.Platform.Check.checkSharedBufferRegions [| placement |] [| regionDesc |])
     let toClaim (ob: BAREWire.Platform.Obligation) : ObligationInfo =
         { Id = ob.Id
           Kind = ob.Kind
@@ -6841,9 +6892,13 @@ let ``shared buffer placement and view use enforce FS9220-FS9223 zero-copy contr
           Source = ob.Source
           Refs = Array.toList ob.Refs
           Body = ObligationBody.SharedBufferPlacementObligation ob }
-    let placement2 = { placement with Name = "audio_ring_frames_overlap"; SpaceOffset = 0L }
+    let placement2Name = if mode = "duplicate-placement-name" then "audio_ring_frames" else "audio_ring_frames_overlap"
+    let placement2Offset = if mode = "duplicate-placement-name" then 16384L else 0L
+    let placement2 = { placement with Name = placement2Name; SpaceOffset = placement2Offset }
+    let regionDesc2 = { regionDesc with Placement = placement2Name }
+    let hasSecondPlacement = (mode = "same-space-overlap" || mode = "duplicate-placement-name")
     let allPlacements =
-        if mode = "same-space-overlap" then [| placement; placement2 |] else [| placement |]
+        if hasSecondPlacement then [| placement; placement2 |] else [| placement |]
     let rawObligations =
         BAREWire.Platform.Obligations.sharedBufferObligations desc allPlacements
         |> Array.map (fun (ob: BAREWire.Platform.Obligation) ->
@@ -6861,10 +6916,162 @@ let ``shared buffer placement and view use enforce FS9220-FS9223 zero-copy contr
     let obLifetime = rawObligations[2]
     let obExclusivity = rawObligations[3]
     let obSpaceExtent = rawObligations[rawObligations.Length - 1]
-    let declFact : BoundaryDeclarationFact =
+    let makePlacementDeclFacts
+        (baseId: int)
+        (p: BAREWire.Platform.SharedBufferPlacement)
+        (rDesc: BAREWire.Descriptors.SharedBufferRegionDescriptor) : Map<NodeId, BoundaryDeclarationFact> =
+        let s = p.SpaceDescriptor
+        let mkFact form text numbers refs parent : BoundaryDeclarationFact =
+            let nodeRefs = refs |> List.map NodeId
+            { Form = form; Text = text; Numbers = numbers; References = nodeRefs; Children = nodeRefs; Parent = parent |> Option.map NodeId; SourceType = unitType }
+        let mkStr id value parent = id, mkFact "string" [ value ] [] [] (Some parent)
+        let mkInt id (value: int64) parent = id, mkFact "integer" [] [ bigint value ] [] (Some parent)
+        let mkBool id (value: bool) parent = id, mkFact "boolean" [] [ if value then 1I else 0I ] [] (Some parent)
+        let mkCase id name refs parent = id, mkFact "case" [ name ] [] refs (Some parent)
+        let mkArr id refs parent = id, mkFact "array" [] [] refs (Some parent)
+        let spaceNodeId = baseId + 2
+        let bufferNodeId = baseId + 3
+        let spaceDescId = baseId + 4
+        let structDescId = baseId + 5
+        let viewDescId = baseId + 6
+        let regionDescId = baseId + 7
+        let recId = baseId + 20
+        let pFields =
+            [ "Name", mkStr (baseId + 21) p.Name recId
+              "SpaceDescriptor", (baseId + 38, mkFact "reference" [ "spaceDesc" ] [] [ spaceDescId ] (Some recId))
+              "SpaceOffset", mkInt (baseId + 22) p.SpaceOffset recId
+              "StructLayout", (baseId + 39, mkFact "reference" [ "structLayout" ] [] [ structDescId ] (Some recId))
+              "ViewLayout", (baseId + 40, mkFact "reference" [ "viewLayout" ] [] [ viewDescId ] (Some recId))
+              "MeasuredElementSize", mkInt (baseId + 23) (int64 p.MeasuredElementSize) recId
+              "LayoutAlignment", mkInt (baseId + 24) (int64 p.LayoutAlignment) recId
+              "LayoutByteOrder", mkStr (baseId + 25) p.LayoutByteOrder recId
+              "HasRawPointerFields", mkBool (baseId + 26) p.HasRawPointerFields recId
+              "HasVerifiedExports", mkBool (baseId + 27) p.HasVerifiedExports recId
+              "MappedDepth", mkInt (baseId + 28) (int64 p.MappedDepth) recId
+              "FirstUseDepth", mkInt (baseId + 29) (int64 p.FirstUseDepth) recId
+              "LastUseDepth", mkInt (baseId + 30) (int64 p.LastUseDepth) recId
+              "LibraryRetentionEndDepth", mkInt (baseId + 31) (int64 p.LibraryRetentionEndDepth) recId
+              "UnmapDepth", mkInt (baseId + 32) (int64 p.UnmapDepth) recId
+              "LeakedAtExit", mkBool (baseId + 33) p.LeakedAtExit recId
+              "ConcurrentClefMutation", mkBool (baseId + 34) p.ConcurrentClefMutation recId
+              "LibraryMutatesBuffer", mkBool (baseId + 35) p.LibraryMutatesBuffer recId
+              "OverlappingMutableShare", mkBool (baseId + 36) p.OverlappingMutableShare recId
+              "MaxAccessedElementIndex", mkInt (baseId + 37) (int64 p.MaxAccessedElementIndex) recId ]
+        let sFields =
+            [ "Space", mkStr (baseId + 41) s.Space spaceDescId
+              "MemoryRegion", mkStr (baseId + 49) s.MemoryRegion spaceDescId
+              "Access", mkStr (baseId + 50) s.Access spaceDescId
+              "ByteOrder", mkStr (baseId + 42) s.ByteOrder spaceDescId
+              "ElementSize", mkInt (baseId + 43) (int64 s.ElementSize) spaceDescId
+              "ElementCount", mkInt (baseId + 44) (int64 s.ElementCount) spaceDescId
+              "RegionByteExtent", mkInt (baseId + 45) (int64 s.RegionByteExtent) spaceDescId
+              "RegionAlignment", mkInt (baseId + 46) (int64 s.RegionAlignment) spaceDescId
+              "RegionLifetimeDepth", mkInt (baseId + 47) (int64 s.RegionLifetimeDepth) spaceDescId
+              "LibraryRetentionDepth", mkInt (baseId + 48) (int64 s.LibraryRetentionDepth) spaceDescId ]
+        let layoutRecId = baseId + 53
+        let fieldsArrId = baseId + 56
+        let fieldRecordsAndProps =
+            p.StructLayout.Layout.Fields
+            |> Array.toList
+            |> List.mapi (fun idx df ->
+                let fRecId = baseId + 100 + idx * 10
+                let bfArrId = fRecId + 6
+                let ff =
+                    [ "Name", mkStr (fRecId + 1) df.Name fRecId
+                      "Offset", mkInt (fRecId + 2) (int64 df.Offset) fRecId
+                      "Repr", mkStr (fRecId + 3) df.Repr fRecId
+                      "Count", mkInt (fRecId + 4) (int64 df.Count) fRecId
+                      "Access", mkStr (fRecId + 5) df.Access fRecId
+                      "BitFields", mkArr bfArrId [] fRecId ]
+                let fRec = fRecId, mkFact "record" (ff |> List.map fst) [] (ff |> List.map (snd >> fst)) (Some fieldsArrId)
+                fRecId, fRec :: (ff |> List.map snd))
+        let fRecIds = fieldRecordsAndProps |> List.map fst
+        let fFactEntries = fieldRecordsAndProps |> List.collect snd
+        let lFields =
+            [ "Size", mkInt (baseId + 54) (int64 p.StructLayout.Layout.Size) layoutRecId
+              "Alignment", mkInt (baseId + 55) (int64 p.StructLayout.Layout.Alignment) layoutRecId
+              "Fields", mkArr fieldsArrId fRecIds layoutRecId ]
+        let flexNoneId = baseId + 57
+        let stFields =
+            [ "Name", mkStr (baseId + 51) p.StructLayout.Name structDescId
+              "MayAlias", mkBool (baseId + 52) p.StructLayout.MayAlias structDescId
+              "FlexibleArray", mkCase flexNoneId "None" [] structDescId
+              "Layout", (layoutRecId, mkFact "record" (lFields |> List.map fst) [] (lFields |> List.map (snd >> fst)) (Some structDescId)) ]
+        let vFields =
+            [ "Schema", mkStr (baseId + 61) p.ViewLayout.Schema viewDescId
+              "Element", mkStr (baseId + 63) p.ViewLayout.Element viewDescId
+              "Alignment", mkInt (baseId + 62) (int64 p.ViewLayout.Alignment) viewDescId
+              "Access", mkStr (baseId + 64) p.ViewLayout.Access viewDescId ]
+        let quotedSpaceNotes = if mode = "space-notes-drift" then "drifted-notes" else space.Notes
+        let quotedBufferSlot = if mode = "buffer-slot-drift" then int64 (bufferSchema.Slot + 1) else int64 bufferSchema.Slot
+        let spNodeFields =
+            [ "Name", mkStr (baseId + 71) space.Name spaceNodeId
+              "Kind", mkStr (baseId + 72) space.Kind spaceNodeId
+              "Capacity", mkInt (baseId + 73) space.Capacity spaceNodeId
+              "Alignment", mkInt (baseId + 74) (int64 space.Alignment) spaceNodeId
+              "Granularity", mkInt (baseId + 75) (int64 space.Granularity) spaceNodeId
+              "Growth", mkStr (baseId + 76) space.Growth spaceNodeId
+              "Access", mkStr (baseId + 77) space.Access spaceNodeId
+              "Base", mkCase (baseId + 151) "None" [] spaceNodeId
+              "Notes", mkStr (baseId + 152) quotedSpaceNotes spaceNodeId
+              "MapKind", mkStr (baseId + 153) space.MapKind spaceNodeId
+              "Since", mkStr (baseId + 154) space.Since spaceNodeId
+              "Until", mkStr (baseId + 155) space.Until spaceNodeId ]
+        let bufNodeFields =
+            [ "Name", mkStr (baseId + 81) bufferSchema.Name bufferNodeId
+              "Schema", mkStr (baseId + 82) bufferSchema.Schema bufferNodeId
+              "Capacity", mkInt (baseId + 83) bufferSchema.Capacity bufferNodeId
+              "Framing", mkStr (baseId + 84) bufferSchema.Framing bufferNodeId
+              "Delimiter", mkInt (baseId + 156) (int64 bufferSchema.Delimiter) bufferNodeId
+              "TrimDelimiter", mkBool (baseId + 85) bufferSchema.TrimDelimiter bufferNodeId
+              "Space", mkStr (baseId + 86) bufferSchema.Space bufferNodeId
+              "Lifetime", mkStr (baseId + 157) bufferSchema.Lifetime bufferNodeId
+              "Access", mkStr (baseId + 87) bufferSchema.Access bufferNodeId
+              "Slot", mkInt (baseId + 158) quotedBufferSlot bufferNodeId ]
+        let relOptFactId = baseId + 93
+        let relInnerId = baseId + 94
+        let relExtra =
+            match rDesc.Release with
+            | None -> [ mkCase relOptFactId "None" [] regionDescId ]
+            | Some relStr -> [ mkCase relOptFactId "Some" [ relInnerId ] regionDescId; mkStr relInnerId relStr relOptFactId ]
+        let syncStrId = baseId + 96
+        let fuStrId = baseId + 98
+        let regNodeFields =
+            [ "Placement", mkStr (baseId + 91) rDesc.Placement regionDescId
+              "Acquire", mkStr (baseId + 92) rDesc.Acquire regionDescId
+              "Release", List.head relExtra
+              "Sync", mkArr (baseId + 95) [ syncStrId ] regionDescId
+              "ForeignUses", mkArr (baseId + 97) [ fuStrId ] regionDescId ]
+        let allEntries =
+            [ baseId, mkFact "quotation" [] [] [ recId ] (Some (baseId + 1))
+              baseId + 1, mkFact "binding" [ p.Name ] [ 0I; 0I ] [ baseId ] None
+              spaceNodeId, mkFact "record" (spNodeFields |> List.map fst) [] (spNodeFields |> List.map (snd >> fst)) None
+              bufferNodeId, mkFact "record" (bufNodeFields |> List.map fst) [] (bufNodeFields |> List.map (snd >> fst)) None
+              spaceDescId, mkFact "record" (sFields |> List.map fst) [] (sFields |> List.map (snd >> fst)) None
+              structDescId, mkFact "record" (stFields |> List.map fst) [] (stFields |> List.map (snd >> fst)) None
+              viewDescId, mkFact "record" (vFields |> List.map fst) [] (vFields |> List.map (snd >> fst)) None
+              regionDescId, mkFact "record" (regNodeFields |> List.map fst) [] (regNodeFields |> List.map (snd >> fst)) None
+              recId, mkFact "record" (pFields |> List.map fst) [] (pFields |> List.map (snd >> fst)) (Some baseId) ]
+            @ (pFields |> List.map snd)
+            @ (sFields |> List.map snd)
+            @ (stFields |> List.map snd)
+            @ (lFields |> List.map snd)
+            @ fFactEntries
+            @ (vFields |> List.map snd)
+            @ (spNodeFields |> List.map snd)
+            @ (bufNodeFields |> List.map snd)
+            @ (regNodeFields |> List.map snd)
+            @ (List.tail relExtra)
+            @ [ mkStr syncStrId rDesc.Sync[0] (baseId + 95)
+                mkStr fuStrId rDesc.ForeignUses[0] (baseId + 97) ]
+        allEntries |> List.map (fun (id, f) -> NodeId id, f) |> Map.ofList
+    let unquotedFact : BoundaryDeclarationFact =
         { Form = "quotation"; Text = []; Numbers = []; References = []; Children = []; Parent = None; SourceType = unitType }
     let declFacts =
-        [ 300 .. 306 ] |> List.map (fun id -> NodeId id, declFact) |> Map.ofList
+        if mode = "unquoted-declaration-facts" then
+            [ 300 .. 307 ] |> List.map (fun id -> NodeId id, unquotedFact) |> Map.ofList
+        else
+            makePlacementDeclFacts 300 placement regionDesc
     let placementDecl : BoundarySharedBufferPlacementDeclaration =
         { Identity = NodeId 300
           Declaration = NodeId 301
@@ -6873,77 +7080,354 @@ let ``shared buffer placement and view use enforce FS9220-FS9223 zero-copy contr
           SpaceDescriptorNode = NodeId 304
           StructDescriptorNode = NodeId 305
           ViewDescriptorNode = NodeId 306
+          RegionDescriptorNode = NodeId 307
+          PlatformEndianness = platformEndianness
+          Space = space
+          BufferSchema = bufferSchema
+          RegionDescriptor = regionDesc
           Placement = placement
           Obligations = [ NodeId 310; NodeId 311; NodeId 312; NodeId 313; NodeId 314 ]
           DeclarationFacts = declFacts
           Participants =
             ParticipantEvidence.Established
-                ([ 300 .. 306 ] |> List.mapi (fun idx id -> { Role = ParticipantRole.Site; Node = NodeId id; Ordinal = idx; Group = NodeId 300 })) }
+                ([ 300 .. 307 ] |> List.mapi (fun idx id -> { Role = ParticipantRole.Site; Node = NodeId id; Ordinal = idx; Group = NodeId 300 })) }
     let extraPlacements, extraClaims =
-        if mode = "same-space-overlap" then
-            let declFacts2 = [ 400 .. 406 ] |> List.map (fun id -> NodeId id, declFact) |> Map.ofList
+        if hasSecondPlacement then
+            let declFacts2 = makePlacementDeclFacts 500 placement2 regionDesc2
             let placementDecl2 : BoundarySharedBufferPlacementDeclaration =
-                { Identity = NodeId 400
-                  Declaration = NodeId 401
-                  SpaceNode = NodeId 402
-                  BufferSchemaNode = NodeId 403
-                  SpaceDescriptorNode = NodeId 404
-                  StructDescriptorNode = NodeId 405
-                  ViewDescriptorNode = NodeId 406
+                { Identity = NodeId 500
+                  Declaration = NodeId 501
+                  SpaceNode = NodeId 502
+                  BufferSchemaNode = NodeId 503
+                  SpaceDescriptorNode = NodeId 504
+                  StructDescriptorNode = NodeId 505
+                  ViewDescriptorNode = NodeId 506
+                  RegionDescriptorNode = NodeId 507
+                  PlatformEndianness = platformEndianness
+                  Space = space
+                  BufferSchema = bufferSchema
+                  RegionDescriptor = regionDesc2
                   Placement = placement2
-                  Obligations = [ NodeId 410; NodeId 411; NodeId 412; NodeId 413; NodeId 314 ]
+                  Obligations = [ NodeId 510; NodeId 511; NodeId 512; NodeId 513; NodeId 314 ]
                   DeclarationFacts = declFacts2
                   Participants =
                     ParticipantEvidence.Established
-                        ([ 400 .. 406 ] |> List.mapi (fun idx id -> { Role = ParticipantRole.Site; Node = NodeId id; Ordinal = idx; Group = NodeId 400 })) }
-            [ NodeId 400, placementDecl2 ],
-            [ NodeId 410, toClaim rawObligations[4]
-              NodeId 411, toClaim rawObligations[5]
-              NodeId 412, toClaim rawObligations[6]
-              NodeId 413, toClaim rawObligations[7] ]
+                        ([ 500 .. 507 ] |> List.mapi (fun idx id -> { Role = ParticipantRole.Site; Node = NodeId id; Ordinal = idx; Group = NodeId 500 })) }
+            [ NodeId 500, placementDecl2 ],
+            [ NodeId 510, toClaim rawObligations[4]
+              NodeId 511, toClaim rawObligations[5]
+              NodeId 512, toClaim rawObligations[6]
+              NodeId 513, toClaim rawObligations[7] ]
         else
             [], []
+    let audioFrameType =
+        TypeIdentity.Application(
+            { Declaration = { Module = [ "Audio" ]; Name = "AudioFrame" }
+              Parameters = []
+              NativeKind = None },
+            [])
+    let audioFrameSettledFields : SettledField list =
+        fields
+        |> Array.toList
+        |> List.map (fun df ->
+            let width = BAREWire.Platform.SharedBufferPlacement.viewElementWidth df.Repr
+            let slot =
+                match df.Repr with
+                | "f32" | "f64" -> SettledSlot.Real (width * 8)
+                | "u64" | "i64" | "u32" | "i32" | "u16" | "i16" | "u8" | "i8" -> SettledSlot.Integer(width * 8, Some df.Repr)
+                | _ -> SettledSlot.InlineBytes(width, width)
+            { Name = df.Name
+              Slot = slot
+              Offset = Some df.Offset
+              Size = Some width
+              Align = Some width })
+    let audioFrameSettledLayout =
+        SettledLayout.Record(audioFrameSettledFields, Some structLayout.Layout.Size, Some structLayout.Layout.Alignment)
     let viewLayoutOb = if mode = "view-obligation-mismatch" then NodeId 310 else NodeId 311
     let viewSlot = if mode = "view-slot-mismatch" then SettledSlot.InlineBytes(32, 8) else SettledSlot.InlineBytes(16, 8)
+    let viewElemType = if mode = "element-type-mismatch" then unitType else audioFrameType
+    let syncCallList = if mode = "duplicate-role-node" then [ NodeId 321 ] else [ NodeId 323 ]
+    let relCallOpt =
+        if leaked || mode = "missing-release-call" then None
+        else Some(NodeId 322)
+    let relOrdOpt =
+        if leaked || mode = "missing-release-call" then None
+        else Some 40
+    let syncOrders =
+        if mode = "sync-order-collision" then [ 30 ]
+        elif mode = "unbracketed-foreign-use" then [ 12 ]
+        else [ 20 ]
+    let projOrders =
+        if mode = "order-violation" then [ 5 ]
+        elif mode = "sequential-order-inversion" then [ 38 ]
+        else [ 30 ]
+    let writeProjOrders =
+        if mode = "sequential-order-inversion" then [ 28 ]
+        else [ 35 ]
+    let useParticipantNodes =
+        [ NodeId 1
+          NodeId 300
+          NodeId 321 ]
+        @ (if leaked then [] else [ NodeId 322 ])
+        @ [ NodeId 323
+            NodeId 326
+            NodeId 327
+            NodeId 310
+            NodeId 311
+            NodeId 312
+            NodeId 313
+            NodeId 314 ]
     let viewUse : BoundarySharedBufferViewUse =
         { Site = NodeId 1
           PlacementDeclaration = NodeId 300
-          RegionAcquisitionCall = NodeId 1
-          RegionReleaseCall = Some(NodeId 2)
-          SyncCalls = [ NodeId 2 ]
-          ViewProjections = [ NodeId 2 ]
-          ElementType = unitType
+          RegionAcquisitionCall = NodeId 321
+          RegionReleaseCall = relCallOpt
+          SyncCalls = syncCallList
+          ForeignUseCalls = [ NodeId 326 ]
+          ViewProjections = [ NodeId 1 ]
+          WriteProjections =
+              if (isReadOnlyViewMode && mode <> "readonly-write-projection") || mode = "unlisted-graph-write" || mode = "nested-index-write" then []
+              else [ NodeId 327 ]
+          AcquisitionOrder = 10
+          ReleaseOrder = relOrdOpt
+          SyncOrders = syncOrders
+          ForeignUseOrders = [ 15 ]
+          ProjectionOrders = projOrders
+          WriteProjectionOrders =
+              if (isReadOnlyViewMode && mode <> "readonly-write-projection") || mode = "unlisted-graph-write" || mode = "nested-index-write" then []
+              else writeProjOrders
+          ElementType = viewElemType
           ElementSlot = viewSlot
           Copies = (if mode = "copies" then 1 else 0)
           ExtentObligation = NodeId 310
           LayoutObligation = viewLayoutOb
           LifetimeObligation = NodeId 312
           ExclusivityObligation = NodeId 313
-          SpaceExtentObligation = Some(NodeId 314)
+          SpaceExtentObligation = NodeId 314
           Participants =
             ParticipantEvidence.Established
-                [ { Role = ParticipantRole.Site; Node = NodeId 1; Ordinal = 0; Group = NodeId 1 }
-                  { Role = ParticipantRole.Site; Node = NodeId 2; Ordinal = 1; Group = NodeId 1 }
-                  { Role = ParticipantRole.Site; Node = NodeId 300; Ordinal = 2; Group = NodeId 1 } ] }
+                (useParticipantNodes
+                 |> List.mapi (fun idx n -> { Role = ParticipantRole.Site; Node = n; Ordinal = idx; Group = NodeId 1 })) }
     let claims =
         [ NodeId 310, toClaim obExtent
           NodeId 311, toClaim obLayout
           NodeId 312, toClaim obLifetime
           NodeId 313, toClaim obExclusivity
           NodeId 314, toClaim obSpaceExtent ] @ extraClaims
-    let revision =
-        { held with
-            CurrentClaims = claims |> List.fold (fun acc (id, c) -> acc.Add(id, c)) held.CurrentClaims
-            Obligations = held.Obligations @ (claims |> List.map snd)
-            ObligationSources = claims |> List.fold (fun acc (id, _) -> acc.Add(id, [ [ NodeId 1; NodeId 2 ] ])) held.ObligationSources
+    let projTarget =
+        if mode = "unrooted-projection" then NodeId 2
+        elif mode = "mutable-binding-alias" then NodeId 341
+        else NodeId 321
+    let writeTarget =
+        if mode = "nested-index-write" then NodeId 342
+        else NodeId 321
+    let writeValue =
+        if mode = "fieldset-store-handle" then NodeId 321
+        else NodeId 2
+    let n1 = { node 1 (SemanticKind.FieldGet(projTarget, "left")) [ 2 ] with Parent = Some(NodeId 328); Type = boolType }
+    let n2 = { node 2 (SemanticKind.Literal(NativeLiteral.Bool true)) [] with Parent = Some(NodeId 1); Type = boolType }
+    let n321 = { node 321 (SemanticKind.Application(NodeId 331, [])) [ 331 ] with Parent = Some(NodeId 328) }
+    let n331 = { node 331 (SemanticKind.Literal NativeLiteral.Unit) [] with Parent = Some(NodeId 321) }
+    let n322 = { node 322 (SemanticKind.Application(NodeId 332, [ NodeId 321 ])) [ 332; 321 ] with Parent = Some(NodeId 328) }
+    let n332 = { node 332 (SemanticKind.Literal NativeLiteral.Unit) [] with Parent = Some(NodeId 322) }
+    let n323 = { node 323 (SemanticKind.Application(NodeId 333, [ NodeId 321 ])) [ 333; 321 ] with Parent = Some(NodeId 328) }
+    let n333 = { node 333 (SemanticKind.Literal NativeLiteral.Unit) [] with Parent = Some(NodeId 323) }
+    let n326 = { node 326 (SemanticKind.Application(NodeId 336, [ NodeId 321 ])) [ 336; 321 ] with Parent = Some(NodeId 328) }
+    let n336 = { node 336 (SemanticKind.Literal NativeLiteral.Unit) [] with Parent = Some(NodeId 326) }
+    let n327 = { node 327 (SemanticKind.FieldSet(writeTarget, "right", writeValue)) [] with Parent = Some(NodeId 328) }
+    let seqItems =
+        if mode = "sequential-order-inversion" then [ NodeId 1; NodeId 327 ]
+        elif leaked then [ NodeId 321; NodeId 326; NodeId 323; NodeId 1; NodeId 327 ]
+        else [ NodeId 321; NodeId 326; NodeId 323; NodeId 1; NodeId 327; NodeId 322 ]
+    let seqChildIds = seqItems |> List.map NodeId.value
+    let n328 = node 328 (SemanticKind.Sequential seqItems) seqChildIds
+    let extraMutantNodes =
+        if mode = "nested-index-write" then
+            [ node 342 (SemanticKind.IndexGet(NodeId 321, NodeId 2)) [ 321; 2 ] ]
+        elif mode = "upcast-handle-escape" then
+            [ node 343 (SemanticKind.Upcast(NodeId 321, unitType)) [ 321 ] ]
+        elif mode = "mutable-binding-alias" then
+            [ node 340 (SemanticKind.Binding("mutH", true, false, None)) [ 321 ]
+              node 341 (SemanticKind.VarRef("mutH", Some(NodeId 340))) [] ]
+        elif mode = "release-inside-loop" then
+            [ node 344 (SemanticKind.WhileLoop(NodeId 2, NodeId 322)) [ 2; 322 ] ]
+        elif mode = "valid-entrypoint-lambda" || mode = "entrypoint-lambda-leaked" then
+            [ { node 345 (SemanticKind.Lambda([], NodeId 328, [], Some "main", LambdaContext.RegularClosure)) [ 328 ] with Parent = Some(NodeId 346) }
+              node 346 (SemanticKind.Binding("main", false, false, Some DeclRoot.EntryPoint)) [ 345 ] ]
+        elif mode = "non-entry-lambda-leaked" then
+            [ { node 345 (SemanticKind.Lambda([], NodeId 328, [], Some "helper", LambdaContext.RegularClosure)) [ 328 ] with Parent = Some(NodeId 346) }
+              node 346 (SemanticKind.Binding("helper", false, false, None)) [ 345 ] ]
+        elif mode = "closure-capture-projection" then
+            [ node 345 (SemanticKind.Lambda([], NodeId 1, [], Some "capturer", LambdaContext.RegularClosure)) [ 1 ] ]
+        elif mode = "branch-alias-escape" then
+            [ node 347 (SemanticKind.IfThenElse(NodeId 2, NodeId 321, Some(NodeId 321))) [ 2; 321 ] ]
+        elif mode = "closure-return-handle" then
+            [ node 348 (SemanticKind.Lambda([], NodeId 321, [], Some "retH", LambdaContext.RegularClosure)) [ 321 ] ]
+        else
+            []
+    let coreNodes =
+        [ n1; n2; n321; n331; n323; n333; n326; n336; n327; n328 ]
+        @ (if leaked then [] else [ n322; n332 ])
+    let baseRev = revision (coreNodes @ extraMutantNodes)
+    let header = { scopedFacts.SourceReadings.ContextHeaders[NodeId 50] with Name = "Audio" }
+    let mkImportAndCall (importId: int) (callId: int) (calleeId: int) (shortFuncName: string) (isAcquire: bool) =
+        let formalId = callId + 50
+        let bindingFact : BoundaryDeclarationFact =
+            { Form = "binding"
+              Text = [ shortFuncName ]
+              Numbers = [ 0I; 0I ]
+              References = []
+              Children = []
+              Parent = Some(NodeId 50)
+              SourceType = unitType }
+        let resScalar =
+            if isAcquire then Some(BoundaryScalar.Integer(64, false))
+            else Some(BoundaryScalar.Integer(32, true))
+        let impParams =
+            if isAcquire then []
+            else [ NodeId formalId, BoundaryScalar.Integer(64, false) ]
+        let callArgs : BoundaryOperand list =
+            if isAcquire then []
+            else
+                let actualNode =
+                    if callId = 322 && mode = "release-arg-scalar-projection" then NodeId 1
+                    else NodeId 321
+                [ { Actual = actualNode
+                    Formal = NodeId formalId
+                    Abi = BoundaryScalar.Integer(64, false)
+                    Adaptation = None
+                    OptionalEntry = None
+                    BufferAbsence = None } ]
+        let srcTypes =
+            if isAcquire then Map.ofList [ NodeId calleeId, unitType ]
+            else Map.ofList [ NodeId calleeId, unitType; NodeId formalId, unitType ]
+        let imp : BoundaryImport =
+            { Identity = NodeId importId
+              Binding = NodeId calleeId
+              Scope = NodeId 50
+              Library = "audio"
+              Symbol = shortFuncName
+              CallingConvention = "CDecl"
+              DeclarationPath = [ NodeId calleeId ]
+              Parameters = impParams
+              Result = resScalar
+              Participants = Set.singleton (NodeId calleeId)
+              SourceTypes = srcTypes
+              DeclarationFacts = Map.ofList [ NodeId calleeId, bindingFact ] }
+        let call : BoundaryCall =
+            { Site = NodeId callId
+              Import = NodeId importId
+              Callee = NodeId calleeId
+              Entry = None
+              Resource = None
+              Arguments = callArgs
+              ErasedUnitArguments = []
+              Result = resScalar
+              ResultAdaptation = None
+              Participants = Set.singleton (NodeId calleeId)
+              SourceTypes = srcTypes }
+        (NodeId importId, imp), (NodeId callId, call)
+    let acqShortName = if mode = "unmapped-call" then "wrongAcquire" else "acquireRing"
+    let impCalls =
+        [ mkImportAndCall 351 321 331 acqShortName true ]
+        @ (if leaked then [] else [ mkImportAndCall 352 322 332 "releaseRing" false ])
+        @ [ mkImportAndCall 353 323 333 "syncRing" false
+            mkImportAndCall 356 326 336 "processRing" false ]
+    let premiseEndianness = if mode = "premise-mismatch" then Some "big" else Some platformEndianness
+    let platformPremise : BoundaryPlatformPremise =
+        { Id = "test-platform"
+          Description = None
+          Loading = None
+          LibraryPath = None
+          SourcePaths = Set.empty
+          Architecture = Some "x86_64"
+          OS = Some "linux"
+          Endianness = premiseEndianness
+          RuntimeClaim = None
+          Substrate = None
+          Dimensions = Map.empty
+          Representations = Map.empty
+          EndpointReturns = Map.empty
+          Spaces = [ space ]
+          Buffers = [ bufferSchema ]
+          SharedBufferRegions = if hasSecondPlacement then [ regionDesc; regionDesc2 ] else [ regionDesc ] }
+    let boundaryDomain : BoundaryDomain =
+        { ResourceEvidence = None
+          Premises = Map.empty
+          Platform = Some platformPremise
+          Meets = Map.empty
+          Declarations = []
+          WritableBufferDeclarations = []
+          WritableBufferUses = []
+          ReadOnlyBufferDeclarations = []
+          ReadOnlyBufferUses = []
+          BorrowedResultViewDeclarations = []
+          BorrowedResultViewUses = []
+          BufferAbsences = []
+          CountedEntryArrays = []
+          ResourceDeclarations = []
+          ResourceAccesses = []
+          ResourceEvaluationRoots = []
+          ResourceEvaluationRelations = []
+          Imports = []
+          Loading = None
+          Entries = []
+          Calls = []
+          ByteViews = []
+          StringExtents = []
+          StringOriginRelations = None
+          StringOriginRoots = None
+          StringComparisons = []
+          StringLengthComparisons = []
+          StringComparisonReads = []
+          StringBorrowSnapshots = []
+          StringBorrowCopies = []
+          StringBorrowAllocations = []
+          IntrinsicDeclarations = []
+          IntrinsicImports = []
+          IntrinsicCalls = []
+          IntrinsicProofs = []
+          StringStorage = None
+          DeclarationLeaves = Set.empty
+          DeclarationOnly = Set.empty
+          Links = Set.empty
+          Failures = []
+          ResultHypotheses = []
+          CallbackInvocations = []
+          CallbackAbsences = []
+          ClosedEntries = [] }
+    let domainEdge : Hyperedge =
+        { Class = EdgeClass.Boundary
+          Role = EdgeRole.BoundaryDomain boundaryDomain
+          Ordinal = 0
+          Sources = []
+          Target = NodeId 1 }
+    let rev =
+        { baseRev with
+            Edges = baseRev.Edges @ [ domainEdge ]
+            SourceReadings =
+                { baseRev.SourceReadings with
+                    ContextHeaders = Map.ofList [ NodeId 50, header ]
+                    Contexts = baseRev.SourceReadings.Contexts.Add(NodeId 50, [ [] ])
+                    Ports = baseRev.SourceReadings.Ports.Add((NodeId 50, OccurrencePort.ModuleDeclaration), header.Ports[OccurrencePort.ModuleDeclaration]) }
+            CurrentClaims = claims |> List.fold (fun acc (id, c) -> acc.Add(id, c)) baseRev.CurrentClaims
+            Obligations = baseRev.Obligations @ (claims |> List.map snd)
+            ObligationSources = claims |> List.fold (fun acc (id, _) -> acc.Add(id, [ [ NodeId 1; NodeId 2 ] ])) baseRev.ObligationSources
             Emission =
-                { held.Emission with
+                { baseRev.Emission with
+                    Numeric =
+                        { baseRev.Emission.Numeric with
+                            Layouts = baseRev.Emission.Numeric.Layouts.Add(audioFrameType, audioFrameSettledLayout) }
                     Boundary =
-                        { held.Emission.Boundary with
+                        { baseRev.Emission.Boundary with
+                            Imports = Map.ofList (impCalls |> List.map fst)
+                            Calls = Map.ofList (impCalls |> List.map snd)
                             SharedBufferPlacements = Map.ofList ([ NodeId 300, placementDecl ] @ extraPlacements)
                             SharedBufferViewUses = Map.ofList [ NodeId 1, viewUse ] } } }
-    let violations = Integrity.check revision
+    let violations = Integrity.check rev
     if expectedPart = "" then
         Assert.Empty violations
     else
         Assert.Contains(violations, fun v -> v.Part = expectedPart)
+        if mode = "entrypoint-lambda-leaked" then
+            Assert.DoesNotContain(violations, fun v -> v.Part = "Emission.Boundary.SharedBufferViewUses.Account")

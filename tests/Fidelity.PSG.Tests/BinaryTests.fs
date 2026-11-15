@@ -222,7 +222,7 @@ let ``snapshot header has independent version schema and fingerprint bytes`` () 
     // Pin the approved schema/shape pair independently of the generated values.
     // A changed published shape must earn a deliberate schema migration; merely
     // regenerating the codecs cannot update this oracle.
-    let prefix = Convert.FromHexString("4650534749445832020000003600000031C406D93819F33CFEC0FCC32B5154137CE6EE3DC91644164831B98ACA8831BF")
+    let prefix = Convert.FromHexString("465053474944583202000000370000008E49266136E32ADFFEC41159F6CA8F60298F150E1D6FD6CEC5EE942A020A5AC9")
     Assert.Equal<byte>(prefix, bytes[..47])
     Assert.Equal(Revision.Schema, System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(12, 4)))
     Assert.Equal<byte>(Convert.FromHexString(BinaryGenerated.Fingerprint), bytes[16..47])
@@ -1084,6 +1084,23 @@ let ``shared buffer placement view use and FS9220-FS9223 obligation contracts su
           LibraryMutatesBuffer = true
           OverlappingMutableShare = false
           MaxAccessedElementIndex = 1023 }
+    let bufferSchema : BAREWire.Platform.BufferSchema =
+        { Name = "AudioFrameRing"
+          Schema = "AudioFrameRing"
+          Capacity = 16384L
+          Framing = "unframed"
+          Delimiter = 0
+          TrimDelimiter = false
+          Space = "audio_ring"
+          Lifetime = "process"
+          Access = BAREWire.Platform.Access.ReadWrite
+          Slot = 0 }
+    let regionDesc : BAREWire.Descriptors.SharedBufferRegionDescriptor =
+        { Placement = "audio_ring_frames"
+          Acquire = "Audio.acquireRing"
+          Release = Some "Audio.releaseRing"
+          Sync = [| "Audio.syncRing" |]
+          ForeignUses = [| "Audio.processRing" |] }
     let desc : BAREWire.Platform.PlatformDescription =
         { Id = "test-desc"
           DisplayName = "Test Platform"
@@ -1092,7 +1109,7 @@ let ``shared buffer placement view use and FS9220-FS9223 obligation contracts su
           Spaces = [| space |]
           ProgramLifetime = None
           Surfaces = [||]
-          Buffers = [||]
+          Buffers = [| bufferSchema |]
           Transports = [||]
           Lifecycle = { Clocks = [||]; Resets = [||]; Entry = ""; Teardown = ""; Persistence = BAREWire.Platform.Persistence.Volatile }
           Notes = [||]
@@ -1113,20 +1130,33 @@ let ``shared buffer placement view use and FS9220-FS9223 obligation contracts su
           Declaration = NodeId 301
           SpaceNode = NodeId 302
           BufferSchemaNode = NodeId 303
+          RegionDescriptorNode = NodeId 307
           SpaceDescriptorNode = NodeId 304
           StructDescriptorNode = NodeId 305
           ViewDescriptorNode = NodeId 306
+          PlatformEndianness = "little"
+          Space = space
+          BufferSchema = bufferSchema
+          RegionDescriptor = regionDesc
           Placement = placement
           Obligations = [ NodeId 310; NodeId 311; NodeId 312; NodeId 313; NodeId 314 ]
           DeclarationFacts = Map.empty
           Participants = ParticipantEvidence.Established [ { Role = ParticipantRole.Site; Node = NodeId 300; Ordinal = 0; Group = NodeId 300 } ] }
     let viewUse : BoundarySharedBufferViewUse =
-        { Site = NodeId 320
+        { Site = NodeId 324
           PlacementDeclaration = NodeId 300
           RegionAcquisitionCall = NodeId 321
           RegionReleaseCall = Some(NodeId 322)
           SyncCalls = [ NodeId 323 ]
+          ForeignUseCalls = [ NodeId 326 ]
           ViewProjections = [ NodeId 324; NodeId 325 ]
+          WriteProjections = [ NodeId 327 ]
+          AcquisitionOrder = 10
+          ReleaseOrder = Some 40
+          SyncOrders = [ 20 ]
+          ForeignUseOrders = [ 25 ]
+          ProjectionOrders = [ 30; 31 ]
+          WriteProjectionOrders = [ 35 ]
           ElementType = Build.unitType
           ElementSlot = SettledSlot.InlineBytes(16, 8)
           Copies = 0
@@ -1134,8 +1164,8 @@ let ``shared buffer placement view use and FS9220-FS9223 obligation contracts su
           LayoutObligation = NodeId 311
           LifetimeObligation = NodeId 312
           ExclusivityObligation = NodeId 313
-          SpaceExtentObligation = Some(NodeId 314)
-          Participants = ParticipantEvidence.Established [ { Role = ParticipantRole.Site; Node = NodeId 320; Ordinal = 0; Group = NodeId 320 } ] }
+          SpaceExtentObligation = NodeId 314
+          Participants = ParticipantEvidence.Established [ { Role = ParticipantRole.Site; Node = NodeId 324; Ordinal = 0; Group = NodeId 324 } ] }
     let declBytes = indexedEncoded BinaryGenerated.write_Fidelity_PSG_BoundarySharedBufferPlacementDeclaration placementDecl
     let actualDecl, declState = indexedReadState limits declBytes |> BinaryGenerated.read_Fidelity_PSG_BoundarySharedBufferPlacementDeclaration |> take
     Assert.Equal(placementDecl, actualDecl)

@@ -2839,8 +2839,7 @@ module Integrity =
             value > 0 && (value &&& (value - 1)) = 0
 
         let sharedBufferScalarByteWidth (repr: BAREWire.Hardware.Repr) =
-            if repr = BAREWire.Hardware.Repr.Pointer then 0
-            else BAREWire.Hardware.Abi.reprSize BAREWire.Hardware.Abi.all[0] repr
+            BAREWire.Platform.SharedBufferPlacement.viewElementWidth repr
 
         let sharedBufferViewElementFits (p: BAREWire.Platform.SharedBufferPlacement) =
             let width = sharedBufferScalarByteWidth p.ViewLayout.Element
@@ -2906,42 +2905,342 @@ module Integrity =
             region = BAREWire.Hardware.MemoryRegionKind.Flash ||
             region = BAREWire.Hardware.MemoryRegionKind.Peripheral
 
-        let sharedBufferExtentNames =
-            [| "elem_size"; "elem_count"; "region_bytes"; "space_cap"; "max_elem_idx"; "required_bytes"; "space_known"; "space_offset" |]
+        let rec unwrapFactId (facts: Map<NodeId, BoundaryDeclarationFact>) (seen: Set<NodeId>) (id: NodeId) =
+            if seen.Contains id then id else
+            match facts.TryFind id with
+            | Some { Form = "quotation" | "annotation" | "reference"; References = [ inner ] } ->
+                unwrapFactId facts (seen.Add id) inner
+            | Some { Form = "binding"; Numbers = [ n0; n1 ]; Children = children } when n0 = 0I && n1 = 0I && not children.IsEmpty ->
+                unwrapFactId facts (seen.Add id) (List.last children)
+            | _ -> id
 
-        let sharedBufferLayoutNames =
-            [| "elem_size"; "measured_size"; "struct_bytes"; "layout_align"; "region_align"; "align_rem"
-               "order_match"; "raw_ptr_fields"; "exports_ok"; "align_power_two"; "struct_align"; "space_known"; "name_unique"
-               "view_schema_valid"; "view_element_fits"; "view_align"; "space_kind_matches"; "space_align_valid"; "struct_fields_valid"
-               "space_offset_rem"; "stride_align_rem" |]
+        let factTextUnwrapped (facts: Map<NodeId, BoundaryDeclarationFact>) (id: NodeId) =
+            let targetId = unwrapFactId facts Set.empty id
+            match facts.TryFind targetId with
+            | Some fact when (fact.Form = "string" || fact.Form = "case" || fact.Form = "settled-case") && fact.References.IsEmpty && fact.Children.IsEmpty ->
+                List.tryExactlyOne fact.Text
+            | _ -> None
 
-        let sharedBufferLifetimeNames =
-            [| "region_depth"; "lib_retention_depth"; "mapped_depth"; "first_use_depth"; "last_use_depth"; "lib_retention_end_depth"; "unmap_depth"; "leaked" |]
+        let factNumberUnwrapped (facts: Map<NodeId, BoundaryDeclarationFact>) (id: NodeId) =
+            let rec eval (seen: Set<NodeId>) (curId: NodeId) =
+                if seen.Contains curId then None else
+                let targetId = unwrapFactId facts seen curId
+                match facts.TryFind targetId with
+                | Some fact when (fact.Form = "integer" || fact.Form = "unsigned-integer") && fact.References.IsEmpty && fact.Children.IsEmpty ->
+                    List.tryExactlyOne fact.Numbers
+                | Some { Form = "application"; References = [ funcId; argId ] } ->
+                    let fnTarget = unwrapFactId facts (seen.Add targetId) funcId
+                    match facts.TryFind fnTarget with
+                    | Some { Form = "intrinsic"; Text = [ _; "op_UnaryNegation" ] } ->
+                        eval (seen.Add targetId) argId |> Option.map (~-)
+                    | Some { Form = "intrinsic" } ->
+                        eval (seen.Add targetId) argId
+                    | _ -> None
+                | _ -> None
+            eval Set.empty id
 
-        let sharedBufferExclusivityNames =
-            [| "lib_mutates"; "is_readonly"; "concurrent_clef_write"; "overlap_mutable_share"; "access_valid"
-               "view_access_matches"; "space_access_matches"; "struct_field_access_valid" |]
+        let rec factBool (facts: Map<NodeId, BoundaryDeclarationFact>) (seen: Set<NodeId>) (id: NodeId) =
+            if seen.Contains id then None else
+            let targetId = unwrapFactId facts seen id
+            match facts.TryFind targetId with
+            | Some { Form = "boolean"; Numbers = [ n ] } -> Some (n <> 0I)
+            | _ -> None
+
+        let factOptionUnwrapped (facts: Map<NodeId, BoundaryDeclarationFact>) (id: NodeId) =
+            let targetId = unwrapFactId facts Set.empty id
+            match facts.TryFind targetId with
+            | Some fact when (fact.Form = "case" || fact.Form = "settled-case") && fact.Text = [ "None" ] && fact.References.IsEmpty ->
+                Some None
+            | Some fact when (fact.Form = "case" || fact.Form = "settled-case") && fact.Text = [ "Some" ] && fact.References.Length = 1 ->
+                Some (Some fact.References[0])
+            | _ -> None
+
+        let factElementsUnwrapped (facts: Map<NodeId, BoundaryDeclarationFact>) (id: NodeId) =
+            let targetId = unwrapFactId facts Set.empty id
+            match facts.TryFind targetId with
+            | Some fact when (fact.Form = "array" || fact.Form = "list") && fact.Children = fact.References ->
+                Some fact.References
+            | _ -> None
+
+        let recordFieldsAt (facts: Map<NodeId, BoundaryDeclarationFact>) (_seen: Set<NodeId>) (id: NodeId) =
+            let targetId = unwrapFactId facts Set.empty id
+            boundaryRecordFields facts targetId
+
+        let sharedBufferQuotedDeclarationMatches (row: BoundarySharedBufferPlacementDeclaration) =
+            let p = row.Placement
+            let s = p.SpaceDescriptor
+            let facts = row.DeclarationFacts
+            let quoteBindingOk =
+                (boundaryQuoteBinding facts row.Identity |> Option.map fst) = Some row.Declaration
+            let placementFieldsOk =
+                match recordFieldsAt facts Set.empty row.Identity with
+                | Some flds ->
+                    (flds.TryFind "Name" |> Option.bind (factTextUnwrapped facts) = Some p.Name) &&
+                    (flds.TryFind "SpaceDescriptor" |> Option.map (unwrapFactId facts Set.empty) = Some (unwrapFactId facts Set.empty row.SpaceDescriptorNode)) &&
+                    (flds.TryFind "SpaceOffset" |> Option.bind (factNumberUnwrapped facts) = Some (bigint p.SpaceOffset)) &&
+                    (flds.TryFind "StructLayout" |> Option.map (unwrapFactId facts Set.empty) = Some (unwrapFactId facts Set.empty row.StructDescriptorNode)) &&
+                    (flds.TryFind "ViewLayout" |> Option.map (unwrapFactId facts Set.empty) = Some (unwrapFactId facts Set.empty row.ViewDescriptorNode)) &&
+                    (flds.TryFind "MeasuredElementSize" |> Option.bind (factNumberUnwrapped facts) = Some (bigint p.MeasuredElementSize)) &&
+                    (flds.TryFind "LayoutAlignment" |> Option.bind (factNumberUnwrapped facts) = Some (bigint p.LayoutAlignment)) &&
+                    (flds.TryFind "LayoutByteOrder" |> Option.bind (factTextUnwrapped facts) = Some p.LayoutByteOrder) &&
+                    (flds.TryFind "HasRawPointerFields" |> Option.bind (factBool facts Set.empty) = Some p.HasRawPointerFields) &&
+                    (flds.TryFind "HasVerifiedExports" |> Option.bind (factBool facts Set.empty) = Some p.HasVerifiedExports) &&
+                    (flds.TryFind "MappedDepth" |> Option.bind (factNumberUnwrapped facts) = Some (bigint p.MappedDepth)) &&
+                    (flds.TryFind "FirstUseDepth" |> Option.bind (factNumberUnwrapped facts) = Some (bigint p.FirstUseDepth)) &&
+                    (flds.TryFind "LastUseDepth" |> Option.bind (factNumberUnwrapped facts) = Some (bigint p.LastUseDepth)) &&
+                    (flds.TryFind "LibraryRetentionEndDepth" |> Option.bind (factNumberUnwrapped facts) = Some (bigint p.LibraryRetentionEndDepth)) &&
+                    (flds.TryFind "UnmapDepth" |> Option.bind (factNumberUnwrapped facts) = Some (bigint p.UnmapDepth)) &&
+                    (flds.TryFind "LeakedAtExit" |> Option.bind (factBool facts Set.empty) = Some p.LeakedAtExit) &&
+                    (flds.TryFind "ConcurrentClefMutation" |> Option.bind (factBool facts Set.empty) = Some p.ConcurrentClefMutation) &&
+                    (flds.TryFind "LibraryMutatesBuffer" |> Option.bind (factBool facts Set.empty) = Some p.LibraryMutatesBuffer) &&
+                    (flds.TryFind "OverlappingMutableShare" |> Option.bind (factBool facts Set.empty) = Some p.OverlappingMutableShare) &&
+                    (flds.TryFind "MaxAccessedElementIndex" |> Option.bind (factNumberUnwrapped facts) = Some (bigint p.MaxAccessedElementIndex))
+                | None -> false
+            let spaceDescriptorFieldsOk =
+                match recordFieldsAt facts Set.empty row.SpaceDescriptorNode with
+                | Some flds ->
+                    (flds.TryFind "Space" |> Option.bind (factTextUnwrapped facts) = Some s.Space) &&
+                    (flds.TryFind "MemoryRegion" |> Option.bind (factTextUnwrapped facts) = Some s.MemoryRegion) &&
+                    (flds.TryFind "Access" |> Option.bind (factTextUnwrapped facts) = Some s.Access) &&
+                    (flds.TryFind "ByteOrder" |> Option.bind (factTextUnwrapped facts) = Some s.ByteOrder) &&
+                    (flds.TryFind "ElementSize" |> Option.bind (factNumberUnwrapped facts) = Some (bigint s.ElementSize)) &&
+                    (flds.TryFind "ElementCount" |> Option.bind (factNumberUnwrapped facts) = Some (bigint s.ElementCount)) &&
+                    (flds.TryFind "RegionByteExtent" |> Option.bind (factNumberUnwrapped facts) = Some (bigint s.RegionByteExtent)) &&
+                    (flds.TryFind "RegionAlignment" |> Option.bind (factNumberUnwrapped facts) = Some (bigint s.RegionAlignment)) &&
+                    (flds.TryFind "RegionLifetimeDepth" |> Option.bind (factNumberUnwrapped facts) = Some (bigint s.RegionLifetimeDepth)) &&
+                    (flds.TryFind "LibraryRetentionDepth" |> Option.bind (factNumberUnwrapped facts) = Some (bigint s.LibraryRetentionDepth))
+                | None -> false
+            let bitFieldMatches (bfNodeId: NodeId) (bf: BAREWire.Hardware.BitFieldDescriptor) =
+                match recordFieldsAt facts Set.empty bfNodeId with
+                | Some bfFlds ->
+                    (bfFlds.TryFind "Name" |> Option.bind (factTextUnwrapped facts) = Some bf.Name) &&
+                    (bfFlds.TryFind "Position" |> Option.bind (factNumberUnwrapped facts) = Some (bigint bf.Position)) &&
+                    (bfFlds.TryFind "Width" |> Option.bind (factNumberUnwrapped facts) = Some (bigint bf.Width)) &&
+                    (bfFlds.TryFind "Access" |> Option.bind (factTextUnwrapped facts) = Some bf.Access)
+                | None -> false
+            let structFieldMatches (fNodeId: NodeId) (df: BAREWire.Hardware.FieldDescriptor) =
+                match recordFieldsAt facts Set.empty fNodeId with
+                | Some ff ->
+                    let bitFieldsOk =
+                        match ff.TryFind "BitFields" |> Option.bind (factElementsUnwrapped facts) with
+                        | None -> df.BitFields.Length = 0
+                        | Some bfNodes ->
+                            bfNodes.Length = df.BitFields.Length &&
+                            (List.zip bfNodes (Array.toList df.BitFields)
+                             |> List.forall (fun (bfId, bf) -> bitFieldMatches bfId bf))
+                    (ff.TryFind "Name" |> Option.bind (factTextUnwrapped facts) = Some df.Name) &&
+                    (ff.TryFind "Offset" |> Option.bind (factNumberUnwrapped facts) = Some (bigint df.Offset)) &&
+                    (ff.TryFind "Repr" |> Option.bind (factTextUnwrapped facts) = Some df.Repr) &&
+                    (ff.TryFind "Count" |> Option.bind (factNumberUnwrapped facts) = Some (bigint df.Count)) &&
+                    (ff.TryFind "Access" |> Option.bind (factTextUnwrapped facts) = Some df.Access) &&
+                    bitFieldsOk
+                | None -> false
+            let structFieldsOk =
+                match recordFieldsAt facts Set.empty row.StructDescriptorNode with
+                | Some flds ->
+                    let flexOk =
+                        match p.StructLayout.FlexibleArray, flds.TryFind "FlexibleArray" with
+                        | None, None -> true
+                        | None, Some faId -> factOptionUnwrapped facts faId = Some None
+                        | Some fa, Some faId ->
+                            match factOptionUnwrapped facts faId |> Option.flatten |> Option.bind (recordFieldsAt facts Set.empty) with
+                            | Some faFlds ->
+                                (faFlds.TryFind "Name" |> Option.bind (factTextUnwrapped facts) = Some fa.Name) &&
+                                (faFlds.TryFind "Offset" |> Option.bind (factNumberUnwrapped facts) = Some (bigint fa.Offset)) &&
+                                (faFlds.TryFind "Repr" |> Option.bind (factTextUnwrapped facts) = Some fa.Repr) &&
+                                (faFlds.TryFind "Access" |> Option.bind (factTextUnwrapped facts) = Some fa.Access) &&
+                                (faFlds.TryFind "CountField" |> Option.bind (factTextUnwrapped facts) = Some fa.CountField) &&
+                                (faFlds.TryFind "CountRule" |> Option.bind (factTextUnwrapped facts) = Some fa.CountRule)
+                            | None -> false
+                        | Some _, None -> false
+                    let layoutRecordOk =
+                        match flds.TryFind "Layout" |> Option.bind (recordFieldsAt facts Set.empty) with
+                        | Some lFlds ->
+                            let fieldsArrayOk =
+                                match lFlds.TryFind "Fields" |> Option.bind (factElementsUnwrapped facts) with
+                                | Some fNodes when fNodes.Length = p.StructLayout.Layout.Fields.Length ->
+                                    List.zip fNodes (Array.toList p.StructLayout.Layout.Fields)
+                                    |> List.forall (fun (fId, df) -> structFieldMatches fId df)
+                                | _ -> false
+                            (lFlds.TryFind "Size" |> Option.bind (factNumberUnwrapped facts) = Some (bigint p.StructLayout.Layout.Size)) &&
+                            (lFlds.TryFind "Alignment" |> Option.bind (factNumberUnwrapped facts) = Some (bigint p.StructLayout.Layout.Alignment)) &&
+                            fieldsArrayOk
+                        | None -> false
+                    (flds.TryFind "Name" |> Option.bind (factTextUnwrapped facts) = Some p.StructLayout.Name) &&
+                    (flds.TryFind "MayAlias" |> Option.bind (factBool facts Set.empty) = Some p.StructLayout.MayAlias) &&
+                    flexOk &&
+                    layoutRecordOk
+                | None -> false
+            let viewFieldsOk =
+                match recordFieldsAt facts Set.empty row.ViewDescriptorNode with
+                | Some flds ->
+                    (flds.TryFind "Schema" |> Option.bind (factTextUnwrapped facts) = Some p.ViewLayout.Schema) &&
+                    (flds.TryFind "Element" |> Option.bind (factTextUnwrapped facts) = Some p.ViewLayout.Element) &&
+                    (flds.TryFind "Alignment" |> Option.bind (factNumberUnwrapped facts) = Some (bigint p.ViewLayout.Alignment)) &&
+                    (flds.TryFind "Access" |> Option.bind (factTextUnwrapped facts) = Some p.ViewLayout.Access)
+                | None -> false
+            let spaceNodeFieldsOk =
+                match recordFieldsAt facts Set.empty row.SpaceNode with
+                | Some flds ->
+                    let baseOk =
+                        match row.Space.Base, flds.TryFind "Base" |> Option.bind (factOptionUnwrapped facts) with
+                        | None, Some None -> true
+                        | Some expectedBase, Some (Some baseNodeId) ->
+                            factNumberUnwrapped facts baseNodeId = Some (bigint expectedBase)
+                        | _ -> false
+                    (flds.TryFind "Name" |> Option.bind (factTextUnwrapped facts) = Some row.Space.Name) &&
+                    (flds.TryFind "Kind" |> Option.bind (factTextUnwrapped facts) = Some row.Space.Kind) &&
+                    (flds.TryFind "Capacity" |> Option.bind (factNumberUnwrapped facts) = Some (bigint row.Space.Capacity)) &&
+                    (flds.TryFind "Alignment" |> Option.bind (factNumberUnwrapped facts) = Some (bigint row.Space.Alignment)) &&
+                    (flds.TryFind "Granularity" |> Option.bind (factNumberUnwrapped facts) = Some (bigint row.Space.Granularity)) &&
+                    (flds.TryFind "Growth" |> Option.bind (factTextUnwrapped facts) = Some row.Space.Growth) &&
+                    (flds.TryFind "Access" |> Option.bind (factTextUnwrapped facts) = Some row.Space.Access) &&
+                    baseOk &&
+                    (flds.TryFind "Notes" |> Option.bind (factTextUnwrapped facts) = Some row.Space.Notes) &&
+                    (flds.TryFind "MapKind" |> Option.bind (factTextUnwrapped facts) = Some row.Space.MapKind) &&
+                    (flds.TryFind "Since" |> Option.bind (factTextUnwrapped facts) = Some row.Space.Since) &&
+                    (flds.TryFind "Until" |> Option.bind (factTextUnwrapped facts) = Some row.Space.Until)
+                | None -> false
+            let bufferSchemaNodeFieldsOk =
+                match recordFieldsAt facts Set.empty row.BufferSchemaNode with
+                | Some flds ->
+                    (flds.TryFind "Name" |> Option.bind (factTextUnwrapped facts) = Some row.BufferSchema.Name) &&
+                    (flds.TryFind "Schema" |> Option.bind (factTextUnwrapped facts) = Some row.BufferSchema.Schema) &&
+                    (flds.TryFind "Capacity" |> Option.bind (factNumberUnwrapped facts) = Some (bigint row.BufferSchema.Capacity)) &&
+                    (flds.TryFind "Framing" |> Option.bind (factTextUnwrapped facts) = Some row.BufferSchema.Framing) &&
+                    (flds.TryFind "Delimiter" |> Option.bind (factNumberUnwrapped facts) = Some (bigint row.BufferSchema.Delimiter)) &&
+                    (flds.TryFind "TrimDelimiter" |> Option.bind (factBool facts Set.empty) = Some row.BufferSchema.TrimDelimiter) &&
+                    (flds.TryFind "Space" |> Option.bind (factTextUnwrapped facts) = Some row.BufferSchema.Space) &&
+                    (flds.TryFind "Lifetime" |> Option.bind (factTextUnwrapped facts) = Some row.BufferSchema.Lifetime) &&
+                    (flds.TryFind "Access" |> Option.bind (factTextUnwrapped facts) = Some row.BufferSchema.Access) &&
+                    (flds.TryFind "Slot" |> Option.bind (factNumberUnwrapped facts) = Some (bigint row.BufferSchema.Slot))
+                | None -> false
+            let regionDescriptorNodeFieldsOk =
+                let r = row.RegionDescriptor
+                match recordFieldsAt facts Set.empty row.RegionDescriptorNode with
+                | Some flds ->
+                    let relOk =
+                        match r.Release, flds.TryFind "Release" |> Option.bind (factOptionUnwrapped facts) with
+                        | None, Some None -> true
+                        | Some expectedRel, Some (Some relNodeId) -> factTextUnwrapped facts relNodeId = Some expectedRel
+                        | _ -> false
+                    let syncOk =
+                        match flds.TryFind "Sync" |> Option.bind (factElementsUnwrapped facts) with
+                        | Some syncNodes ->
+                            (syncNodes |> List.choose (factTextUnwrapped facts)) = Array.toList r.Sync &&
+                            syncNodes.Length = r.Sync.Length
+                        | None -> false
+                    let foreignUsesOk =
+                        match flds.TryFind "ForeignUses" |> Option.bind (factElementsUnwrapped facts) with
+                        | Some fuNodes ->
+                            (fuNodes |> List.choose (factTextUnwrapped facts)) = Array.toList r.ForeignUses &&
+                            fuNodes.Length = r.ForeignUses.Length
+                        | None -> false
+                    (flds.TryFind "Placement" |> Option.bind (factTextUnwrapped facts) = Some r.Placement) &&
+                    (flds.TryFind "Acquire" |> Option.bind (factTextUnwrapped facts) = Some r.Acquire) &&
+                    relOk &&
+                    syncOk &&
+                    foreignUsesOk
+                | None -> false
+            quoteBindingOk &&
+            placementFieldsOk &&
+            spaceDescriptorFieldsOk &&
+            structFieldsOk &&
+            viewFieldsOk &&
+            spaceNodeFieldsOk &&
+            bufferSchemaNodeFieldsOk &&
+            regionDescriptorNodeFieldsOk
+
+        let boundaryDomainPlatformPremises =
+            revision.Edges
+            |> List.choose (fun edge ->
+                match edge.Role with
+                | EdgeRole.BoundaryDomain domain -> domain.Platform
+                | _ -> None)
+
+        let allSharedBufferPlacementRows =
+            boundary.SharedBufferPlacements
+            |> Map.toList
+            |> List.sortBy (fun (k, _) -> NodeId.value k)
+            |> List.map snd
+
+        let allSharedBufferPlacements =
+            allSharedBufferPlacementRows
+            |> List.map _.Placement
+            |> List.toArray
+
+        let allSharedBufferRegions =
+            allSharedBufferPlacementRows
+            |> List.map _.RegionDescriptor
+            |> List.toArray
+
+        let sharedBufferPlatformDescription (row: BoundarySharedBufferPlacementDeclaration) : BAREWire.Platform.PlatformDescription =
+            let spaces =
+                allSharedBufferPlacementRows
+                |> List.map _.Space
+                |> List.distinctBy _.Name
+                |> List.toArray
+            let buffers =
+                allSharedBufferPlacementRows
+                |> List.map _.BufferSchema
+                |> List.distinctBy _.Name
+                |> List.toArray
+            let core : BAREWire.Platform.TargetCore =
+                { Os = "linux"
+                  Arch = "generic"
+                  WordSizeBits = 64
+                  Endianness = row.PlatformEndianness
+                  Runtime = "libc"
+                  Triple = ""
+                  CpuModel = ""
+                  Widths = [||]
+                  Representations = [||] }
+            let emptyLifecycle : BAREWire.Platform.LifecycleFacts =
+                { Clocks = [||]; Resets = [||]; Entry = ""; Teardown = ""; Persistence = "" }
+            { Id = "shared-buffer-platform"
+              DisplayName = "shared-buffer-platform"
+              Substrate = ""
+              Core = Some core
+              Spaces = spaces
+              ProgramLifetime = None
+              Buffers = buffers
+              Surfaces = [||]
+              Transports = [||]
+              Lifecycle = emptyLifecycle
+              Notes = [||]
+              Limits = [||] }
 
         let sharedBufferObligationFormMatches
-            (p: BAREWire.Platform.SharedBufferPlacement)
+            (row: BoundarySharedBufferPlacementDeclaration)
             (spaceExtentObOpt: BAREWire.Platform.Obligation option)
             (ob: BAREWire.Platform.Obligation)
             (expectedFindingKind: string)
             (expectedFormKind: string) =
+            let p = row.Placement
             let s = p.SpaceDescriptor
-            let layout = p.StructLayout.Layout
-            let flag (cond: bool) = if cond then 1L else 0L
-            let requiredBytes = int64 s.ElementCount * int64 p.MeasuredElementSize
+            let desc = sharedBufferPlatformDescription row
+            let expectedAll = BAREWire.Platform.Obligations.sharedBufferObligations desc allSharedBufferPlacements
+            let placementIdxOpt =
+                allSharedBufferPlacementRows
+                |> List.tryFindIndex (fun r -> r.Identity = row.Identity)
+            let smtRefutation = BAREWire.Platform.Obligations.smtLib ob
+            let smtPremises = BAREWire.Platform.Obligations.smtLibPremises ob
+            let smtUnpinned = BAREWire.Platform.Obligations.smtLibUnpinned ob
+            let smtClauses = BAREWire.Platform.Obligations.smtLibClauseNonVacuity ob
             not (System.String.IsNullOrWhiteSpace ob.Id) &&
             ob.Logic = BAREWire.Platform.Logic.QfLia &&
             ob.Kind = expectedFindingKind &&
             ob.Form.Kind = expectedFormKind &&
+            not (System.String.IsNullOrWhiteSpace smtRefutation) &&
+            not (System.String.IsNullOrWhiteSpace smtPremises) &&
+            not (System.String.IsNullOrWhiteSpace smtUnpinned) &&
+            smtClauses.Length > 0 &&
             (if expectedFormKind = BAREWire.Platform.FormKind.SharedBufferSpaceExtent then
                  let sameSpaceRows =
-                     boundary.SharedBufferPlacements.Values
-                     |> Seq.filter (fun r -> r.Placement.SpaceDescriptor.Space = s.Space)
-                     |> Seq.toList
+                     allSharedBufferPlacementRows
+                     |> List.filter (fun r -> r.Placement.SpaceDescriptor.Space = s.Space)
                  let distinctNames = sameSpaceRows |> List.map (fun r -> r.Placement.Name) |> List.distinct
+                 ob.Form.A = row.Space.Capacity &&
                  ob.Form.A > 0L &&
                  ob.Form.B = 0L &&
                  ob.Form.Names.Length > 0 &&
@@ -2960,80 +3259,28 @@ module Integrity =
                          q.Placement.SpaceOffset <= ob.Form.A - int64 q.Placement.SpaceDescriptor.RegionByteExtent))) &&
                  (sameSpaceRows |> List.forall (fun q -> q.Placement.SpaceDescriptor.RegionByteExtent > 0)) &&
                  (sameSpaceRows |> List.sumBy (fun q -> int64 q.Placement.SpaceDescriptor.RegionByteExtent)) <= ob.Form.A
-             elif expectedFormKind = BAREWire.Platform.FormKind.SharedBufferExtent then
-                 ob.Form.A = 0L &&
-                 ob.Form.B = 0L &&
-                 ob.Form.Names = sharedBufferExtentNames &&
-                 ob.Form.Values.Length = 8 &&
-                 ob.Form.Values[0] = int64 s.ElementSize &&
-                 ob.Form.Values[1] = int64 s.ElementCount &&
-                 ob.Form.Values[2] = int64 s.RegionByteExtent &&
-                 ob.Form.Values[3] > 0L &&
-                 p.SpaceOffset >= 0L &&
-                 s.RegionByteExtent > 0 &&
-                 p.SpaceOffset <= ob.Form.Values[3] - int64 s.RegionByteExtent &&
-                 (match spaceExtentObOpt with Some spaceOb -> ob.Form.Values[3] = spaceOb.Form.A | None -> false) &&
-                 ob.Form.Values[4] = int64 p.MaxAccessedElementIndex &&
-                 ob.Form.Values[5] = requiredBytes &&
-                 ob.Form.Values[6] = 1L &&
-                 ob.Form.Values[7] = p.SpaceOffset
-             elif expectedFormKind = BAREWire.Platform.FormKind.SharedBufferLayout then
-                 let expectedValues =
-                     [| int64 s.ElementSize
-                        int64 p.MeasuredElementSize
-                        int64 layout.Size
-                        int64 p.LayoutAlignment
-                        int64 s.RegionAlignment
-                        (if p.LayoutAlignment > 0 then int64 (s.RegionAlignment % p.LayoutAlignment) else -1L)
-                        1L
-                        flag (p.HasRawPointerFields || BAREWire.Platform.SharedBufferPlacement.structHasRawPointerFields p.StructLayout)
-                        flag p.HasVerifiedExports
-                        flag (isPowerOfTwoInt p.LayoutAlignment && isPowerOfTwoInt s.RegionAlignment)
-                        int64 layout.Alignment
-                        1L
-                        1L
-                        flag (not (System.String.IsNullOrWhiteSpace p.ViewLayout.Schema))
-                        flag (sharedBufferViewElementFits p)
-                        int64 p.ViewLayout.Alignment
-                        1L
-                        1L
-                        flag (sharedBufferStructFieldsGeometryOk p)
-                        (if p.SpaceOffset >= 0L && s.RegionAlignment > 0 then p.SpaceOffset % int64 s.RegionAlignment else 0L)
-                        (if p.LayoutAlignment > 0 then int64 (p.MeasuredElementSize % p.LayoutAlignment) else -1L) |]
-                 ob.Form.A = 0L &&
-                 ob.Form.B = 0L &&
-                 ob.Form.Names = sharedBufferLayoutNames &&
-                 ob.Form.Values = expectedValues
-             elif expectedFormKind = BAREWire.Platform.FormKind.SharedBufferLifetime then
-                 let expectedValues =
-                     [| int64 s.RegionLifetimeDepth
-                        int64 s.LibraryRetentionDepth
-                        int64 p.MappedDepth
-                        int64 p.FirstUseDepth
-                        int64 p.LastUseDepth
-                        int64 p.LibraryRetentionEndDepth
-                        int64 p.UnmapDepth
-                        flag p.LeakedAtExit |]
-                 ob.Form.A = 0L &&
-                 ob.Form.B = 0L &&
-                 ob.Form.Names = sharedBufferLifetimeNames &&
-                 ob.Form.Values = expectedValues
-             elif expectedFormKind = BAREWire.Platform.FormKind.SharedBufferExclusivity then
-                 let expectedValues =
-                     [| flag p.LibraryMutatesBuffer
-                        flag (s.Access = "ReadOnly")
-                        flag p.ConcurrentClefMutation
-                        flag p.OverlappingMutableShare
-                        flag (sharedBufferValidAccess s.Access)
-                        flag (sharedBufferViewAccessMatches p)
-                        1L
-                        flag (sharedBufferFieldAccessMatches p) |]
-                 ob.Form.A = 0L &&
-                 ob.Form.B = 0L &&
-                 ob.Form.Names = sharedBufferExclusivityNames &&
-                 ob.Form.Values = expectedValues
              else
-                 false)
+                 match placementIdxOpt with
+                 | Some idx when 4 * idx + 3 < expectedAll.Length ->
+                     let perPlacementExpected = expectedAll[4 * idx .. 4 * idx + 3]
+                     let formMatches =
+                         perPlacementExpected
+                         |> Array.exists (fun exp ->
+                             exp.Kind = expectedFindingKind &&
+                             exp.Form.Kind = expectedFormKind &&
+                             exp.Form = ob.Form)
+                     if expectedFormKind = BAREWire.Platform.FormKind.SharedBufferExtent then
+                         formMatches &&
+                         (match spaceExtentObOpt with
+                          | Some spaceOb ->
+                              ob.Form.Values.Length = 9 &&
+                              ob.Form.Values[4] = spaceOb.Form.A &&
+                              ob.Form.Values[5] = row.BufferSchema.Capacity &&
+                              spaceOb.Form.A = row.Space.Capacity
+                          | None -> false)
+                     else
+                         formMatches
+                 | _ -> false)
 
         let sharedBufferPlacementCheck (key: NodeId) (row: BoundarySharedBufferPlacementDeclaration) =
             let p = row.Placement
@@ -3043,11 +3290,47 @@ module Integrity =
             let nodeOrFact id = revision.Nodes.ContainsKey id || facts.ContainsKey id
             let requiredNodes =
                 [ row.Identity; row.Declaration; row.SpaceNode; row.BufferSchemaNode
-                  row.SpaceDescriptorNode; row.StructDescriptorNode; row.ViewDescriptorNode ]
+                  row.SpaceDescriptorNode; row.StructDescriptorNode; row.ViewDescriptorNode; row.RegionDescriptorNode ]
+            let platformPremiseConsistent =
+                sharedBufferByteOrderValid row.PlatformEndianness &&
+                row.Space.Name = s.Space &&
+                row.RegionDescriptor.Placement = p.Name &&
+                not boundaryDomainPlatformPremises.IsEmpty &&
+                (allSharedBufferPlacementRows |> List.forall (fun other ->
+                    other.PlatformEndianness = row.PlatformEndianness &&
+                    (other.Space.Name <> row.Space.Name || other.Space = row.Space) &&
+                    (other.BufferSchema.Name <> row.BufferSchema.Name || other.BufferSchema = row.BufferSchema))) &&
+                (boundaryDomainPlatformPremises |> List.forall (fun premise ->
+                    premise.Endianness = Some row.PlatformEndianness &&
+                    List.contains row.Space premise.Spaces &&
+                    List.contains row.BufferSchema premise.Buffers &&
+                    List.contains row.RegionDescriptor premise.SharedBufferRegions))
+            let desc = sharedBufferPlatformDescription row
+            let bareCheckFindings =
+                Array.append
+                    (BAREWire.Platform.Check.checkSharedBuffers desc allSharedBufferPlacements)
+                    (BAREWire.Platform.Check.checkSharedBufferRegions allSharedBufferPlacements allSharedBufferRegions)
+            let subjectMatchesPlacement (subject: string) =
+                let trimmedSubj = if isNull subject then "" else subject.Trim()
+                let trimmedName = if isNull p.Name then "" else p.Name.Trim()
+                let trimmedSpace = if isNull s.Space then "" else s.Space.Trim()
+                System.String.IsNullOrWhiteSpace trimmedName ||
+                System.String.IsNullOrWhiteSpace trimmedSubj ||
+                trimmedSubj = trimmedName ||
+                trimmedSubj = trimmedSpace ||
+                trimmedSubj = ("shared-buffer:" + trimmedName) ||
+                trimmedSubj = "shared-buffer-region"
+            let noBareFinding kind =
+                not (bareCheckFindings |> Array.exists (fun f -> f.Kind = kind && subjectMatchesPlacement f.Subject))
+            let nameUnique =
+                (allSharedBufferPlacements |> Array.filter (fun o -> o.Name = p.Name)).Length = 1
             let accountOk =
                 key = row.Identity &&
                 not (System.String.IsNullOrWhiteSpace p.Name) &&
                 not (System.String.IsNullOrWhiteSpace s.Space) &&
+                nameUnique &&
+                platformPremiseConsistent &&
+                sharedBufferQuotedDeclarationMatches row &&
                 (requiredNodes |> List.forall nodeOrFact) &&
                 (facts |> Map.forall (fun _ fact ->
                     (fact.References @ fact.Children |> List.forall nodeOrFact) &&
@@ -3056,19 +3339,25 @@ module Integrity =
                 sharedBufferStructFieldsGeometryOk p &&
                 sharedBufferStructFieldsNonOverlapping p
             let layoutOk =
+                noBareFinding BAREWire.Platform.FindingKind.SharedBufferLayoutInvalid &&
                 not p.HasRawPointerFields &&
                 not (BAREWire.Platform.SharedBufferPlacement.structHasRawPointerFields p.StructLayout) &&
                 p.HasVerifiedExports &&
                 p.MeasuredElementSize > 0 && layout.Size > 0 &&
                 layout.Size = p.MeasuredElementSize && s.ElementSize = p.MeasuredElementSize &&
                 isPowerOfTwoInt p.LayoutAlignment && isPowerOfTwoInt s.RegionAlignment &&
+                isPowerOfTwoInt row.Space.Alignment && row.Space.Alignment >= s.RegionAlignment &&
                 layout.Alignment = p.LayoutAlignment && p.ViewLayout.Alignment = p.LayoutAlignment &&
                 p.MeasuredElementSize % p.LayoutAlignment = 0 &&
                 s.RegionAlignment >= p.LayoutAlignment && s.RegionAlignment % p.LayoutAlignment = 0 &&
                 p.SpaceOffset >= 0L && p.SpaceOffset % int64 s.RegionAlignment = 0L &&
                 sharedBufferByteOrderValid s.ByteOrder && s.ByteOrder = p.LayoutByteOrder &&
+                s.ByteOrder = row.PlatformEndianness &&
                 sharedBufferMemoryRegionValid s.MemoryRegion &&
+                BAREWire.Platform.SharedBufferPlacement.spaceKindMatches row.Space.Kind s.MemoryRegion &&
                 not (System.String.IsNullOrWhiteSpace p.ViewLayout.Schema) &&
+                (row.BufferSchema.Name = p.ViewLayout.Schema || row.BufferSchema.Schema = p.ViewLayout.Schema) &&
+                row.BufferSchema.Space = s.Space &&
                 sharedBufferViewElementFits p &&
                 structFieldsOk
             let requiredBytes = int64 s.ElementCount * int64 p.MeasuredElementSize
@@ -3081,13 +3370,18 @@ module Integrity =
                     otherRow.Placement.SpaceDescriptor.Space <> s.Space ||
                     not (endsAfter otherRow.Placement p.SpaceOffset && endsAfter p otherRow.Placement.SpaceOffset))
             let extentOk =
+                noBareFinding BAREWire.Platform.FindingKind.SharedBufferExtentInvalid &&
+                row.Space.Capacity > 0L &&
                 s.ElementSize > 0 && s.ElementCount > 0 && s.RegionByteExtent > 0 &&
                 requiredBytes <= int64 System.Int32.MaxValue &&
                 int64 s.RegionByteExtent >= requiredBytes &&
+                row.BufferSchema.Capacity >= int64 s.RegionByteExtent &&
                 p.SpaceOffset >= 0L &&
+                p.SpaceOffset <= row.Space.Capacity - int64 s.RegionByteExtent &&
                 p.MaxAccessedElementIndex >= 0 && p.MaxAccessedElementIndex < s.ElementCount &&
                 sameSpaceDisjoint
             let lifetimeOk =
+                noBareFinding BAREWire.Platform.FindingKind.SharedBufferLifetimeInvalid &&
                 s.RegionLifetimeDepth > 0 && s.LibraryRetentionDepth >= 0 &&
                 s.RegionLifetimeDepth <= s.LibraryRetentionDepth &&
                 p.MappedDepth >= 0 && p.MappedDepth <= p.FirstUseDepth &&
@@ -3096,7 +3390,10 @@ module Integrity =
                 p.LibraryRetentionEndDepth < p.UnmapDepth &&
                 not p.LeakedAtExit
             let exclusivityOk =
+                noBareFinding BAREWire.Platform.FindingKind.SharedBufferConflictingAccess &&
                 sharedBufferValidAccess s.Access &&
+                BAREWire.Platform.SharedBufferPlacement.spaceAccessMatches row.Space.Access s.Access &&
+                BAREWire.Platform.SharedBufferPlacement.spaceAccessMatches row.BufferSchema.Access s.Access &&
                 sharedBufferViewAccessMatches p &&
                 sharedBufferFieldAccessMatches p &&
                 not (s.Access = "ReadOnly" && p.LibraryMutatesBuffer) &&
@@ -3115,14 +3412,14 @@ module Integrity =
                 resolvedObligations
                 |> List.tryFind (fun ob -> ob.Form.Kind = BAREWire.Platform.FormKind.SharedBufferSpaceExtent)
             let hasForm findingKind formKind =
-                resolvedObligations |> List.exists (fun ob -> sharedBufferObligationFormMatches p spaceExtentObOpt ob findingKind formKind)
+                resolvedObligations |> List.exists (fun ob -> sharedBufferObligationFormMatches row spaceExtentObOpt ob findingKind formKind)
             let allFormsValid =
                 resolvedObligations |> List.forall (fun ob ->
-                    sharedBufferObligationFormMatches p spaceExtentObOpt ob BAREWire.Platform.FindingKind.SharedBufferLayoutInvalid BAREWire.Platform.FormKind.SharedBufferLayout ||
-                    sharedBufferObligationFormMatches p spaceExtentObOpt ob BAREWire.Platform.FindingKind.SharedBufferExtentInvalid BAREWire.Platform.FormKind.SharedBufferExtent ||
-                    sharedBufferObligationFormMatches p spaceExtentObOpt ob BAREWire.Platform.FindingKind.SharedBufferExtentInvalid BAREWire.Platform.FormKind.SharedBufferSpaceExtent ||
-                    sharedBufferObligationFormMatches p spaceExtentObOpt ob BAREWire.Platform.FindingKind.SharedBufferLifetimeInvalid BAREWire.Platform.FormKind.SharedBufferLifetime ||
-                    sharedBufferObligationFormMatches p spaceExtentObOpt ob BAREWire.Platform.FindingKind.SharedBufferConflictingAccess BAREWire.Platform.FormKind.SharedBufferExclusivity)
+                    sharedBufferObligationFormMatches row spaceExtentObOpt ob BAREWire.Platform.FindingKind.SharedBufferLayoutInvalid BAREWire.Platform.FormKind.SharedBufferLayout ||
+                    sharedBufferObligationFormMatches row spaceExtentObOpt ob BAREWire.Platform.FindingKind.SharedBufferExtentInvalid BAREWire.Platform.FormKind.SharedBufferExtent ||
+                    sharedBufferObligationFormMatches row spaceExtentObOpt ob BAREWire.Platform.FindingKind.SharedBufferExtentInvalid BAREWire.Platform.FormKind.SharedBufferSpaceExtent ||
+                    sharedBufferObligationFormMatches row spaceExtentObOpt ob BAREWire.Platform.FindingKind.SharedBufferLifetimeInvalid BAREWire.Platform.FormKind.SharedBufferLifetime ||
+                    sharedBufferObligationFormMatches row spaceExtentObOpt ob BAREWire.Platform.FindingKind.SharedBufferConflictingAccess BAREWire.Platform.FormKind.SharedBufferExclusivity)
             let obligationsOk =
                 not row.Obligations.IsEmpty &&
                 (List.distinct row.Obligations).Length = row.Obligations.Length &&
@@ -3154,29 +3451,600 @@ module Integrity =
               if not participantsOk then
                   yield defect "Emission.Boundary.SharedBufferPlacements.Participants" key "The shared-buffer placement declaration lacks established participant evidence." ]
 
+        let elementTypeMatchesStructLayout (elementType: TypeIdentity) (structDesc: BAREWire.Hardware.StructDescriptor) =
+            let shortName (s: string) =
+                match s.LastIndexOf '.' with
+                | -1 -> s
+                | idx -> s.Substring(idx + 1)
+            match elementType with
+            | TypeIdentity.Application(ctor, []) when ctor.NativeKind.IsNone ->
+                let tName = ctor.Declaration.Name
+                let qualName =
+                    if ctor.Declaration.Module.IsEmpty then tName
+                    else (String.concat "." ctor.Declaration.Module) + "." + tName
+                let sName = structDesc.Name
+                let nameMatches =
+                    if sName.Contains "." then
+                        qualName = sName || tName = sName
+                    else
+                        tName = sName || shortName tName = sName
+                not (System.String.IsNullOrWhiteSpace tName) &&
+                not (System.String.IsNullOrWhiteSpace sName) &&
+                nameMatches &&
+                (match revision.Emission.Numeric.Layouts.TryFind elementType with
+                 | Some(SettledLayout.Record(fields, Some sz, Some al)) ->
+                     sz = structDesc.Layout.Size &&
+                     al = structDesc.Layout.Alignment &&
+                     fields.Length = structDesc.Layout.Fields.Length &&
+                     (List.zip fields (Array.toList structDesc.Layout.Fields)
+                      |> List.forall (fun (sf, df) ->
+                          let elemWidth = sharedBufferScalarByteWidth df.Repr
+                          let expectedByteSize = BAREWire.Hardware.Abi.tryFieldEnd 0 elemWidth df.Count
+                          let slotMatches =
+                              match df.Repr, sf.Slot with
+                              | _ when df.Count > 1 ->
+                                  match expectedByteSize with
+                                  | Some b -> sf.Slot = SettledSlot.InlineBytes(b, elemWidth)
+                                  | None -> false
+                              | ("f32" | "f64"), SettledSlot.Real bits -> bits = elemWidth * 8
+                              | "bool", SettledSlot.Bool -> true
+                              | ("u8" | "i8" | "u16" | "i16" | "u32" | "i32" | "u64" | "i64" | "usize" | "isize"), SettledSlot.Integer(bits, _) ->
+                                  bits = elemWidth * 8
+                              | _, SettledSlot.InlineBytes(bytes, align) ->
+                                  Some bytes = expectedByteSize && align = elemWidth
+                              | _ -> false
+                          elemWidth > 0 &&
+                          sf.Name = df.Name &&
+                          sf.Offset = Some df.Offset &&
+                          sf.Size = expectedByteSize &&
+                          sf.Align = Some elemWidth &&
+                          slotMatches))
+                 | _ -> false)
+            | _ -> false
+
+        let callMatchesDescriptorBinding (callId: NodeId) (expectedBinding: string) =
+            not (System.String.IsNullOrWhiteSpace expectedBinding) &&
+            match boundary.Calls.TryFind callId with
+            | Some call when call.Site = callId && revision.Nodes.ContainsKey callId ->
+                match boundary.Imports.TryFind call.Import with
+                | Some imp ->
+                    importMatchesBinding imp expectedBinding &&
+                    call.Result = imp.Result &&
+                    (call.Arguments |> List.map (fun a -> a.Formal, a.Abi)) = imp.Parameters
+                | None -> false
+            | _ -> false
+
         let sharedBufferViewUseCheck (key: NodeId) (row: BoundarySharedBufferViewUse) =
             let declOpt = boundary.SharedBufferPlacements.TryFind row.PlacementDeclaration
             let elementOk =
-                (match row.ElementType with TypeIdentity.Error _ -> false | _ -> true) &&
-                (match declOpt, row.ElementSlot with
-                 | Some d, SettledSlot.InlineBytes(bytes, align) ->
-                     bytes = d.Placement.MeasuredElementSize && align = d.Placement.LayoutAlignment
-                 | _ -> false)
+                match declOpt, row.ElementSlot with
+                | Some d, SettledSlot.InlineBytes(bytes, align) ->
+                    bytes = d.Placement.MeasuredElementSize &&
+                    align = d.Placement.LayoutAlignment &&
+                    elementTypeMatchesStructLayout row.ElementType d.Placement.StructLayout
+                | _ -> false
+            let rec handleRootedInAcquisition (seen: Set<NodeId>) (id: NodeId) =
+                if id = row.RegionAcquisitionCall then true
+                elif Set.contains id seen then false
+                else
+                    let seen = Set.add id seen
+                    let origin = exprOrigin Set.empty id
+                    if origin = row.RegionAcquisitionCall then true
+                    elif origin <> id && Set.contains origin seen then false
+                    else
+                        let seen = Set.add origin seen
+                        match revision.Nodes.TryFind origin with
+                        | Some { Kind = SemanticKind.Binding(_, isMutable, _, _); Children = init :: _ } when not isMutable ->
+                            handleRootedInAcquisition seen init
+                        | Some { Kind = SemanticKind.VarRef(_, Some target) } ->
+                            match revision.Nodes.TryFind target with
+                            | Some { Kind = SemanticKind.Binding(_, isMutable, _, _) } when isMutable -> false
+                            | _ -> handleRootedInAcquisition seen target
+                        | Some { Kind = SemanticKind.TypeAnnotation(expr, _) } ->
+                            handleRootedInAcquisition seen expr
+                        | _ -> false
+            let rec originRootedInViewUse (seen: Set<NodeId>) (id: NodeId) =
+                if handleRootedInAcquisition Set.empty id then true
+                elif Set.contains id seen then false
+                else
+                    let seen = Set.add id seen
+                    let origin = exprOrigin Set.empty id
+                    if handleRootedInAcquisition Set.empty origin then true
+                    elif origin <> id && Set.contains origin seen then false
+                    else
+                        let seen = Set.add origin seen
+                        match revision.Nodes.TryFind origin with
+                        | Some { Kind = SemanticKind.Binding(_, isMutable, _, _); Children = init :: _ } when not isMutable ->
+                            originRootedInViewUse seen init
+                        | Some { Kind = SemanticKind.VarRef(_, Some target) } ->
+                            match revision.Nodes.TryFind target with
+                            | Some { Kind = SemanticKind.Binding(_, isMutable, _, _) } when isMutable -> false
+                            | _ -> originRootedInViewUse seen target
+                        | Some { Kind = SemanticKind.TypeAnnotation(expr, _) } ->
+                            originRootedInViewUse seen expr
+                        | Some { Kind = SemanticKind.FieldGet(target, _) | SemanticKind.IndexGet(target, _) | SemanticKind.Deref target } ->
+                            originRootedInViewUse seen target
+                        | _ -> false
+            let rec taintedCarrier (seen: Set<NodeId>) (id: NodeId) =
+                if handleRootedInAcquisition Set.empty id then true
+                elif Set.contains id seen then false
+                else
+                    let seen = Set.add id seen
+                    match revision.Nodes.TryFind id with
+                    | Some { Kind = SemanticKind.Binding(_, _, _, _); Children = init :: _ } ->
+                        taintedCarrier seen init
+                    | Some { Kind = SemanticKind.VarRef(_, Some target) } ->
+                        taintedCarrier seen target
+                    | Some { Kind = SemanticKind.IndexGet(target, _) | SemanticKind.Deref target
+                                  | SemanticKind.TypeAnnotation(target, _) | SemanticKind.Upcast(target, _)
+                                  | SemanticKind.Downcast(target, _) | SemanticKind.AddressOf(target, _)
+                                  | SemanticKind.CellAddress target | SemanticKind.ElementAddress(target, _)
+                                  | SemanticKind.FieldAddress(target, _) | SemanticKind.Reborrow target
+                                  | SemanticKind.EagerExpr target | SemanticKind.TupleGet(target, _)
+                                  | SemanticKind.DUEliminate(target, _, _, _) | SemanticKind.LazyForce target
+                                  | SemanticKind.Lambda(_, target, _, _, _) | SemanticKind.LazyExpr(target, _)
+                                  | SemanticKind.SeqExpr(target, _) } ->
+                        taintedCarrier seen target
+                    | Some { Kind = SemanticKind.Application(fn, _) } ->
+                        taintedCarrier seen fn
+                    | Some { Kind = SemanticKind.IfThenElse(_, thenB, elseB) } ->
+                        taintedCarrier seen thenB || (elseB |> Option.exists (taintedCarrier seen))
+                    | Some { Kind = SemanticKind.Match(_, cases) } ->
+                        cases |> List.exists (fun c -> taintedCarrier seen c.Body)
+                    | Some { Kind = SemanticKind.CaseElimination(_, arms) } ->
+                        arms |> List.exists (fun a -> taintedCarrier seen a.Body)
+                    | Some { Kind = SemanticKind.ContinuationDispatch(_, cases, other) } ->
+                        taintedCarrier seen other || (cases |> List.exists (snd >> taintedCarrier seen))
+                    | Some { Kind = SemanticKind.TryWith(body, handler) } ->
+                        taintedCarrier seen body || taintedCarrier seen handler
+                    | Some { Kind = SemanticKind.TryFinally(body, _) } ->
+                        taintedCarrier seen body
+                    | Some { Kind = SemanticKind.Sequential items } ->
+                        List.tryLast items |> Option.exists (taintedCarrier seen)
+                    | Some { Kind = SemanticKind.TupleExpr elems | SemanticKind.ArrayExpr elems | SemanticKind.ListExpr elems } ->
+                        elems |> List.exists (taintedCarrier seen)
+                    | Some { Kind = SemanticKind.RecordExpr(fields, copyFrom) } ->
+                        (fields |> List.exists (snd >> taintedCarrier seen)) ||
+                        (copyFrom |> Option.exists (taintedCarrier seen))
+                    | Some { Kind = SemanticKind.UnionCase(_, _, payload) | SemanticKind.DUConstruct(_, _, payload, _) } ->
+                        payload |> Option.exists (taintedCarrier seen)
+                    | _ -> false
+            let rec taintedByAcquisition (seen: Set<NodeId>) (id: NodeId) =
+                if originRootedInViewUse Set.empty id || taintedCarrier Set.empty id then true
+                elif Set.contains id seen then false
+                else
+                    let seen = Set.add id seen
+                    match revision.Nodes.TryFind id with
+                    | Some { Kind = SemanticKind.Binding(_, _, _, _); Children = init :: _ } ->
+                        taintedByAcquisition seen init
+                    | Some { Kind = SemanticKind.VarRef(_, Some target) } ->
+                        taintedByAcquisition seen target
+                    | Some { Kind = SemanticKind.FieldGet(target, _) | SemanticKind.IndexGet(target, _) | SemanticKind.Deref target
+                                  | SemanticKind.TypeAnnotation(target, _) | SemanticKind.Upcast(target, _)
+                                  | SemanticKind.Downcast(target, _) | SemanticKind.AddressOf(target, _)
+                                  | SemanticKind.CellAddress target | SemanticKind.ElementAddress(target, _)
+                                  | SemanticKind.FieldAddress(target, _) | SemanticKind.Reborrow target
+                                  | SemanticKind.EagerExpr target | SemanticKind.TupleGet(target, _)
+                                  | SemanticKind.DUEliminate(target, _, _, _) | SemanticKind.LazyForce target
+                                  | SemanticKind.Lambda(_, target, _, _, _) | SemanticKind.LazyExpr(target, _)
+                                  | SemanticKind.SeqExpr(target, _) } ->
+                        taintedByAcquisition seen target
+                    | _ -> false
+            let kindChildren (kind: SemanticKind) : NodeId list =
+                match kind with
+                | SemanticKind.Application(fn, args) -> fn :: args
+                | SemanticKind.Lambda(_, body, _, _, _) -> [ body ]
+                | SemanticKind.Match(scrut, cases) ->
+                    scrut :: (cases |> List.collect (fun c -> c.Body :: Option.toList c.Guard))
+                | SemanticKind.CaseElimination(scrut, arms) ->
+                    scrut :: (arms |> List.collect (fun a -> a.Body :: Option.toList a.Guard))
+                | SemanticKind.Sequential items -> items
+                | SemanticKind.WhileLoop(guard, body) -> [ guard; body ]
+                | SemanticKind.ContinuationDispatch(sel, cases, other) ->
+                    sel :: other :: (cases |> List.map snd)
+                | SemanticKind.ForLoop(_, s, f, _, body) -> [ s; f; body ]
+                | SemanticKind.ForEach(_, formal, coll, body) -> [ formal; coll; body ]
+                | SemanticKind.IfThenElse(guard, thenB, elseB) -> [ guard; thenB ] @ Option.toList elseB
+                | SemanticKind.Require(cond, _) -> [ cond ]
+                | SemanticKind.TryWith(body, handler) -> [ body; handler ]
+                | SemanticKind.TryFinally(body, cleanup) -> [ body; cleanup ]
+                | SemanticKind.FieldGet(expr, _) | SemanticKind.Deref expr | SemanticKind.TypeAnnotation(expr, _)
+                | SemanticKind.Upcast(expr, _) | SemanticKind.Downcast(expr, _) | SemanticKind.TypeTest(expr, _)
+                | SemanticKind.AddressOf(expr, _) | SemanticKind.Reborrow expr | SemanticKind.EagerExpr expr -> [ expr ]
+                | SemanticKind.FieldSet(expr, _, v) | SemanticKind.Set(expr, v) -> [ expr; v ]
+                | SemanticKind.IndexGet(expr, idx) | SemanticKind.ElementAddress(expr, idx) -> [ expr; idx ]
+                | SemanticKind.IndexSet(expr, idx, v) | SemanticKind.NamedIndexedPropertySet(expr, _, idx, v) -> [ expr; idx; v ]
+                | SemanticKind.LazyExpr(body, _) | SemanticKind.SeqExpr(body, _) -> [ body ]
+                | _ -> []
+            let parentChildrenMap : Map<NodeId, NodeId list> =
+                revision.Nodes
+                |> Map.toList
+                |> List.choose (fun (cid, cn) -> cn.Parent |> Option.map (fun pid -> pid, cid))
+                |> List.groupBy fst
+                |> List.map (fun (pid, pairs) -> pid, pairs |> List.map snd)
+                |> Map.ofList
+            let childrenByNode : Map<NodeId, NodeId list> =
+                revision.Nodes
+                |> Map.map (fun nid n ->
+                    let fromParent = parentChildrenMap.TryFind nid |> Option.defaultValue []
+                    List.distinct (n.Children @ kindChildren n.Kind @ fromParent))
+            let rec subtreeContains (seen: Set<NodeId>) (rootId: NodeId) (targetId: NodeId) =
+                if rootId = targetId then true
+                elif Set.contains rootId seen then false
+                else
+                    let seen = Set.add rootId seen
+                    let children = childrenByNode.TryFind rootId |> Option.defaultValue []
+                    children |> List.exists (fun c -> subtreeContains seen c targetId)
+            let callsAndProjectionsOk =
+                match declOpt with
+                | None -> false
+                | Some d ->
+                    let acqCallResultOk =
+                        match boundary.Calls.TryFind row.RegionAcquisitionCall with
+                        | Some call ->
+                            match call.Result with
+                            | Some(BoundaryScalar.Integer(bits, false)) when bits > 0 -> true
+                            | Some(BoundaryScalar.ResourceHandle _) -> true
+                            | _ -> false
+                        | None -> false
+                    let regionConsumerCallOk (callId: NodeId) (expectedBinding: string) =
+                        callMatchesDescriptorBinding callId expectedBinding &&
+                        match boundary.Calls.TryFind callId with
+                        | Some call ->
+                            not call.Arguments.IsEmpty &&
+                            (call.Arguments |> List.exists (fun arg -> handleRootedInAcquisition Set.empty arg.Actual)) &&
+                            (match call.Result with
+                             | None | Some(BoundaryScalar.Integer _) -> true
+                             | _ -> false)
+                        | None -> false
+                    let acqOk =
+                        callMatchesDescriptorBinding row.RegionAcquisitionCall d.RegionDescriptor.Acquire &&
+                        acqCallResultOk
+                    let relOk =
+                        if d.Placement.LeakedAtExit then
+                            row.RegionReleaseCall.IsNone && row.ReleaseOrder.IsNone
+                        else
+                            match row.RegionReleaseCall, row.ReleaseOrder, d.RegionDescriptor.Release with
+                            | Some relCallId, Some relOrd, Some relBinding ->
+                                row.AcquisitionOrder < relOrd &&
+                                regionConsumerCallOk relCallId relBinding
+                            | _ -> false
+                    let syncOk =
+                        row.SyncCalls.Length = row.SyncOrders.Length &&
+                        (row.SyncCalls |> List.forall (fun syncId ->
+                            d.RegionDescriptor.Sync
+                            |> Array.exists (fun syncBinding -> regionConsumerCallOk syncId syncBinding)))
+                    let foreignUsesOk =
+                        row.ForeignUseCalls.Length = row.ForeignUseOrders.Length &&
+                        (row.ForeignUseCalls |> List.forall (fun fCallId ->
+                            d.RegionDescriptor.ForeignUses
+                            |> Array.exists (fun fuBinding -> regionConsumerCallOk fCallId fuBinding)))
+                    let isReadProjectionNode (nodeId: NodeId) =
+                        not (boundary.Calls.ContainsKey nodeId) &&
+                        match revision.Nodes.TryFind nodeId with
+                        | Some { Kind = SemanticKind.FieldGet(target, fieldName) } ->
+                            originRootedInViewUse Set.empty target &&
+                            (d.Placement.StructLayout.Layout.Fields
+                             |> Array.exists (fun f -> f.Name = fieldName && f.Access <> BAREWire.Hardware.AccessKind.WriteOnly))
+                        | Some { Kind = SemanticKind.IndexGet(target, _) | SemanticKind.Deref target } ->
+                            originRootedInViewUse Set.empty target &&
+                            (d.Placement.StructLayout.Layout.Fields
+                             |> Array.forall (fun f -> f.Access <> BAREWire.Hardware.AccessKind.WriteOnly))
+                        | Some { Kind = SemanticKind.VarRef(_, Some target) } ->
+                            originRootedInViewUse Set.empty target &&
+                            (d.Placement.StructLayout.Layout.Fields
+                             |> Array.forall (fun f -> f.Access <> BAREWire.Hardware.AccessKind.WriteOnly))
+                        | _ -> false
+                    let isWriteProjectionNode (nodeId: NodeId) =
+                        not (boundary.Calls.ContainsKey nodeId) &&
+                        match revision.Nodes.TryFind nodeId with
+                        | Some { Kind = SemanticKind.FieldSet(target, fieldName, _) } ->
+                            originRootedInViewUse Set.empty target &&
+                            (d.Placement.StructLayout.Layout.Fields
+                             |> Array.exists (fun f -> f.Name = fieldName && f.Access <> BAREWire.Hardware.AccessKind.ReadOnly))
+                        | Some { Kind = SemanticKind.IndexSet(target, _, _) } ->
+                            originRootedInViewUse Set.empty target &&
+                            (d.Placement.StructLayout.Layout.Fields
+                             |> Array.forall (fun f -> f.Access <> BAREWire.Hardware.AccessKind.ReadOnly))
+                        | _ -> false
+                    let isSubViewTargetOfListedProjection (candidateId: NodeId) =
+                        (row.ViewProjections @ row.WriteProjections)
+                        |> List.exists (fun projId ->
+                            projId <> candidateId &&
+                            match revision.Nodes.TryFind projId with
+                            | Some { Kind = SemanticKind.FieldGet(t, _) | SemanticKind.IndexGet(t, _) | SemanticKind.Deref t
+                                          | SemanticKind.FieldSet(t, _, _) | SemanticKind.IndexSet(t, _, _) } ->
+                                t = candidateId ||
+                                (match revision.Nodes.TryFind t with
+                                 | Some { Kind = SemanticKind.VarRef(_, Some bId) } ->
+                                     match revision.Nodes.TryFind bId with
+                                     | Some { Kind = SemanticKind.Binding(_, false, _, _); Children = init :: _ } -> init = candidateId
+                                     | _ -> false
+                                 | _ -> false)
+                            | _ -> false)
+                    let noUnauthorizedHandleOrViewConsumers =
+                        revision.Nodes
+                        |> Map.forall (fun nodeId node ->
+                            match node.Kind with
+                            | SemanticKind.FieldSet(_, _, value) ->
+                                not (taintedCarrier Set.empty value)
+                            | SemanticKind.IndexSet(_, index, value) ->
+                                not (taintedCarrier Set.empty index) &&
+                                not (taintedCarrier Set.empty value)
+                            | SemanticKind.IndexGet(_, index) ->
+                                not (taintedCarrier Set.empty index)
+                            | SemanticKind.NamedIndexedPropertySet(target, _, index, value) ->
+                                not (taintedByAcquisition Set.empty target) &&
+                                not (taintedCarrier Set.empty index) &&
+                                not (taintedCarrier Set.empty value)
+                            | SemanticKind.Set(target, value) ->
+                                not (taintedByAcquisition Set.empty target) &&
+                                not (taintedCarrier Set.empty value)
+                            | SemanticKind.Binding(_, isMutable, _, _) when isMutable ->
+                                not (node.Children |> List.exists (taintedCarrier Set.empty))
+                            | SemanticKind.Upcast(expr, _) | SemanticKind.Downcast(expr, _)
+                            | SemanticKind.TypeTest(expr, _) | SemanticKind.AddressOf(expr, _)
+                            | SemanticKind.CellAddress expr | SemanticKind.ElementAddress(expr, _)
+                            | SemanticKind.FieldAddress(expr, _) | SemanticKind.Reborrow expr
+                            | SemanticKind.TupleGet(expr, _) | SemanticKind.DUEliminate(expr, _, _, _)
+                            | SemanticKind.Yield expr | SemanticKind.YieldBang expr
+                            | SemanticKind.LazyForce expr | SemanticKind.EagerExpr expr
+                            | SemanticKind.TraitCall(_, _, expr) ->
+                                not (taintedCarrier Set.empty expr)
+                            | SemanticKind.FrameWrite(_, _, value) | SemanticKind.EnvironmentWrite(_, _, value)
+                            | SemanticKind.LazyWrite(_, _, value) ->
+                                not (taintedCarrier Set.empty value)
+                            | SemanticKind.EnvironmentCreate(_, inits) | SemanticKind.LazyEnvironment(_, inits) ->
+                                not (inits |> List.exists (snd >> taintedCarrier Set.empty))
+                            | SemanticKind.IfThenElse(guard, thenB, elseB) ->
+                                not (taintedCarrier Set.empty guard) &&
+                                not (taintedCarrier Set.empty thenB) &&
+                                not (elseB |> Option.exists (taintedCarrier Set.empty))
+                            | SemanticKind.Match(scrut, cases) ->
+                                not (taintedCarrier Set.empty scrut) &&
+                                not (cases |> List.exists (fun c ->
+                                    taintedCarrier Set.empty c.Body ||
+                                    (c.Guard |> Option.exists (taintedCarrier Set.empty))))
+                            | SemanticKind.CaseElimination(scrut, arms) ->
+                                not (taintedCarrier Set.empty scrut) &&
+                                not (arms |> List.exists (fun a ->
+                                    taintedCarrier Set.empty a.Body ||
+                                    (a.Guard |> Option.exists (taintedCarrier Set.empty))))
+                            | SemanticKind.ContinuationDispatch(sel, cases, other) ->
+                                not (taintedCarrier Set.empty sel) &&
+                                not (taintedCarrier Set.empty other) &&
+                                not (cases |> List.exists (snd >> taintedCarrier Set.empty))
+                            | SemanticKind.TryWith(body, handler) ->
+                                not (taintedCarrier Set.empty body) &&
+                                not (taintedCarrier Set.empty handler)
+                            | SemanticKind.TryFinally(body, cleanup) ->
+                                not (taintedCarrier Set.empty body) &&
+                                not (taintedCarrier Set.empty cleanup)
+                            | SemanticKind.Lambda(_, body, _, _, _) | SemanticKind.LazyExpr(body, _)
+                            | SemanticKind.SeqExpr(body, _) ->
+                                not (taintedCarrier Set.empty body)
+                            | SemanticKind.TupleExpr elems | SemanticKind.ArrayExpr elems | SemanticKind.ListExpr elems ->
+                                not (elems |> List.exists (taintedCarrier Set.empty))
+                            | SemanticKind.RecordExpr(fields, copyFrom) ->
+                                not (fields |> List.exists (snd >> taintedCarrier Set.empty)) &&
+                                not (copyFrom |> Option.exists (taintedCarrier Set.empty))
+                            | SemanticKind.UnionCase(_, _, payload) | SemanticKind.DUConstruct(_, _, payload, _)
+                            | SemanticKind.DUInitialize(_, _, _, payload) ->
+                                not (payload |> Option.exists (taintedCarrier Set.empty))
+                            | SemanticKind.Application(fn, args) ->
+                                not (taintedCarrier Set.empty fn) &&
+                                (if args |> List.exists (taintedCarrier Set.empty) then
+                                     row.RegionReleaseCall = Some nodeId ||
+                                     List.contains nodeId row.SyncCalls ||
+                                     List.contains nodeId row.ForeignUseCalls
+                                 else true)
+                            | _ -> true)
+                    let allGraphWritesListed =
+                        revision.Nodes
+                        |> Map.forall (fun nodeId node ->
+                            match node.Kind with
+                            | SemanticKind.FieldSet(target, _, _) | SemanticKind.IndexSet(target, _, _)
+                                when originRootedInViewUse Set.empty target || taintedByAcquisition Set.empty target ->
+                                originRootedInViewUse Set.empty target &&
+                                List.contains nodeId row.WriteProjections
+                            | _ -> true)
+                    let allGraphReadsListed =
+                        revision.Nodes
+                        |> Map.forall (fun nodeId node ->
+                            match node.Kind with
+                            | SemanticKind.FieldGet(target, _)
+                                when originRootedInViewUse Set.empty target || taintedByAcquisition Set.empty target ->
+                                originRootedInViewUse Set.empty target &&
+                                List.contains nodeId row.ViewProjections
+                            | SemanticKind.IndexGet(target, _) | SemanticKind.Deref target
+                                when originRootedInViewUse Set.empty target || taintedByAcquisition Set.empty target ->
+                                originRootedInViewUse Set.empty target &&
+                                (List.contains nodeId row.ViewProjections || isSubViewTargetOfListedProjection nodeId)
+                            | _ -> true)
+                    let allGraphRegionCallsListed =
+                        boundary.Calls
+                        |> Map.forall (fun callId call ->
+                            if callId = row.RegionAcquisitionCall then true
+                            elif call.Arguments |> List.exists (fun arg -> handleRootedInAcquisition Set.empty arg.Actual || taintedCarrier Set.empty arg.Actual) then
+                                let isRel =
+                                    match d.RegionDescriptor.Release with
+                                    | Some relB -> callMatchesDescriptorBinding callId relB && row.RegionReleaseCall = Some callId
+                                    | None -> false
+                                let isSync =
+                                    d.RegionDescriptor.Sync |> Array.exists (callMatchesDescriptorBinding callId) &&
+                                    List.contains callId row.SyncCalls
+                                let isFu =
+                                    d.RegionDescriptor.ForeignUses |> Array.exists (callMatchesDescriptorBinding callId) &&
+                                    List.contains callId row.ForeignUseCalls
+                                isRel || isSync || isFu
+                            else true)
+                    let isReadOnlyPlacement =
+                        d.Placement.SpaceDescriptor.Access = "ReadOnly" ||
+                        d.Placement.ViewLayout.Access = BAREWire.Hardware.AccessKind.ReadOnly ||
+                        d.Space.Access = BAREWire.Platform.Access.ReadOnly
+                    let isWriteOnlyPlacement =
+                        d.Placement.SpaceDescriptor.Access = "WriteOnly" ||
+                        d.Placement.ViewLayout.Access = BAREWire.Hardware.AccessKind.WriteOnly ||
+                        d.Space.Access = BAREWire.Platform.Access.WriteOnly
+                    let projectionsOk =
+                        not (row.ViewProjections.IsEmpty && row.WriteProjections.IsEmpty && row.ForeignUseCalls.IsEmpty) &&
+                        row.ViewProjections.Length = row.ProjectionOrders.Length &&
+                        row.WriteProjections.Length = row.WriteProjectionOrders.Length &&
+                        noUnauthorizedHandleOrViewConsumers &&
+                        allGraphWritesListed &&
+                        allGraphReadsListed &&
+                        allGraphRegionCallsListed &&
+                        (if isWriteOnlyPlacement then
+                             row.ViewProjections.IsEmpty && row.ProjectionOrders.IsEmpty
+                         else
+                             row.ViewProjections |> List.forall isReadProjectionNode) &&
+                        (if isReadOnlyPlacement then
+                             row.WriteProjections.IsEmpty && row.WriteProjectionOrders.IsEmpty
+                         else
+                             row.WriteProjections |> List.forall isWriteProjectionNode)
+                    let allRoleNodes =
+                        row.RegionAcquisitionCall
+                        :: (Option.toList row.RegionReleaseCall)
+                        @ row.SyncCalls
+                        @ row.ForeignUseCalls
+                        @ row.ViewProjections
+                        @ row.WriteProjections
+                    let rolesDistinct =
+                        (List.distinct allRoleNodes).Length = allRoleNodes.Length &&
+                        List.contains row.Site (row.ViewProjections @ row.WriteProjections @ row.ForeignUseCalls)
+                    let allRoleOrders =
+                        row.AcquisitionOrder
+                        :: (Option.toList row.ReleaseOrder)
+                        @ row.SyncOrders
+                        @ row.ForeignUseOrders
+                        @ row.ProjectionOrders
+                        @ row.WriteProjectionOrders
+                    let allUseOrders =
+                        row.SyncOrders @ row.ForeignUseOrders @ row.ProjectionOrders @ row.WriteProjectionOrders
+                    let clefAccessOrders =
+                        row.ProjectionOrders @ row.WriteProjectionOrders
+                    let isEntryPointLambda (n: SemanticNode) =
+                        revision.Codata.DeclarationRootLambdas.TryFind n.Id = Some DeclRoot.EntryPoint ||
+                        List.contains (n.Id, DeclRoot.EntryPoint) revision.DeclarationRoots ||
+                        (n.Parent |> Option.exists (fun pid ->
+                            List.contains (pid, DeclRoot.EntryPoint) revision.DeclarationRoots ||
+                            match revision.Nodes.TryFind pid with
+                            | Some { Kind = SemanticKind.Binding(_, _, _, Some DeclRoot.EntryPoint) } -> true
+                            | _ -> false))
+                    let controlFlowSubScopes : (bool * bool * NodeId) list =
+                        revision.Nodes.Values
+                        |> Seq.toList
+                        |> List.collect (fun n ->
+                            match n.Kind with
+                            | SemanticKind.WhileLoop(guard, body) -> [ (true, false, guard); (true, false, body) ]
+                            | SemanticKind.ForLoop(_, s, f, _, body) -> [ (false, false, s); (false, false, f); (true, false, body) ]
+                            | SemanticKind.ForEach(_, _, coll, body) -> [ (false, false, coll); (true, false, body) ]
+                            | SemanticKind.IfThenElse(_, thenB, elseB) ->
+                                (false, false, thenB) :: (elseB |> Option.map (fun e -> (false, false, e)) |> Option.toList)
+                            | SemanticKind.Match(_, cases) ->
+                                cases |> List.collect (fun c -> (false, false, c.Body) :: (c.Guard |> Option.map (fun g -> (false, false, g)) |> Option.toList))
+                            | SemanticKind.CaseElimination(_, arms) ->
+                                arms |> List.collect (fun a -> (false, false, a.Body) :: (a.Guard |> Option.map (fun g -> (false, false, g)) |> Option.toList))
+                            | SemanticKind.ContinuationDispatch(_, cases, other) ->
+                                (false, false, other) :: (cases |> List.map (fun (_, b) -> (false, false, b)))
+                            | SemanticKind.TryWith(body, handler) -> [ (false, false, body); (false, false, handler) ]
+                            | SemanticKind.TryFinally(body, cleanup) -> [ (false, false, body); (false, false, cleanup) ]
+                            | SemanticKind.Lambda(_, body, _, _, _) ->
+                                [ (not (isEntryPointLambda n), true, body) ]
+                            | SemanticKind.LazyExpr(body, _) | SemanticKind.SeqExpr(body, _) ->
+                                [ (true, true, body) ]
+                            | _ -> [])
+                    let controlFlowScopesConsistent =
+                        controlFlowSubScopes
+                        |> List.forall (fun (isLoop, isDeferred, scopeRoot) ->
+                            let acqInScope = subtreeContains Set.empty scopeRoot row.RegionAcquisitionCall
+                            if acqInScope then
+                                (allRoleNodes |> List.forall (subtreeContains Set.empty scopeRoot)) &&
+                                (not isLoop || row.RegionReleaseCall.IsSome)
+                            elif isDeferred then
+                                allRoleNodes |> List.forall (fun rn -> not (subtreeContains Set.empty scopeRoot rn))
+                            else
+                                match row.RegionReleaseCall with
+                                | Some relId -> not (subtreeContains Set.empty scopeRoot relId)
+                                | None -> true)
+                    let syncPairs =
+                        if row.SyncCalls.Length = row.SyncOrders.Length then List.zip row.SyncCalls row.SyncOrders else []
+                    let foreignUsePairs =
+                        if row.ForeignUseCalls.Length = row.ForeignUseOrders.Length then List.zip row.ForeignUseCalls row.ForeignUseOrders else []
+                    let clefAccessPairs =
+                        (if row.ViewProjections.Length = row.ProjectionOrders.Length then List.zip row.ViewProjections row.ProjectionOrders else [])
+                        @ (if row.WriteProjections.Length = row.WriteProjectionOrders.Length then List.zip row.WriteProjections row.WriteProjectionOrders else [])
+                    let foreignUsesBracketed =
+                        if row.ForeignUseOrders.IsEmpty || clefAccessOrders.IsEmpty then true
+                        elif isReadOnlyPlacement && row.SyncOrders.IsEmpty then true
+                        else
+                            not syncPairs.IsEmpty &&
+                            (foreignUsePairs |> List.forall (fun (fId, fOrd) ->
+                                clefAccessPairs |> List.forall (fun (pId, pOrd) ->
+                                    syncPairs |> List.exists (fun (sId, sOrd) ->
+                                        let orderBetween = (fOrd < sOrd && sOrd < pOrd) || (pOrd < sOrd && sOrd < fOrd)
+                                        let syncScopeCoversPair =
+                                            controlFlowSubScopes
+                                            |> List.forall (fun (_, _, scopeRoot) ->
+                                                if subtreeContains Set.empty scopeRoot sId then
+                                                    subtreeContains Set.empty scopeRoot fId &&
+                                                    subtreeContains Set.empty scopeRoot pId
+                                                else true)
+                                        orderBetween && syncScopeCoversPair))))
+                    let nodeOrderPairs =
+                        [ (row.RegionAcquisitionCall, row.AcquisitionOrder) ]
+                        @ (match row.RegionReleaseCall, row.ReleaseOrder with Some c, Some o -> [ (c, o) ] | _ -> [])
+                        @ syncPairs
+                        @ foreignUsePairs
+                        @ clefAccessPairs
+                    let sequentialOrdersConsistent =
+                        revision.Nodes.Values
+                        |> Seq.forall (fun n ->
+                            match n.Kind with
+                            | SemanticKind.Sequential items when items.Length >= 2 ->
+                                [ for i in 0 .. items.Length - 2 do
+                                      for j in i + 1 .. items.Length - 1 do
+                                          let itemI = items[i]
+                                          let itemJ = items[j]
+                                          for (nodeA, ordA) in nodeOrderPairs do
+                                              for (nodeB, ordB) in nodeOrderPairs do
+                                                  if nodeA <> nodeB &&
+                                                     subtreeContains Set.empty itemI nodeA &&
+                                                     not (subtreeContains Set.empty itemJ nodeA) &&
+                                                     subtreeContains Set.empty itemJ nodeB &&
+                                                     not (subtreeContains Set.empty itemI nodeB) then
+                                                      yield ordA < ordB ]
+                                |> List.forall id
+                            | _ -> true)
+                    let ordersDominate =
+                        row.AcquisitionOrder >= 0 &&
+                        (List.distinct allRoleOrders).Length = allRoleOrders.Length &&
+                        (allUseOrders |> List.forall (fun ord ->
+                            row.AcquisitionOrder < ord &&
+                            (match row.ReleaseOrder with
+                             | Some relOrd -> ord < relOrd
+                             | None -> true))) &&
+                        controlFlowScopesConsistent &&
+                        foreignUsesBracketed &&
+                        sequentialOrdersConsistent
+                    acqOk && relOk && syncOk && foreignUsesOk && projectionsOk && rolesDistinct && ordersDominate
             let accountOk =
                 key = row.Site &&
                 revision.Nodes.ContainsKey row.Site &&
                 revision.Nodes.ContainsKey row.RegionAcquisitionCall &&
                 (row.RegionReleaseCall |> Option.forall revision.Nodes.ContainsKey) &&
                 (row.SyncCalls |> List.forall revision.Nodes.ContainsKey) &&
-                not row.ViewProjections.IsEmpty &&
+                (row.ForeignUseCalls |> List.forall revision.Nodes.ContainsKey) &&
                 (row.ViewProjections |> List.forall revision.Nodes.ContainsKey) &&
+                (row.WriteProjections |> List.forall revision.Nodes.ContainsKey) &&
                 (declOpt |> Option.exists (fun d -> d.Identity = row.PlacementDeclaration)) &&
-                elementOk
+                elementOk &&
+                callsAndProjectionsOk
             let copiesOk = row.Copies = 0
             let spaceExtentObOpt =
-                match declOpt, row.SpaceExtentObligation with
-                | Some decl, Some spaceObId when List.contains spaceObId decl.Obligations ->
-                    match revision.CurrentClaims.TryFind spaceObId with
+                match declOpt with
+                | Some decl when List.contains row.SpaceExtentObligation decl.Obligations ->
+                    match revision.CurrentClaims.TryFind row.SpaceExtentObligation with
                     | Some info when List.contains info revision.Obligations ->
                         match info.Body with
                         | ObligationBody.SharedBufferPlacementObligation ob
@@ -3191,18 +4059,45 @@ module Integrity =
                     match info.Body with
                     | ObligationBody.SharedBufferPlacementObligation ob
                         when info.Id = ob.Id && info.Kind = ob.Kind && info.Logic = ob.Logic ->
-                        sharedBufferObligationFormMatches decl.Placement spaceExtentObOpt ob expectedFindingKind expectedFormKind
+                        sharedBufferObligationFormMatches decl spaceExtentObOpt ob expectedFindingKind expectedFormKind
                     | _ -> false
+                | _ -> false
+            let viewClaimsAlignedWithUse =
+                match declOpt, revision.CurrentClaims.TryFind row.LifetimeObligation, revision.CurrentClaims.TryFind row.ExclusivityObligation with
+                | Some d,
+                  Some { Body = ObligationBody.SharedBufferPlacementObligation lifeOb },
+                  Some { Body = ObligationBody.SharedBufferPlacementObligation exclOb } ->
+                    let isReadOnlyPlacement =
+                        d.Placement.SpaceDescriptor.Access = "ReadOnly" ||
+                        d.Placement.ViewLayout.Access = BAREWire.Hardware.AccessKind.ReadOnly ||
+                        d.Space.Access = BAREWire.Platform.Access.ReadOnly
+                    lifeOb.Form.Values.Length = 8 &&
+                    (lifeOb.Form.Values[7] = 1L) = row.ReleaseOrder.IsNone &&
+                    exclOb.Form.Values.Length = 7 + d.Placement.StructLayout.Layout.Fields.Length &&
+                    (exclOb.Form.Values[0] = 1L) = isReadOnlyPlacement &&
+                    not (exclOb.Form.Values[0] = 1L && not row.WriteProjections.IsEmpty)
                 | _ -> false
             let obligationsOk =
                 claimMatches row.LayoutObligation BAREWire.Platform.FindingKind.SharedBufferLayoutInvalid BAREWire.Platform.FormKind.SharedBufferLayout &&
                 claimMatches row.ExtentObligation BAREWire.Platform.FindingKind.SharedBufferExtentInvalid BAREWire.Platform.FormKind.SharedBufferExtent &&
                 claimMatches row.LifetimeObligation BAREWire.Platform.FindingKind.SharedBufferLifetimeInvalid BAREWire.Platform.FormKind.SharedBufferLifetime &&
                 claimMatches row.ExclusivityObligation BAREWire.Platform.FindingKind.SharedBufferConflictingAccess BAREWire.Platform.FormKind.SharedBufferExclusivity &&
-                (row.SpaceExtentObligation |> Option.forall (fun spaceObId ->
-                    claimMatches spaceObId BAREWire.Platform.FindingKind.SharedBufferExtentInvalid BAREWire.Platform.FormKind.SharedBufferSpaceExtent))
+                claimMatches row.SpaceExtentObligation BAREWire.Platform.FindingKind.SharedBufferExtentInvalid BAREWire.Platform.FormKind.SharedBufferSpaceExtent &&
+                viewClaimsAlignedWithUse
             let requiredUseNodes =
-                row.Site :: row.PlacementDeclaration :: row.RegionAcquisitionCall :: (Option.toList row.RegionReleaseCall) @ row.SyncCalls @ row.ViewProjections
+                row.Site
+                :: row.PlacementDeclaration
+                :: row.RegionAcquisitionCall
+                :: (Option.toList row.RegionReleaseCall)
+                @ row.SyncCalls
+                @ row.ForeignUseCalls
+                @ row.ViewProjections
+                @ row.WriteProjections
+                @ [ row.ExtentObligation
+                    row.LayoutObligation
+                    row.LifetimeObligation
+                    row.ExclusivityObligation
+                    row.SpaceExtentObligation ]
             let participantsOk =
                 match row.Participants with
                 | ParticipantEvidence.Established ps ->
@@ -3325,7 +4220,20 @@ module Integrity =
                         boundary.ResourceDeclarations.ContainsKey decl ||
                         (decl = arg.Formal &&
                          (boundary.Imports.TryFind call.Import
-                          |> Option.exists (fun imp -> isBorrowedCHandleFormal imp decl nullable)))
+                          |> Option.exists (fun imp ->
+                              isBorrowedCHandleFormal imp decl nullable ||
+                              (not nullable &&
+                               imp.DeclarationFacts.ContainsKey decl &&
+                               (imp.SourceTypes.TryFind decl
+                                |> Option.exists (fun ty ->
+                                    boundary.SharedBufferViewUses.Values
+                                    |> Seq.exists (fun vu ->
+                                        (vu.RegionReleaseCall = Some call.Site ||
+                                         List.contains call.Site vu.SyncCalls ||
+                                         List.contains call.Site vu.ForeignUseCalls) &&
+                                        vu.ElementType = ty &&
+                                        (boundary.SharedBufferPlacements.TryFind vu.PlacementDeclaration
+                                         |> Option.exists (fun sp -> elementTypeMatchesStructLayout ty sp.Placement.StructLayout)))))))))
                     | _ -> true))
         let resourceAccess key (access: BoundaryResourceAccess) =
             match cleanupAt access.Cleanup, boundary.ResourceDeclarations.TryFind access.Declaration,

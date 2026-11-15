@@ -52,9 +52,10 @@ let private renew revision = renewWithSlots [101] revision
 let private nativeTarget : BoundaryPlatformPremise =
     { Id = "native-entry-contract-control"; Description = None; Loading = None; LibraryPath = None
       SourcePaths = Set.singleton "contract-test.clef"; Architecture = Some "x86_64"; OS = Some "linux"
-      RuntimeClaim = Some RuntimeModel.Libc; Substrate = Some SubstrateKind.CPU
+      Endianness = None; RuntimeClaim = Some RuntimeModel.Libc; Substrate = Some SubstrateKind.CPU
       Dimensions = Map.ofList ["Register", 64; "Pointer", 64]
-      Representations = Map.empty; EndpointReturns = Map.empty }
+      Representations = Map.empty; EndpointReturns = Map.empty
+      Spaces = []; Buffers = []; SharedBufferRegions = [] }
 
 // Independent source evidence: declarations describe residence, never a C
 // address or a fabricated lifetime obligation. The exact parent/membership

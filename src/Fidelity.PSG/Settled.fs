@@ -312,6 +312,11 @@ type BoundarySharedBufferPlacementDeclaration = {
     SpaceDescriptorNode: NodeId
     StructDescriptorNode: NodeId
     ViewDescriptorNode: NodeId
+    RegionDescriptorNode: NodeId
+    PlatformEndianness: string
+    Space: BAREWire.Platform.MemorySpace
+    BufferSchema: BAREWire.Platform.BufferSchema
+    RegionDescriptor: BAREWire.Descriptors.SharedBufferRegionDescriptor
     Placement: BAREWire.Platform.SharedBufferPlacement
     Obligations: NodeId list
     DeclarationFacts: Map<NodeId, BoundaryDeclarationFact>
@@ -325,7 +330,15 @@ type BoundarySharedBufferViewUse = {
     RegionAcquisitionCall: NodeId
     RegionReleaseCall: NodeId option
     SyncCalls: NodeId list
+    ForeignUseCalls: NodeId list
     ViewProjections: NodeId list
+    WriteProjections: NodeId list
+    AcquisitionOrder: int
+    ReleaseOrder: int option
+    SyncOrders: int list
+    ForeignUseOrders: int list
+    ProjectionOrders: int list
+    WriteProjectionOrders: int list
     ElementType: TypeIdentity
     ElementSlot: SettledSlot
     Copies: int
@@ -333,7 +346,7 @@ type BoundarySharedBufferViewUse = {
     LayoutObligation: NodeId
     LifetimeObligation: NodeId
     ExclusivityObligation: NodeId
-    SpaceExtentObligation: NodeId option
+    SpaceExtentObligation: NodeId
     Participants: ParticipantEvidence
 }
 
@@ -608,11 +621,15 @@ type BoundaryPlatformPremise = {
     SourcePaths: Set<string>
     Architecture: string option
     OS: string option
+    Endianness: string option
     RuntimeClaim: RuntimeModel option
     Substrate: SubstrateKind option
     Dimensions: Map<string, int>
     Representations: Map<string, NumericRepresentation>
     EndpointReturns: Map<string, ReturnBound>
+    Spaces: BAREWire.Platform.MemorySpace list
+    Buffers: BAREWire.Platform.BufferSchema list
+    SharedBufferRegions: BAREWire.Descriptors.SharedBufferRegionDescriptor list
 }
 
 type MemoryExtentWitness = {
