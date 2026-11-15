@@ -2835,6 +2835,389 @@ module Integrity =
                  not (hasEstablishedParticipants row.Participants [ ParticipantRole.CountedEntryArrayDeclaration, row.Identity; ParticipantRole.CountedEntryArrayInvocation, row.Invocation ]) then
                   yield defect "Emission.Boundary.CountedEntryArrays.Participants" key "The counted entry array lacks established source support." ]
 
+        let isPowerOfTwoInt (value: int) =
+            value > 0 && (value &&& (value - 1)) = 0
+
+        let sharedBufferScalarByteWidth (repr: BAREWire.Hardware.Repr) =
+            if repr = BAREWire.Hardware.Repr.Pointer then 0
+            else BAREWire.Hardware.Abi.reprSize BAREWire.Hardware.Abi.all[0] repr
+
+        let sharedBufferViewElementFits (p: BAREWire.Platform.SharedBufferPlacement) =
+            let width = sharedBufferScalarByteWidth p.ViewLayout.Element
+            width > 0 && p.MeasuredElementSize >= width && p.MeasuredElementSize % width = 0 &&
+            p.LayoutAlignment > 0 && p.MeasuredElementSize % p.LayoutAlignment = 0 &&
+            p.ViewLayout.Alignment >= width && p.LayoutAlignment >= width &&
+            p.ViewLayout.Alignment % width = 0
+
+        let sharedBufferStructFieldsGeometryOk (p: BAREWire.Platform.SharedBufferPlacement) =
+            let layout = p.StructLayout.Layout
+            layout.Fields.Length > 0 &&
+            (layout.Fields |> Array.forall (fun field ->
+                let width = sharedBufferScalarByteWidth field.Repr
+                match BAREWire.Hardware.Abi.tryFieldEnd field.Offset width field.Count with
+                | Some endOffset ->
+                    endOffset <= layout.Size &&
+                    field.Offset % width = 0 &&
+                    p.LayoutAlignment >= width
+                | None -> false))
+
+        let sharedBufferStructFieldsNonOverlapping (p: BAREWire.Platform.SharedBufferPlacement) =
+            let layout = p.StructLayout.Layout
+            let n = layout.Fields.Length
+            (layout.Fields |> Array.forall (fun field -> not (System.String.IsNullOrWhiteSpace field.Name))) &&
+            ([ for i in 0 .. n - 1 do
+                   for j in i + 1 .. n - 1 do
+                       let fi = layout.Fields[i]
+                       let fj = layout.Fields[j]
+                       let endI = BAREWire.Hardware.Abi.tryFieldEnd fi.Offset (sharedBufferScalarByteWidth fi.Repr) fi.Count
+                       let endJ = BAREWire.Hardware.Abi.tryFieldEnd fj.Offset (sharedBufferScalarByteWidth fj.Repr) fj.Count
+                       match endI, endJ with
+                       | Some ei, Some ej ->
+                           yield fi.Name <> fj.Name && (ei <= fj.Offset || ej <= fi.Offset)
+                       | _ ->
+                           yield false ]
+             |> List.forall id)
+
+        let sharedBufferValidAccess (access: string) =
+            access = "ReadOnly" || access = "WriteOnly" || access = "ReadWrite" || access = "ExclusiveMutable"
+
+        let sharedBufferViewAccessMatches (p: BAREWire.Platform.SharedBufferPlacement) =
+            match p.SpaceDescriptor.Access with
+            | "ReadOnly" -> p.ViewLayout.Access = BAREWire.Hardware.AccessKind.ReadOnly
+            | "WriteOnly" -> p.ViewLayout.Access = BAREWire.Hardware.AccessKind.WriteOnly
+            | "ReadWrite" | "ExclusiveMutable" -> p.ViewLayout.Access = BAREWire.Hardware.AccessKind.ReadWrite
+            | _ -> false
+
+        let sharedBufferFieldAccessMatches (p: BAREWire.Platform.SharedBufferPlacement) =
+            p.StructLayout.Layout.Fields |> Array.forall (fun field ->
+                match p.SpaceDescriptor.Access with
+                | "ReadOnly" -> field.Access = BAREWire.Hardware.AccessKind.ReadOnly
+                | "WriteOnly" -> field.Access = BAREWire.Hardware.AccessKind.WriteOnly
+                | "ReadWrite" | "ExclusiveMutable" ->
+                    field.Access = BAREWire.Hardware.AccessKind.ReadOnly || field.Access = BAREWire.Hardware.AccessKind.ReadWrite
+                | _ -> false)
+
+        let sharedBufferByteOrderValid (byteOrder: string) =
+            byteOrder = "little" || byteOrder = "big"
+
+        let sharedBufferMemoryRegionValid (region: BAREWire.Hardware.MemoryRegionKind) =
+            region = BAREWire.Hardware.MemoryRegionKind.SRAM ||
+            region = BAREWire.Hardware.MemoryRegionKind.DMA ||
+            region = BAREWire.Hardware.MemoryRegionKind.Flash ||
+            region = BAREWire.Hardware.MemoryRegionKind.Peripheral
+
+        let sharedBufferExtentNames =
+            [| "elem_size"; "elem_count"; "region_bytes"; "space_cap"; "max_elem_idx"; "required_bytes"; "space_known"; "space_offset" |]
+
+        let sharedBufferLayoutNames =
+            [| "elem_size"; "measured_size"; "struct_bytes"; "layout_align"; "region_align"; "align_rem"
+               "order_match"; "raw_ptr_fields"; "exports_ok"; "align_power_two"; "struct_align"; "space_known"; "name_unique"
+               "view_schema_valid"; "view_element_fits"; "view_align"; "space_kind_matches"; "space_align_valid"; "struct_fields_valid"
+               "space_offset_rem"; "stride_align_rem" |]
+
+        let sharedBufferLifetimeNames =
+            [| "region_depth"; "lib_retention_depth"; "mapped_depth"; "first_use_depth"; "last_use_depth"; "lib_retention_end_depth"; "unmap_depth"; "leaked" |]
+
+        let sharedBufferExclusivityNames =
+            [| "lib_mutates"; "is_readonly"; "concurrent_clef_write"; "overlap_mutable_share"; "access_valid"
+               "view_access_matches"; "space_access_matches"; "struct_field_access_valid" |]
+
+        let sharedBufferObligationFormMatches
+            (p: BAREWire.Platform.SharedBufferPlacement)
+            (spaceExtentObOpt: BAREWire.Platform.Obligation option)
+            (ob: BAREWire.Platform.Obligation)
+            (expectedFindingKind: string)
+            (expectedFormKind: string) =
+            let s = p.SpaceDescriptor
+            let layout = p.StructLayout.Layout
+            let flag (cond: bool) = if cond then 1L else 0L
+            let requiredBytes = int64 s.ElementCount * int64 p.MeasuredElementSize
+            not (System.String.IsNullOrWhiteSpace ob.Id) &&
+            ob.Logic = BAREWire.Platform.Logic.QfLia &&
+            ob.Kind = expectedFindingKind &&
+            ob.Form.Kind = expectedFormKind &&
+            (if expectedFormKind = BAREWire.Platform.FormKind.SharedBufferSpaceExtent then
+                 let sameSpaceRows =
+                     boundary.SharedBufferPlacements.Values
+                     |> Seq.filter (fun r -> r.Placement.SpaceDescriptor.Space = s.Space)
+                     |> Seq.toList
+                 let distinctNames = sameSpaceRows |> List.map (fun r -> r.Placement.Name) |> List.distinct
+                 ob.Form.A > 0L &&
+                 ob.Form.B = 0L &&
+                 ob.Form.Names.Length > 0 &&
+                 ob.Form.Values.Length = ob.Form.Names.Length * 2 &&
+                 (Array.distinct ob.Form.Names).Length = ob.Form.Names.Length &&
+                 Set.ofArray ob.Form.Names = Set.ofList distinctNames &&
+                 Array.contains p.Name ob.Form.Names &&
+                 ([ 0 .. ob.Form.Names.Length - 1 ] |> List.forall (fun i ->
+                     let name = ob.Form.Names[i]
+                     sameSpaceRows |> List.exists (fun q ->
+                         q.Placement.Name = name &&
+                         q.Placement.SpaceOffset >= 0L &&
+                         q.Placement.SpaceDescriptor.RegionByteExtent > 0 &&
+                         ob.Form.Values[2 * i] = q.Placement.SpaceOffset &&
+                         ob.Form.Values[2 * i + 1] = int64 q.Placement.SpaceDescriptor.RegionByteExtent &&
+                         q.Placement.SpaceOffset <= ob.Form.A - int64 q.Placement.SpaceDescriptor.RegionByteExtent))) &&
+                 (sameSpaceRows |> List.forall (fun q -> q.Placement.SpaceDescriptor.RegionByteExtent > 0)) &&
+                 (sameSpaceRows |> List.sumBy (fun q -> int64 q.Placement.SpaceDescriptor.RegionByteExtent)) <= ob.Form.A
+             elif expectedFormKind = BAREWire.Platform.FormKind.SharedBufferExtent then
+                 ob.Form.A = 0L &&
+                 ob.Form.B = 0L &&
+                 ob.Form.Names = sharedBufferExtentNames &&
+                 ob.Form.Values.Length = 8 &&
+                 ob.Form.Values[0] = int64 s.ElementSize &&
+                 ob.Form.Values[1] = int64 s.ElementCount &&
+                 ob.Form.Values[2] = int64 s.RegionByteExtent &&
+                 ob.Form.Values[3] > 0L &&
+                 p.SpaceOffset >= 0L &&
+                 s.RegionByteExtent > 0 &&
+                 p.SpaceOffset <= ob.Form.Values[3] - int64 s.RegionByteExtent &&
+                 (match spaceExtentObOpt with Some spaceOb -> ob.Form.Values[3] = spaceOb.Form.A | None -> false) &&
+                 ob.Form.Values[4] = int64 p.MaxAccessedElementIndex &&
+                 ob.Form.Values[5] = requiredBytes &&
+                 ob.Form.Values[6] = 1L &&
+                 ob.Form.Values[7] = p.SpaceOffset
+             elif expectedFormKind = BAREWire.Platform.FormKind.SharedBufferLayout then
+                 let expectedValues =
+                     [| int64 s.ElementSize
+                        int64 p.MeasuredElementSize
+                        int64 layout.Size
+                        int64 p.LayoutAlignment
+                        int64 s.RegionAlignment
+                        (if p.LayoutAlignment > 0 then int64 (s.RegionAlignment % p.LayoutAlignment) else -1L)
+                        1L
+                        flag (p.HasRawPointerFields || BAREWire.Platform.SharedBufferPlacement.structHasRawPointerFields p.StructLayout)
+                        flag p.HasVerifiedExports
+                        flag (isPowerOfTwoInt p.LayoutAlignment && isPowerOfTwoInt s.RegionAlignment)
+                        int64 layout.Alignment
+                        1L
+                        1L
+                        flag (not (System.String.IsNullOrWhiteSpace p.ViewLayout.Schema))
+                        flag (sharedBufferViewElementFits p)
+                        int64 p.ViewLayout.Alignment
+                        1L
+                        1L
+                        flag (sharedBufferStructFieldsGeometryOk p)
+                        (if p.SpaceOffset >= 0L && s.RegionAlignment > 0 then p.SpaceOffset % int64 s.RegionAlignment else 0L)
+                        (if p.LayoutAlignment > 0 then int64 (p.MeasuredElementSize % p.LayoutAlignment) else -1L) |]
+                 ob.Form.A = 0L &&
+                 ob.Form.B = 0L &&
+                 ob.Form.Names = sharedBufferLayoutNames &&
+                 ob.Form.Values = expectedValues
+             elif expectedFormKind = BAREWire.Platform.FormKind.SharedBufferLifetime then
+                 let expectedValues =
+                     [| int64 s.RegionLifetimeDepth
+                        int64 s.LibraryRetentionDepth
+                        int64 p.MappedDepth
+                        int64 p.FirstUseDepth
+                        int64 p.LastUseDepth
+                        int64 p.LibraryRetentionEndDepth
+                        int64 p.UnmapDepth
+                        flag p.LeakedAtExit |]
+                 ob.Form.A = 0L &&
+                 ob.Form.B = 0L &&
+                 ob.Form.Names = sharedBufferLifetimeNames &&
+                 ob.Form.Values = expectedValues
+             elif expectedFormKind = BAREWire.Platform.FormKind.SharedBufferExclusivity then
+                 let expectedValues =
+                     [| flag p.LibraryMutatesBuffer
+                        flag (s.Access = "ReadOnly")
+                        flag p.ConcurrentClefMutation
+                        flag p.OverlappingMutableShare
+                        flag (sharedBufferValidAccess s.Access)
+                        flag (sharedBufferViewAccessMatches p)
+                        1L
+                        flag (sharedBufferFieldAccessMatches p) |]
+                 ob.Form.A = 0L &&
+                 ob.Form.B = 0L &&
+                 ob.Form.Names = sharedBufferExclusivityNames &&
+                 ob.Form.Values = expectedValues
+             else
+                 false)
+
+        let sharedBufferPlacementCheck (key: NodeId) (row: BoundarySharedBufferPlacementDeclaration) =
+            let p = row.Placement
+            let s = p.SpaceDescriptor
+            let layout = p.StructLayout.Layout
+            let facts = row.DeclarationFacts
+            let nodeOrFact id = revision.Nodes.ContainsKey id || facts.ContainsKey id
+            let requiredNodes =
+                [ row.Identity; row.Declaration; row.SpaceNode; row.BufferSchemaNode
+                  row.SpaceDescriptorNode; row.StructDescriptorNode; row.ViewDescriptorNode ]
+            let accountOk =
+                key = row.Identity &&
+                not (System.String.IsNullOrWhiteSpace p.Name) &&
+                not (System.String.IsNullOrWhiteSpace s.Space) &&
+                (requiredNodes |> List.forall nodeOrFact) &&
+                (facts |> Map.forall (fun _ fact ->
+                    (fact.References @ fact.Children |> List.forall nodeOrFact) &&
+                    (fact.Parent |> Option.forall (fun parent -> nodeOrFact parent || revision.SourceReadings.ContextHeaders.ContainsKey parent))))
+            let structFieldsOk =
+                sharedBufferStructFieldsGeometryOk p &&
+                sharedBufferStructFieldsNonOverlapping p
+            let layoutOk =
+                not p.HasRawPointerFields &&
+                not (BAREWire.Platform.SharedBufferPlacement.structHasRawPointerFields p.StructLayout) &&
+                p.HasVerifiedExports &&
+                p.MeasuredElementSize > 0 && layout.Size > 0 &&
+                layout.Size = p.MeasuredElementSize && s.ElementSize = p.MeasuredElementSize &&
+                isPowerOfTwoInt p.LayoutAlignment && isPowerOfTwoInt s.RegionAlignment &&
+                layout.Alignment = p.LayoutAlignment && p.ViewLayout.Alignment = p.LayoutAlignment &&
+                p.MeasuredElementSize % p.LayoutAlignment = 0 &&
+                s.RegionAlignment >= p.LayoutAlignment && s.RegionAlignment % p.LayoutAlignment = 0 &&
+                p.SpaceOffset >= 0L && p.SpaceOffset % int64 s.RegionAlignment = 0L &&
+                sharedBufferByteOrderValid s.ByteOrder && s.ByteOrder = p.LayoutByteOrder &&
+                sharedBufferMemoryRegionValid s.MemoryRegion &&
+                not (System.String.IsNullOrWhiteSpace p.ViewLayout.Schema) &&
+                sharedBufferViewElementFits p &&
+                structFieldsOk
+            let requiredBytes = int64 s.ElementCount * int64 p.MeasuredElementSize
+            let endsAfter (q: BAREWire.Platform.SharedBufferPlacement) (offset: int64) =
+                let length = int64 q.SpaceDescriptor.RegionByteExtent
+                length > 0L && (q.SpaceOffset > System.Int64.MaxValue - length || offset < q.SpaceOffset + length)
+            let sameSpaceDisjoint =
+                boundary.SharedBufferPlacements |> Map.forall (fun otherKey otherRow ->
+                    otherKey = key ||
+                    otherRow.Placement.SpaceDescriptor.Space <> s.Space ||
+                    not (endsAfter otherRow.Placement p.SpaceOffset && endsAfter p otherRow.Placement.SpaceOffset))
+            let extentOk =
+                s.ElementSize > 0 && s.ElementCount > 0 && s.RegionByteExtent > 0 &&
+                requiredBytes <= int64 System.Int32.MaxValue &&
+                int64 s.RegionByteExtent >= requiredBytes &&
+                p.SpaceOffset >= 0L &&
+                p.MaxAccessedElementIndex >= 0 && p.MaxAccessedElementIndex < s.ElementCount &&
+                sameSpaceDisjoint
+            let lifetimeOk =
+                s.RegionLifetimeDepth > 0 && s.LibraryRetentionDepth >= 0 &&
+                s.RegionLifetimeDepth <= s.LibraryRetentionDepth &&
+                p.MappedDepth >= 0 && p.MappedDepth <= p.FirstUseDepth &&
+                p.FirstUseDepth <= p.LastUseDepth &&
+                p.LastUseDepth <= p.LibraryRetentionEndDepth &&
+                p.LibraryRetentionEndDepth < p.UnmapDepth &&
+                not p.LeakedAtExit
+            let exclusivityOk =
+                sharedBufferValidAccess s.Access &&
+                sharedBufferViewAccessMatches p &&
+                sharedBufferFieldAccessMatches p &&
+                not (s.Access = "ReadOnly" && p.LibraryMutatesBuffer) &&
+                not p.ConcurrentClefMutation && not p.OverlappingMutableShare
+            let resolvedObligations =
+                row.Obligations |> List.choose (fun obId ->
+                    match revision.CurrentClaims.TryFind obId with
+                    | Some info when List.contains info revision.Obligations ->
+                        match info.Body with
+                        | ObligationBody.SharedBufferPlacementObligation ob
+                            when info.Id = ob.Id && info.Kind = ob.Kind && info.Logic = ob.Logic ->
+                            Some ob
+                        | _ -> None
+                    | _ -> None)
+            let spaceExtentObOpt =
+                resolvedObligations
+                |> List.tryFind (fun ob -> ob.Form.Kind = BAREWire.Platform.FormKind.SharedBufferSpaceExtent)
+            let hasForm findingKind formKind =
+                resolvedObligations |> List.exists (fun ob -> sharedBufferObligationFormMatches p spaceExtentObOpt ob findingKind formKind)
+            let allFormsValid =
+                resolvedObligations |> List.forall (fun ob ->
+                    sharedBufferObligationFormMatches p spaceExtentObOpt ob BAREWire.Platform.FindingKind.SharedBufferLayoutInvalid BAREWire.Platform.FormKind.SharedBufferLayout ||
+                    sharedBufferObligationFormMatches p spaceExtentObOpt ob BAREWire.Platform.FindingKind.SharedBufferExtentInvalid BAREWire.Platform.FormKind.SharedBufferExtent ||
+                    sharedBufferObligationFormMatches p spaceExtentObOpt ob BAREWire.Platform.FindingKind.SharedBufferExtentInvalid BAREWire.Platform.FormKind.SharedBufferSpaceExtent ||
+                    sharedBufferObligationFormMatches p spaceExtentObOpt ob BAREWire.Platform.FindingKind.SharedBufferLifetimeInvalid BAREWire.Platform.FormKind.SharedBufferLifetime ||
+                    sharedBufferObligationFormMatches p spaceExtentObOpt ob BAREWire.Platform.FindingKind.SharedBufferConflictingAccess BAREWire.Platform.FormKind.SharedBufferExclusivity)
+            let obligationsOk =
+                not row.Obligations.IsEmpty &&
+                (List.distinct row.Obligations).Length = row.Obligations.Length &&
+                resolvedObligations.Length = row.Obligations.Length &&
+                allFormsValid &&
+                hasForm BAREWire.Platform.FindingKind.SharedBufferLayoutInvalid BAREWire.Platform.FormKind.SharedBufferLayout &&
+                hasForm BAREWire.Platform.FindingKind.SharedBufferExtentInvalid BAREWire.Platform.FormKind.SharedBufferExtent &&
+                hasForm BAREWire.Platform.FindingKind.SharedBufferExtentInvalid BAREWire.Platform.FormKind.SharedBufferSpaceExtent &&
+                hasForm BAREWire.Platform.FindingKind.SharedBufferLifetimeInvalid BAREWire.Platform.FormKind.SharedBufferLifetime &&
+                hasForm BAREWire.Platform.FindingKind.SharedBufferConflictingAccess BAREWire.Platform.FormKind.SharedBufferExclusivity
+            let participantsOk =
+                match row.Participants with
+                | ParticipantEvidence.Established ps ->
+                    not ps.IsEmpty &&
+                    (requiredNodes |> List.forall (fun n -> ps |> List.exists (fun part -> part.Node = n)))
+                | ParticipantEvidence.Pending _ -> false
+            [ if not accountOk then
+                  yield defect "Emission.Boundary.SharedBufferPlacements.Account" key "The shared-buffer placement declaration lacks its identity, referenced declaration nodes, or closed declaration facts."
+              if not layoutOk then
+                  yield defect "Emission.Boundary.SharedBufferPlacements.Layout" key "The shared-buffer placement failed FS9220 pointer-free StructDescriptor, alignment, byte-order, or verified-export invariants."
+              if not extentOk then
+                  yield defect "Emission.Boundary.SharedBufferPlacements.Extent" key "The shared-buffer placement failed FS9221 positive extent, capacity bound, or element index invariants."
+              if not lifetimeOk then
+                  yield defect "Emission.Boundary.SharedBufferPlacements.Lifetime" key "The shared-buffer placement failed FS9222 region lifetime domination, mapped/retention/unmap depth ordering, or leak-free invariants."
+              if not exclusivityOk then
+                  yield defect "Emission.Boundary.SharedBufferPlacements.Exclusivity" key "The shared-buffer placement failed FS9223 access exclusivity or ReadOnly mutation invariants."
+              if not obligationsOk then
+                  yield defect "Emission.Boundary.SharedBufferPlacements.Obligations" key "The shared-buffer placement lacks its complete FS9220-FS9223 SharedBufferPlacementObligation claims in CurrentClaims."
+              if not participantsOk then
+                  yield defect "Emission.Boundary.SharedBufferPlacements.Participants" key "The shared-buffer placement declaration lacks established participant evidence." ]
+
+        let sharedBufferViewUseCheck (key: NodeId) (row: BoundarySharedBufferViewUse) =
+            let declOpt = boundary.SharedBufferPlacements.TryFind row.PlacementDeclaration
+            let elementOk =
+                (match row.ElementType with TypeIdentity.Error _ -> false | _ -> true) &&
+                (match declOpt, row.ElementSlot with
+                 | Some d, SettledSlot.InlineBytes(bytes, align) ->
+                     bytes = d.Placement.MeasuredElementSize && align = d.Placement.LayoutAlignment
+                 | _ -> false)
+            let accountOk =
+                key = row.Site &&
+                revision.Nodes.ContainsKey row.Site &&
+                revision.Nodes.ContainsKey row.RegionAcquisitionCall &&
+                (row.RegionReleaseCall |> Option.forall revision.Nodes.ContainsKey) &&
+                (row.SyncCalls |> List.forall revision.Nodes.ContainsKey) &&
+                not row.ViewProjections.IsEmpty &&
+                (row.ViewProjections |> List.forall revision.Nodes.ContainsKey) &&
+                (declOpt |> Option.exists (fun d -> d.Identity = row.PlacementDeclaration)) &&
+                elementOk
+            let copiesOk = row.Copies = 0
+            let spaceExtentObOpt =
+                match declOpt, row.SpaceExtentObligation with
+                | Some decl, Some spaceObId when List.contains spaceObId decl.Obligations ->
+                    match revision.CurrentClaims.TryFind spaceObId with
+                    | Some info when List.contains info revision.Obligations ->
+                        match info.Body with
+                        | ObligationBody.SharedBufferPlacementObligation ob
+                            when info.Id = ob.Id && info.Kind = ob.Kind && info.Logic = ob.Logic ->
+                            Some ob
+                        | _ -> None
+                    | _ -> None
+                | _ -> None
+            let claimMatches (claimId: NodeId) (expectedFindingKind: string) (expectedFormKind: string) =
+                match declOpt, revision.CurrentClaims.TryFind claimId with
+                | Some decl, Some info when List.contains info revision.Obligations && List.contains claimId decl.Obligations ->
+                    match info.Body with
+                    | ObligationBody.SharedBufferPlacementObligation ob
+                        when info.Id = ob.Id && info.Kind = ob.Kind && info.Logic = ob.Logic ->
+                        sharedBufferObligationFormMatches decl.Placement spaceExtentObOpt ob expectedFindingKind expectedFormKind
+                    | _ -> false
+                | _ -> false
+            let obligationsOk =
+                claimMatches row.LayoutObligation BAREWire.Platform.FindingKind.SharedBufferLayoutInvalid BAREWire.Platform.FormKind.SharedBufferLayout &&
+                claimMatches row.ExtentObligation BAREWire.Platform.FindingKind.SharedBufferExtentInvalid BAREWire.Platform.FormKind.SharedBufferExtent &&
+                claimMatches row.LifetimeObligation BAREWire.Platform.FindingKind.SharedBufferLifetimeInvalid BAREWire.Platform.FormKind.SharedBufferLifetime &&
+                claimMatches row.ExclusivityObligation BAREWire.Platform.FindingKind.SharedBufferConflictingAccess BAREWire.Platform.FormKind.SharedBufferExclusivity &&
+                (row.SpaceExtentObligation |> Option.forall (fun spaceObId ->
+                    claimMatches spaceObId BAREWire.Platform.FindingKind.SharedBufferExtentInvalid BAREWire.Platform.FormKind.SharedBufferSpaceExtent))
+            let requiredUseNodes =
+                row.Site :: row.PlacementDeclaration :: row.RegionAcquisitionCall :: (Option.toList row.RegionReleaseCall) @ row.SyncCalls @ row.ViewProjections
+            let participantsOk =
+                match row.Participants with
+                | ParticipantEvidence.Established ps ->
+                    not ps.IsEmpty &&
+                    (requiredUseNodes |> List.forall (fun n -> ps |> List.exists (fun part -> part.Node = n)))
+                | ParticipantEvidence.Pending _ -> false
+            [ if not accountOk then
+                  yield defect "Emission.Boundary.SharedBufferViewUses.Account" key "The shared-buffer view use differs from its site, placement declaration, region acquisition/release calls, or view projections."
+              if not copiesOk then
+                  yield defect "Emission.Boundary.SharedBufferViewUses.Copies" key "A zero-copy shared-buffer view use requires Copies = 0."
+              if not obligationsOk then
+                  yield defect "Emission.Boundary.SharedBufferViewUses.Obligations" key "The shared-buffer view use lacks matching FS9220-FS9223 SharedBufferPlacementObligation claims in CurrentClaims."
+              if not participantsOk then
+                  yield defect "Emission.Boundary.SharedBufferViewUses.Participants" key "The shared-buffer view use lacks established participant evidence." ]
+
         // Passive replay of resource evidence. A well-formed claim may still
         // be refuted; this reader checks its source correspondence, not safety.
         let resourceClaim kind citizen =
@@ -3077,6 +3460,12 @@ module Integrity =
                 yield! borrowedViewUse key viewUse
             for KeyValue(key, entryArray) in boundary.CountedEntryArrays do
                 yield! countedEntryArrayCheck key entryArray
+            for KeyValue(key, placementDecl) in boundary.SharedBufferPlacements do
+                yield! sharedBufferPlacementCheck key placementDecl
+                if boundary.SharedBufferPlacements.Values |> Seq.filter (fun row -> row.Placement.Name = placementDecl.Placement.Name) |> Seq.length <> 1 then
+                    yield defect "Emission.Boundary.SharedBufferPlacements.Layout" key "A shared-buffer placement name has duplicate declaration contracts."
+            for KeyValue(key, viewUse) in boundary.SharedBufferViewUses do
+                yield! sharedBufferViewUseCheck key viewUse
             for KeyValue(_, imported) in boundary.Imports do
                 match imported.Result with
                 | Some(BoundaryScalar.BorrowedBytes decl) ->
@@ -4534,6 +4923,31 @@ module Integrity =
                     boundary.CountedEntryArrays.Values |> Seq.exists(fun row ->
                         row.Identity = id || row.Import = id || row.Invocation = id || row.DeclarationFacts.ContainsKey id ||
                         (match row.Participants with ParticipantEvidence.Established ps -> ps |> List.exists(fun p -> p.Node = id) | ParticipantEvidence.Pending d -> d.Derived |> List.exists(fun p -> p.Node = id)))
+                | "Emission.Boundary.SharedBufferPlacements.Obligations" ->
+                    revision.CurrentClaims.ContainsKey id
+                | "Emission.Boundary.SharedBufferPlacements.DeclarationFacts" ->
+                    boundary.SharedBufferPlacements.Values |> Seq.exists (fun row ->
+                        row.DeclarationFacts.ContainsKey id ||
+                        boundaryContext revision row.DeclarationFacts row.Declaration |> Option.exists (fun (scope, _) -> scope = id))
+                | part when part.StartsWith("Emission.Boundary.SharedBufferPlacements", System.StringComparison.Ordinal) ->
+                    body id ||
+                    (boundary.SharedBufferPlacements.Values |> Seq.exists (fun row ->
+                        row.DeclarationFacts.ContainsKey id ||
+                        (match row.Participants with
+                         | ParticipantEvidence.Established ps -> ps |> List.exists (fun p -> p.Node = id)
+                         | ParticipantEvidence.Pending d -> d.Derived |> List.exists (fun p -> p.Node = id))))
+                | "Emission.Boundary.SharedBufferViewUses.PlacementDeclaration" ->
+                    boundary.SharedBufferPlacements.ContainsKey id
+                | "Emission.Boundary.SharedBufferViewUses.ExtentObligation"
+                | "Emission.Boundary.SharedBufferViewUses.LayoutObligation"
+                | "Emission.Boundary.SharedBufferViewUses.LifetimeObligation"
+                | "Emission.Boundary.SharedBufferViewUses.ExclusivityObligation"
+                | "Emission.Boundary.SharedBufferViewUses.SpaceExtentObligation" ->
+                    revision.CurrentClaims.ContainsKey id
+                | "Emission.Boundary.SharedBufferViewUses.Participants" ->
+                    body id || boundary.SharedBufferPlacements.ContainsKey id || revision.CurrentClaims.ContainsKey id
+                | part when part.StartsWith("Emission.Boundary.SharedBufferViewUses", System.StringComparison.Ordinal) ->
+                    body id
                 | "Emission.Boundary.ResourceDeclarations.DeclarationFacts" ->
                     boundary.ResourceDeclarations.Values |> Seq.exists (fun row ->
                         row.DeclarationFacts.ContainsKey id ||

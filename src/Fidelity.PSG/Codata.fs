@@ -845,6 +845,8 @@ type BoundaryEmissionProjection = {
     BorrowedResultViewUses: Map<NodeId, BoundaryBorrowedResultViewUse>
     BufferAbsences: Map<NodeId, BoundaryBufferAbsence>
     CountedEntryArrays: Map<NodeId, BoundaryCountedEntryArray>
+    SharedBufferPlacements: Map<NodeId, BoundarySharedBufferPlacementDeclaration>
+    SharedBufferViewUses: Map<NodeId, BoundarySharedBufferViewUse>
     ResourceEvidence: BoundaryResourceEvidence option
     ResourceDeclarations: Map<NodeId, BoundaryResourceDeclaration>
     ResourceAccesses: Map<NodeId, BoundaryResourceAccess>

@@ -39,6 +39,7 @@ module Empty =
           ReadOnlyBufferDeclarations = Map.empty; ReadOnlyBufferUses = Map.empty
           BorrowedResultViewDeclarations = Map.empty; BorrowedResultViewUses = Map.empty
           BufferAbsences = Map.empty; CountedEntryArrays = Map.empty
+          SharedBufferPlacements = Map.empty; SharedBufferViewUses = Map.empty
           ResourceDeclarations = Map.empty; ResourceAccesses = Map.empty
           ResultHypotheses = []; CallbackInvocations = Map.empty; CallbackAbsences = Map.empty; ClosedEntries = Map.empty }
 

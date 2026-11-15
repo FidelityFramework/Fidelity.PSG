@@ -1755,6 +1755,8 @@ type ObligationBody =
     | UncountedPathTermination of UncountedPathTerminationModel
     | BorrowedResultViewScope of BorrowedResultViewScopeModel
     | BufferAbsenceArgumentConversion of BufferAbsenceArgumentConversionModel
+    /// Settled M10 BAREWire zero-copy shared-buffer placement obligation (FS9220-FS9223).
+    | SharedBufferPlacementObligation of obligation: BAREWire.Platform.Obligation
 
 [<RequireQualifiedAccess>]
 module ObligationBody =

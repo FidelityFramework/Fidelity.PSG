@@ -222,7 +222,7 @@ let ``snapshot header has independent version schema and fingerprint bytes`` () 
     // Pin the approved schema/shape pair independently of the generated values.
     // A changed published shape must earn a deliberate schema migration; merely
     // regenerating the codecs cannot update this oracle.
-    let prefix = Convert.FromHexString("46505347494458320200000035000000FDEF677CCBF623DEBFA1DDD6E52490A20E6189D7FF400445FDCC9EB12C7F0151")
+    let prefix = Convert.FromHexString("4650534749445832020000003600000031C406D93819F33CFEC0FCC32B5154137CE6EE3DC91644164831B98ACA8831BF")
     Assert.Equal<byte>(prefix, bytes[..47])
     Assert.Equal(Revision.Schema, System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(12, 4)))
     Assert.Equal<byte>(Convert.FromHexString(BinaryGenerated.Fingerprint), bytes[16..47])
@@ -1016,6 +1016,143 @@ let ``zero-copy read-only buffer borrowed view and buffer absence contracts surv
                             BorrowedResultViewUses = Map.ofList [NodeId 240, viewUse]
                             BufferAbsences = Map.ofList [NodeId 250, absence]
                             CountedEntryArrays = Map.ofList [NodeId 260, countedEntry] } } }
+    let revBytes = indexedEncoded BinaryGenerated.writeRevision fullRev
+    let decodedRev, revState = indexedReadState limits revBytes |> BinaryGenerated.readRevision |> take
+    Assert.Equal(fullRev, decodedRev)
+    Assert.Equal(0, revState.Depth)
+[<Fact>]
+let ``shared buffer placement view use and FS9220-FS9223 obligation contracts survive binary roundtrip`` () =
+    let structLayout : BAREWire.Hardware.StructDescriptor =
+        { Name = "AudioFrame"
+          Layout =
+            { Size = 16
+              Alignment = 8
+              Fields =
+                [| { Name = "left"; Offset = 0; Repr = BAREWire.Hardware.Repr.F32; Count = 1; Access = BAREWire.Hardware.AccessKind.ReadWrite; BitFields = [||]; Documentation = None }
+                   { Name = "right"; Offset = 4; Repr = BAREWire.Hardware.Repr.F32; Count = 1; Access = BAREWire.Hardware.AccessKind.ReadWrite; BitFields = [||]; Documentation = None }
+                   { Name = "timestamp"; Offset = 8; Repr = BAREWire.Hardware.Repr.U64; Count = 1; Access = BAREWire.Hardware.AccessKind.ReadWrite; BitFields = [||]; Documentation = None } |] }
+          MayAlias = false
+          FlexibleArray = None
+          Documentation = None }
+    let space : BAREWire.Platform.MemorySpace =
+        { Name = "audio_ring"
+          Kind = BAREWire.Platform.MemoryKind.ViewBacked
+          Capacity = 65536L
+          Alignment = 64
+          Granularity = 64
+          Growth = BAREWire.Platform.Growth.Fixed
+          Access = BAREWire.Platform.Access.ReadWrite
+          Base = None
+          Notes = ""
+          MapKind = ""
+          Since = ""
+          Until = "" }
+    let spaceDesc : BAREWire.Descriptors.MemorySpaceDescriptor =
+        { Space = "audio_ring"
+          MemoryRegion = BAREWire.Hardware.MemoryRegionKind.SRAM
+          Access = "ReadWrite"
+          ByteOrder = "little"
+          ElementSize = 16
+          ElementCount = 1024
+          RegionByteExtent = 16384
+          RegionAlignment = 64
+          RegionLifetimeDepth = 1
+          LibraryRetentionDepth = 2 }
+    let viewLayout : BAREWire.Descriptors.ViewLayoutDescriptor =
+        { Schema = "AudioFrameRing"
+          Element = BAREWire.Hardware.Repr.F32
+          Alignment = 8
+          Access = BAREWire.Hardware.AccessKind.ReadWrite }
+    let placement : BAREWire.Platform.SharedBufferPlacement =
+        { Name = "audio_ring_frames"
+          SpaceDescriptor = spaceDesc
+          SpaceOffset = 0L
+          StructLayout = structLayout
+          ViewLayout = viewLayout
+          MeasuredElementSize = 16
+          LayoutAlignment = 8
+          LayoutByteOrder = "little"
+          HasRawPointerFields = false
+          HasVerifiedExports = true
+          MappedDepth = 1
+          FirstUseDepth = 1
+          LastUseDepth = 2
+          LibraryRetentionEndDepth = 2
+          UnmapDepth = 3
+          LeakedAtExit = false
+          ConcurrentClefMutation = false
+          LibraryMutatesBuffer = true
+          OverlappingMutableShare = false
+          MaxAccessedElementIndex = 1023 }
+    let desc : BAREWire.Platform.PlatformDescription =
+        { Id = "test-desc"
+          DisplayName = "Test Platform"
+          Substrate = "cpu"
+          Core = Some (BAREWire.Platform.TargetCore.create "linux" "x86_64" 64 "little" "glibc")
+          Spaces = [| space |]
+          ProgramLifetime = None
+          Surfaces = [||]
+          Buffers = [||]
+          Transports = [||]
+          Lifecycle = { Clocks = [||]; Resets = [||]; Entry = ""; Teardown = ""; Persistence = BAREWire.Platform.Persistence.Volatile }
+          Notes = [||]
+          Limits = [||] }
+    Assert.Empty(BAREWire.Platform.Check.checkSharedBufferPlacement desc placement)
+    let obligations : BAREWire.Platform.Obligation array =
+        BAREWire.Platform.Obligations.sharedBufferObligations desc [| placement |]
+    Assert.Equal(5, obligations.Length)
+    for idx in 0 .. obligations.Length - 1 do
+        let ob = obligations[idx]
+        let body = ObligationBody.SharedBufferPlacementObligation ob
+        let bodyBytes = indexedEncoded BinaryGenerated.write_Fidelity_PSG_ObligationBody body
+        let actualBody, bodyState = indexedReadState limits bodyBytes |> BinaryGenerated.read_Fidelity_PSG_ObligationBody |> take
+        Assert.Equal(body, actualBody)
+        Assert.Equal(0, bodyState.Depth)
+    let placementDecl : BoundarySharedBufferPlacementDeclaration =
+        { Identity = NodeId 300
+          Declaration = NodeId 301
+          SpaceNode = NodeId 302
+          BufferSchemaNode = NodeId 303
+          SpaceDescriptorNode = NodeId 304
+          StructDescriptorNode = NodeId 305
+          ViewDescriptorNode = NodeId 306
+          Placement = placement
+          Obligations = [ NodeId 310; NodeId 311; NodeId 312; NodeId 313; NodeId 314 ]
+          DeclarationFacts = Map.empty
+          Participants = ParticipantEvidence.Established [ { Role = ParticipantRole.Site; Node = NodeId 300; Ordinal = 0; Group = NodeId 300 } ] }
+    let viewUse : BoundarySharedBufferViewUse =
+        { Site = NodeId 320
+          PlacementDeclaration = NodeId 300
+          RegionAcquisitionCall = NodeId 321
+          RegionReleaseCall = Some(NodeId 322)
+          SyncCalls = [ NodeId 323 ]
+          ViewProjections = [ NodeId 324; NodeId 325 ]
+          ElementType = Build.unitType
+          ElementSlot = SettledSlot.InlineBytes(16, 8)
+          Copies = 0
+          ExtentObligation = NodeId 310
+          LayoutObligation = NodeId 311
+          LifetimeObligation = NodeId 312
+          ExclusivityObligation = NodeId 313
+          SpaceExtentObligation = Some(NodeId 314)
+          Participants = ParticipantEvidence.Established [ { Role = ParticipantRole.Site; Node = NodeId 320; Ordinal = 0; Group = NodeId 320 } ] }
+    let declBytes = indexedEncoded BinaryGenerated.write_Fidelity_PSG_BoundarySharedBufferPlacementDeclaration placementDecl
+    let actualDecl, declState = indexedReadState limits declBytes |> BinaryGenerated.read_Fidelity_PSG_BoundarySharedBufferPlacementDeclaration |> take
+    Assert.Equal(placementDecl, actualDecl)
+    Assert.Equal(0, declState.Depth)
+    let useBytes = indexedEncoded BinaryGenerated.write_Fidelity_PSG_BoundarySharedBufferViewUse viewUse
+    let actualUse, useState = indexedReadState limits useBytes |> BinaryGenerated.read_Fidelity_PSG_BoundarySharedBufferViewUse |> take
+    Assert.Equal(viewUse, actualUse)
+    Assert.Equal(0, useState.Depth)
+    let emptyRev = Revision.empty "schema54-shared-buffer"
+    let fullRev =
+        { emptyRev with
+            Emission =
+                { emptyRev.Emission with
+                    Boundary =
+                        { emptyRev.Emission.Boundary with
+                            SharedBufferPlacements = Map.ofList [ NodeId 300, placementDecl ]
+                            SharedBufferViewUses = Map.ofList [ NodeId 320, viewUse ] } } }
     let revBytes = indexedEncoded BinaryGenerated.writeRevision fullRev
     let decodedRev, revState = indexedReadState limits revBytes |> BinaryGenerated.readRevision |> take
     Assert.Equal(fullRev, decodedRev)

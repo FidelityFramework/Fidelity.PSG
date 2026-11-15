@@ -303,6 +303,40 @@ type BoundaryCountedEntryArray = {
     Participants: ParticipantEvidence
 }
 
+/// Settled representation of a declared M10 BAREWire zero-copy shared-buffer placement (Farscape #205).
+type BoundarySharedBufferPlacementDeclaration = {
+    Identity: NodeId
+    Declaration: NodeId
+    SpaceNode: NodeId
+    BufferSchemaNode: NodeId
+    SpaceDescriptorNode: NodeId
+    StructDescriptorNode: NodeId
+    ViewDescriptorNode: NodeId
+    Placement: BAREWire.Platform.SharedBufferPlacement
+    Obligations: NodeId list
+    DeclarationFacts: Map<NodeId, BoundaryDeclarationFact>
+    Participants: ParticipantEvidence
+}
+
+/// Settled representation of a mapped zero-copy region and typed StructDescriptor view use (Farscape #205).
+type BoundarySharedBufferViewUse = {
+    Site: NodeId
+    PlacementDeclaration: NodeId
+    RegionAcquisitionCall: NodeId
+    RegionReleaseCall: NodeId option
+    SyncCalls: NodeId list
+    ViewProjections: NodeId list
+    ElementType: TypeIdentity
+    ElementSlot: SettledSlot
+    Copies: int
+    ExtentObligation: NodeId
+    LayoutObligation: NodeId
+    LifetimeObligation: NodeId
+    ExclusivityObligation: NodeId
+    SpaceExtentObligation: NodeId option
+    Participants: ParticipantEvidence
+}
+
 type BoundaryImport = {
     Identity: NodeId
     Binding: NodeId

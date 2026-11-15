@@ -6719,3 +6719,231 @@ let ``read-only buffer use admits AcquireNullable without result adaptation and 
         Assert.Empty violations
     else
         Assert.Contains(violations, fun v -> v.Part = expectedPart)
+
+[<Theory>]
+[<InlineData("valid", "")>]
+[<InlineData("copies", "Emission.Boundary.SharedBufferViewUses.Copies")>]
+[<InlineData("raw-pointer", "Emission.Boundary.SharedBufferPlacements.Layout")>]
+[<InlineData("alignment", "Emission.Boundary.SharedBufferPlacements.Layout")>]
+[<InlineData("extent-overflow", "Emission.Boundary.SharedBufferPlacements.Extent")>]
+[<InlineData("lifetime-escape", "Emission.Boundary.SharedBufferPlacements.Lifetime")>]
+[<InlineData("lifetime-leak", "Emission.Boundary.SharedBufferPlacements.Lifetime")>]
+[<InlineData("exclusivity-race", "Emission.Boundary.SharedBufferPlacements.Exclusivity")>]
+[<InlineData("exclusivity-readonly", "Emission.Boundary.SharedBufferPlacements.Exclusivity")>]
+[<InlineData("obligation-mismatch", "Emission.Boundary.SharedBufferPlacements.Obligations")>]
+[<InlineData("obligation-value-mismatch", "Emission.Boundary.SharedBufferPlacements.Obligations")>]
+[<InlineData("obligation-premise-mismatch", "Emission.Boundary.SharedBufferPlacements.Obligations")>]
+[<InlineData("overlapping-fields", "Emission.Boundary.SharedBufferPlacements.Layout")>]
+[<InlineData("same-space-overlap", "Emission.Boundary.SharedBufferPlacements.Extent")>]
+[<InlineData("view-slot-mismatch", "Emission.Boundary.SharedBufferViewUses.Account")>]
+[<InlineData("view-obligation-mismatch", "Emission.Boundary.SharedBufferViewUses.Obligations")>]
+let ``shared buffer placement and view use enforce FS9220-FS9223 zero-copy contracts`` mode expectedPart =
+    let held = bindingWithLiteral
+    let unitType = held.Nodes[NodeId 1].Type
+    let fields : BAREWire.Hardware.FieldDescriptor array =
+        if mode = "raw-pointer" then
+            [| { Name = "ptr"; Offset = 0; Repr = BAREWire.Hardware.Repr.Pointer; Count = 1; Access = BAREWire.Hardware.AccessKind.ReadWrite; BitFields = [||]; Documentation = None }
+               { Name = "timestamp"; Offset = 8; Repr = BAREWire.Hardware.Repr.U64; Count = 1; Access = BAREWire.Hardware.AccessKind.ReadWrite; BitFields = [||]; Documentation = None } |]
+        elif mode = "overlapping-fields" then
+            [| { Name = "left"; Offset = 0; Repr = BAREWire.Hardware.Repr.U64; Count = 1; Access = BAREWire.Hardware.AccessKind.ReadWrite; BitFields = [||]; Documentation = None }
+               { Name = "right"; Offset = 4; Repr = BAREWire.Hardware.Repr.F32; Count = 1; Access = BAREWire.Hardware.AccessKind.ReadWrite; BitFields = [||]; Documentation = None }
+               { Name = "timestamp"; Offset = 8; Repr = BAREWire.Hardware.Repr.U64; Count = 1; Access = BAREWire.Hardware.AccessKind.ReadWrite; BitFields = [||]; Documentation = None } |]
+        else
+            [| { Name = "left"; Offset = 0; Repr = BAREWire.Hardware.Repr.F32; Count = 1; Access = BAREWire.Hardware.AccessKind.ReadWrite; BitFields = [||]; Documentation = None }
+               { Name = "right"; Offset = 4; Repr = BAREWire.Hardware.Repr.F32; Count = 1; Access = BAREWire.Hardware.AccessKind.ReadWrite; BitFields = [||]; Documentation = None }
+               { Name = "timestamp"; Offset = 8; Repr = BAREWire.Hardware.Repr.U64; Count = 1; Access = BAREWire.Hardware.AccessKind.ReadWrite; BitFields = [||]; Documentation = None } |]
+    let structLayout : BAREWire.Hardware.StructDescriptor =
+        { Name = "AudioFrame"
+          Layout =
+            { Size = 16
+              Alignment = 8
+              Fields = fields }
+          MayAlias = false
+          FlexibleArray = None
+          Documentation = None }
+    let space : BAREWire.Platform.MemorySpace =
+        { Name = "audio_ring"
+          Kind = BAREWire.Platform.MemoryKind.ViewBacked
+          Capacity = 65536L
+          Alignment = 64
+          Granularity = 64
+          Growth = BAREWire.Platform.Growth.Fixed
+          Access = BAREWire.Platform.Access.ReadWrite
+          Base = None
+          Notes = ""
+          MapKind = ""
+          Since = ""
+          Until = "" }
+    let elemCount = if mode = "extent-overflow" then 2048 else 1024
+    let regionExtent = 16384
+    let regionAlign = if mode = "alignment" then 4 else 64
+    let retentionEnd = if mode = "lifetime-escape" then 3 else 2
+    let leaked = (mode = "lifetime-leak")
+    let concurrentRace = (mode = "exclusivity-race")
+    let spaceAccess = if mode = "exclusivity-readonly" then "ReadOnly" else "ReadWrite"
+    let spaceDesc : BAREWire.Descriptors.MemorySpaceDescriptor =
+        { Space = "audio_ring"
+          MemoryRegion = BAREWire.Hardware.MemoryRegionKind.SRAM
+          Access = spaceAccess
+          ByteOrder = "little"
+          ElementSize = 16
+          ElementCount = elemCount
+          RegionByteExtent = regionExtent
+          RegionAlignment = regionAlign
+          RegionLifetimeDepth = 1
+          LibraryRetentionDepth = 2 }
+    let viewLayout : BAREWire.Descriptors.ViewLayoutDescriptor =
+        { Schema = "AudioFrameRing"
+          Element = BAREWire.Hardware.Repr.F32
+          Alignment = 8
+          Access = BAREWire.Hardware.AccessKind.ReadWrite }
+    let placement : BAREWire.Platform.SharedBufferPlacement =
+        { Name = "audio_ring_frames"
+          SpaceDescriptor = spaceDesc
+          SpaceOffset = 0L
+          StructLayout = structLayout
+          ViewLayout = viewLayout
+          MeasuredElementSize = 16
+          LayoutAlignment = 8
+          LayoutByteOrder = "little"
+          HasRawPointerFields = (mode = "raw-pointer")
+          HasVerifiedExports = true
+          MappedDepth = 1
+          FirstUseDepth = 1
+          LastUseDepth = 2
+          LibraryRetentionEndDepth = retentionEnd
+          UnmapDepth = 3
+          LeakedAtExit = leaked
+          ConcurrentClefMutation = concurrentRace
+          LibraryMutatesBuffer = true
+          OverlappingMutableShare = false
+          MaxAccessedElementIndex = 1023 }
+    let desc : BAREWire.Platform.PlatformDescription =
+        { Id = "test-desc"
+          DisplayName = "Test Platform"
+          Substrate = "cpu"
+          Core = Some (BAREWire.Platform.TargetCore.create "linux" "x86_64" 64 "little" "glibc")
+          Spaces = [| space |]
+          ProgramLifetime = None
+          Surfaces = [||]
+          Buffers = [||]
+          Transports = [||]
+          Lifecycle = { Clocks = [||]; Resets = [||]; Entry = ""; Teardown = ""; Persistence = BAREWire.Platform.Persistence.Volatile }
+          Notes = [||]
+          Limits = [||] }
+    if mode = "valid" then
+        Assert.Empty(BAREWire.Platform.Check.checkSharedBufferPlacement desc placement)
+    let toClaim (ob: BAREWire.Platform.Obligation) : ObligationInfo =
+        { Id = ob.Id
+          Kind = ob.Kind
+          Logic = ob.Logic
+          Statement = ob.Statement
+          Source = ob.Source
+          Refs = Array.toList ob.Refs
+          Body = ObligationBody.SharedBufferPlacementObligation ob }
+    let placement2 = { placement with Name = "audio_ring_frames_overlap"; SpaceOffset = 0L }
+    let allPlacements =
+        if mode = "same-space-overlap" then [| placement; placement2 |] else [| placement |]
+    let rawObligations =
+        BAREWire.Platform.Obligations.sharedBufferObligations desc allPlacements
+        |> Array.map (fun (ob: BAREWire.Platform.Obligation) ->
+            if mode = "obligation-mismatch" && ob.Form.Kind = BAREWire.Platform.FormKind.SharedBufferLayout then
+                { ob with Form = { ob.Form with Kind = "invalid-form-kind" } }
+            elif mode = "obligation-value-mismatch" && ob.Form.Kind = BAREWire.Platform.FormKind.SharedBufferLayout then
+                let badValues = Array.copy ob.Form.Values
+                badValues[1] <- 32L
+                { ob with Form = { ob.Form with Values = badValues } }
+            elif mode = "obligation-premise-mismatch" && ob.Form.Kind = BAREWire.Platform.FormKind.SharedBufferSpaceExtent then
+                { ob with Form = { ob.Form with A = ob.Form.A + 4096L } }
+            else ob)
+    let obExtent = rawObligations[0]
+    let obLayout = rawObligations[1]
+    let obLifetime = rawObligations[2]
+    let obExclusivity = rawObligations[3]
+    let obSpaceExtent = rawObligations[rawObligations.Length - 1]
+    let declFact : BoundaryDeclarationFact =
+        { Form = "quotation"; Text = []; Numbers = []; References = []; Children = []; Parent = None; SourceType = unitType }
+    let declFacts =
+        [ 300 .. 306 ] |> List.map (fun id -> NodeId id, declFact) |> Map.ofList
+    let placementDecl : BoundarySharedBufferPlacementDeclaration =
+        { Identity = NodeId 300
+          Declaration = NodeId 301
+          SpaceNode = NodeId 302
+          BufferSchemaNode = NodeId 303
+          SpaceDescriptorNode = NodeId 304
+          StructDescriptorNode = NodeId 305
+          ViewDescriptorNode = NodeId 306
+          Placement = placement
+          Obligations = [ NodeId 310; NodeId 311; NodeId 312; NodeId 313; NodeId 314 ]
+          DeclarationFacts = declFacts
+          Participants =
+            ParticipantEvidence.Established
+                ([ 300 .. 306 ] |> List.mapi (fun idx id -> { Role = ParticipantRole.Site; Node = NodeId id; Ordinal = idx; Group = NodeId 300 })) }
+    let extraPlacements, extraClaims =
+        if mode = "same-space-overlap" then
+            let declFacts2 = [ 400 .. 406 ] |> List.map (fun id -> NodeId id, declFact) |> Map.ofList
+            let placementDecl2 : BoundarySharedBufferPlacementDeclaration =
+                { Identity = NodeId 400
+                  Declaration = NodeId 401
+                  SpaceNode = NodeId 402
+                  BufferSchemaNode = NodeId 403
+                  SpaceDescriptorNode = NodeId 404
+                  StructDescriptorNode = NodeId 405
+                  ViewDescriptorNode = NodeId 406
+                  Placement = placement2
+                  Obligations = [ NodeId 410; NodeId 411; NodeId 412; NodeId 413; NodeId 314 ]
+                  DeclarationFacts = declFacts2
+                  Participants =
+                    ParticipantEvidence.Established
+                        ([ 400 .. 406 ] |> List.mapi (fun idx id -> { Role = ParticipantRole.Site; Node = NodeId id; Ordinal = idx; Group = NodeId 400 })) }
+            [ NodeId 400, placementDecl2 ],
+            [ NodeId 410, toClaim rawObligations[4]
+              NodeId 411, toClaim rawObligations[5]
+              NodeId 412, toClaim rawObligations[6]
+              NodeId 413, toClaim rawObligations[7] ]
+        else
+            [], []
+    let viewLayoutOb = if mode = "view-obligation-mismatch" then NodeId 310 else NodeId 311
+    let viewSlot = if mode = "view-slot-mismatch" then SettledSlot.InlineBytes(32, 8) else SettledSlot.InlineBytes(16, 8)
+    let viewUse : BoundarySharedBufferViewUse =
+        { Site = NodeId 1
+          PlacementDeclaration = NodeId 300
+          RegionAcquisitionCall = NodeId 1
+          RegionReleaseCall = Some(NodeId 2)
+          SyncCalls = [ NodeId 2 ]
+          ViewProjections = [ NodeId 2 ]
+          ElementType = unitType
+          ElementSlot = viewSlot
+          Copies = (if mode = "copies" then 1 else 0)
+          ExtentObligation = NodeId 310
+          LayoutObligation = viewLayoutOb
+          LifetimeObligation = NodeId 312
+          ExclusivityObligation = NodeId 313
+          SpaceExtentObligation = Some(NodeId 314)
+          Participants =
+            ParticipantEvidence.Established
+                [ { Role = ParticipantRole.Site; Node = NodeId 1; Ordinal = 0; Group = NodeId 1 }
+                  { Role = ParticipantRole.Site; Node = NodeId 2; Ordinal = 1; Group = NodeId 1 }
+                  { Role = ParticipantRole.Site; Node = NodeId 300; Ordinal = 2; Group = NodeId 1 } ] }
+    let claims =
+        [ NodeId 310, toClaim obExtent
+          NodeId 311, toClaim obLayout
+          NodeId 312, toClaim obLifetime
+          NodeId 313, toClaim obExclusivity
+          NodeId 314, toClaim obSpaceExtent ] @ extraClaims
+    let revision =
+        { held with
+            CurrentClaims = claims |> List.fold (fun acc (id, c) -> acc.Add(id, c)) held.CurrentClaims
+            Obligations = held.Obligations @ (claims |> List.map snd)
+            ObligationSources = claims |> List.fold (fun acc (id, _) -> acc.Add(id, [ [ NodeId 1; NodeId 2 ] ])) held.ObligationSources
+            Emission =
+                { held.Emission with
+                    Boundary =
+                        { held.Emission.Boundary with
+                            SharedBufferPlacements = Map.ofList ([ NodeId 300, placementDecl ] @ extraPlacements)
+                            SharedBufferViewUses = Map.ofList [ NodeId 1, viewUse ] } } }
+    let violations = Integrity.check revision
+    if expectedPart = "" then
+        Assert.Empty violations
+    else
+        Assert.Contains(violations, fun v -> v.Part = expectedPart)

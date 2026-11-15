@@ -5,11 +5,11 @@ module internal BinaryGenerated =
     [<Literal>]
     let Format = 2u
     [<Literal>]
-    let Schema = 53
+    let Schema = 54
     [<Literal>]
-    let Fingerprint = "FDEF677CCBF623DEBFA1DDD6E52490A20E6189D7FF400445FDCC9EB12C7F0151"
+    let Fingerprint = "31C406D93819F33CFEC0FCC32B5154137CE6EE3DC91644164831B98ACA8831BF"
     [<Literal>]
-    let NamedTypes = 382
+    let NamedTypes = 394
     [<Literal>]
     let RevisionFields = 17
     [<Literal>]
@@ -192,6 +192,21 @@ module internal BinaryGenerated =
               }
     }
 
+    and write_BAREWire_Descriptors_MemorySpaceDescriptor (state: WriteState) (value: global.BAREWire.Descriptors.MemorySpaceDescriptor) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = writeString state value.``Space``
+        let! state = writeString state value.``MemoryRegion``
+        let! state = writeString state value.``Access``
+        let! state = writeString state value.``ByteOrder``
+        let! state = writeI32 state value.``ElementSize``
+        let! state = writeI32 state value.``ElementCount``
+        let! state = writeI32 state value.``RegionByteExtent``
+        let! state = writeI32 state value.``RegionAlignment``
+        let! state = writeI32 state value.``RegionLifetimeDepth``
+        let! state = writeI32 state value.``LibraryRetentionDepth``
+        return leaveWrite state
+    }
+
     and write_BAREWire_Descriptors_ParameterInfo (state: WriteState) (value: global.BAREWire.Descriptors.ParameterInfo) : Result<WriteState, BinaryError> = result {
         let! state = enterWrite state
         let! state = writeString state value.``Name``
@@ -344,12 +359,72 @@ module internal BinaryGenerated =
               }
     }
 
+    and write_BAREWire_Descriptors_ViewLayoutDescriptor (state: WriteState) (value: global.BAREWire.Descriptors.ViewLayoutDescriptor) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = writeString state value.``Schema``
+        let! state = writeString state value.``Element``
+        let! state = writeI32 state value.``Alignment``
+        let! state = writeString state value.``Access``
+        return leaveWrite state
+    }
+
     and write_BAREWire_Descriptors_WritableBufferDescriptor (state: WriteState) (value: global.BAREWire.Descriptors.WritableBufferDescriptor) : Result<WriteState, BinaryError> = result {
         let! state = enterWrite state
         let! state = writeString state value.``Binding``
         let! state = writeI32 state value.``Parameter``
         let! state = writeI32 state value.``CountParameter``
         let! state = write_BAREWire_Descriptors_ExternalExecutionHypothesis state value.``Hypothesis``
+        return leaveWrite state
+    }
+
+    and write_BAREWire_Hardware_BitFieldDescriptor (state: WriteState) (value: global.BAREWire.Hardware.BitFieldDescriptor) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = writeString state value.``Name``
+        let! state = writeI32 state value.``Position``
+        let! state = writeI32 state value.``Width``
+        let! state = writeString state value.``Access``
+        return leaveWrite state
+    }
+
+    and write_BAREWire_Hardware_FieldDescriptor (state: WriteState) (value: global.BAREWire.Hardware.FieldDescriptor) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = writeString state value.``Name``
+        let! state = writeI32 state value.``Offset``
+        let! state = writeString state value.``Repr``
+        let! state = writeI32 state value.``Count``
+        let! state = writeString state value.``Access``
+        let! state = (writeArray write_BAREWire_Hardware_BitFieldDescriptor) state value.``BitFields``
+        let! state = (writeOption writeString) state value.``Documentation``
+        return leaveWrite state
+    }
+
+    and write_BAREWire_Hardware_FlexibleArrayDescriptor (state: WriteState) (value: global.BAREWire.Hardware.FlexibleArrayDescriptor) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = writeString state value.``Name``
+        let! state = writeI32 state value.``Offset``
+        let! state = writeString state value.``Repr``
+        let! state = writeString state value.``Access``
+        let! state = writeString state value.``CountField``
+        let! state = writeString state value.``CountRule``
+        let! state = (writeOption writeString) state value.``Documentation``
+        return leaveWrite state
+    }
+
+    and write_BAREWire_Hardware_PeripheralLayout (state: WriteState) (value: global.BAREWire.Hardware.PeripheralLayout) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = writeI32 state value.``Size``
+        let! state = writeI32 state value.``Alignment``
+        let! state = (writeArray write_BAREWire_Hardware_FieldDescriptor) state value.``Fields``
+        return leaveWrite state
+    }
+
+    and write_BAREWire_Hardware_StructDescriptor (state: WriteState) (value: global.BAREWire.Hardware.StructDescriptor) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = writeString state value.``Name``
+        let! state = write_BAREWire_Hardware_PeripheralLayout state value.``Layout``
+        let! state = writeBool state value.``MayAlias``
+        let! state = (writeOption write_BAREWire_Hardware_FlexibleArrayDescriptor) state value.``FlexibleArray``
+        let! state = (writeOption writeString) state value.``Documentation``
         return leaveWrite state
     }
 
@@ -370,6 +445,28 @@ module internal BinaryGenerated =
         return leaveWrite state
     }
 
+    and write_BAREWire_Platform_Obligation (state: WriteState) (value: global.BAREWire.Platform.Obligation) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = writeString state value.``Id``
+        let! state = writeString state value.``Kind``
+        let! state = writeString state value.``Logic``
+        let! state = writeString state value.``Statement``
+        let! state = writeString state value.``Source``
+        let! state = (writeArray writeString) state value.``Refs``
+        let! state = write_BAREWire_Platform_ObligationForm state value.``Form``
+        return leaveWrite state
+    }
+
+    and write_BAREWire_Platform_ObligationForm (state: WriteState) (value: global.BAREWire.Platform.ObligationForm) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = writeString state value.``Kind``
+        let! state = writeI64 state value.``A``
+        let! state = writeI64 state value.``B``
+        let! state = (writeArray writeString) state value.``Names``
+        let! state = (writeArray writeI64) state value.``Values``
+        return leaveWrite state
+    }
+
     and write_BAREWire_Platform_ProcessLinkContract (state: WriteState) (value: global.BAREWire.Platform.ProcessLinkContract) : Result<WriteState, BinaryError> = result {
         let! state = enterWrite state
         let! state = writeString state value.``Identity``
@@ -383,6 +480,31 @@ module internal BinaryGenerated =
         let! state = writeString state value.``LiveUntil``
         let! state = writeString state value.``Unloading``
         let! state = writeString state value.``ExportedLibrary``
+        return leaveWrite state
+    }
+
+    and write_BAREWire_Platform_SharedBufferPlacement (state: WriteState) (value: global.BAREWire.Platform.SharedBufferPlacement) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = writeString state value.``Name``
+        let! state = write_BAREWire_Descriptors_MemorySpaceDescriptor state value.``SpaceDescriptor``
+        let! state = writeI64 state value.``SpaceOffset``
+        let! state = write_BAREWire_Hardware_StructDescriptor state value.``StructLayout``
+        let! state = write_BAREWire_Descriptors_ViewLayoutDescriptor state value.``ViewLayout``
+        let! state = writeI32 state value.``MeasuredElementSize``
+        let! state = writeI32 state value.``LayoutAlignment``
+        let! state = writeString state value.``LayoutByteOrder``
+        let! state = writeBool state value.``HasRawPointerFields``
+        let! state = writeBool state value.``HasVerifiedExports``
+        let! state = writeI32 state value.``MappedDepth``
+        let! state = writeI32 state value.``FirstUseDepth``
+        let! state = writeI32 state value.``LastUseDepth``
+        let! state = writeI32 state value.``LibraryRetentionEndDepth``
+        let! state = writeI32 state value.``UnmapDepth``
+        let! state = writeBool state value.``LeakedAtExit``
+        let! state = writeBool state value.``ConcurrentClefMutation``
+        let! state = writeBool state value.``LibraryMutatesBuffer``
+        let! state = writeBool state value.``OverlappingMutableShare``
+        let! state = writeI32 state value.``MaxAccessedElementIndex``
         return leaveWrite state
     }
 
@@ -917,6 +1039,8 @@ module internal BinaryGenerated =
         let! state = (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_BoundaryBorrowedResultViewUse) state value.``BorrowedResultViewUses``
         let! state = (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_BoundaryBufferAbsence) state value.``BufferAbsences``
         let! state = (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_BoundaryCountedEntryArray) state value.``CountedEntryArrays``
+        let! state = (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_BoundarySharedBufferPlacementDeclaration) state value.``SharedBufferPlacements``
+        let! state = (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_BoundarySharedBufferViewUse) state value.``SharedBufferViewUses``
         let! state = (writeOption write_Fidelity_PSG_BoundaryResourceEvidence) state value.``ResourceEvidence``
         let! state = (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_BoundaryResourceDeclaration) state value.``ResourceDeclarations``
         let! state = (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_BoundaryResourceAccess) state value.``ResourceAccesses``
@@ -1266,6 +1390,42 @@ module internal BinaryGenerated =
                 let! state = write_Fidelity_PSG_NodeId state a0
                 return leaveWrite state
               }
+    }
+
+    and write_Fidelity_PSG_BoundarySharedBufferPlacementDeclaration (state: WriteState) (value: global.Fidelity.PSG.BoundarySharedBufferPlacementDeclaration) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = write_Fidelity_PSG_NodeId state value.``Identity``
+        let! state = write_Fidelity_PSG_NodeId state value.``Declaration``
+        let! state = write_Fidelity_PSG_NodeId state value.``SpaceNode``
+        let! state = write_Fidelity_PSG_NodeId state value.``BufferSchemaNode``
+        let! state = write_Fidelity_PSG_NodeId state value.``SpaceDescriptorNode``
+        let! state = write_Fidelity_PSG_NodeId state value.``StructDescriptorNode``
+        let! state = write_Fidelity_PSG_NodeId state value.``ViewDescriptorNode``
+        let! state = write_BAREWire_Platform_SharedBufferPlacement state value.``Placement``
+        let! state = (writeList write_Fidelity_PSG_NodeId) state value.``Obligations``
+        let! state = (writeMap write_Fidelity_PSG_NodeId write_Fidelity_PSG_BoundaryDeclarationFact) state value.``DeclarationFacts``
+        let! state = write_Fidelity_PSG_ParticipantEvidence state value.``Participants``
+        return leaveWrite state
+    }
+
+    and write_Fidelity_PSG_BoundarySharedBufferViewUse (state: WriteState) (value: global.Fidelity.PSG.BoundarySharedBufferViewUse) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = write_Fidelity_PSG_NodeId state value.``Site``
+        let! state = write_Fidelity_PSG_NodeId state value.``PlacementDeclaration``
+        let! state = write_Fidelity_PSG_NodeId state value.``RegionAcquisitionCall``
+        let! state = (writeOption write_Fidelity_PSG_NodeId) state value.``RegionReleaseCall``
+        let! state = (writeList write_Fidelity_PSG_NodeId) state value.``SyncCalls``
+        let! state = (writeList write_Fidelity_PSG_NodeId) state value.``ViewProjections``
+        let! state = write_Fidelity_PSG_TypeIdentity state value.``ElementType``
+        let! state = write_Fidelity_PSG_SettledSlot state value.``ElementSlot``
+        let! state = writeI32 state value.``Copies``
+        let! state = write_Fidelity_PSG_NodeId state value.``ExtentObligation``
+        let! state = write_Fidelity_PSG_NodeId state value.``LayoutObligation``
+        let! state = write_Fidelity_PSG_NodeId state value.``LifetimeObligation``
+        let! state = write_Fidelity_PSG_NodeId state value.``ExclusivityObligation``
+        let! state = (writeOption write_Fidelity_PSG_NodeId) state value.``SpaceExtentObligation``
+        let! state = write_Fidelity_PSG_ParticipantEvidence state value.``Participants``
+        return leaveWrite state
     }
 
     and write_Fidelity_PSG_BoundarySourcePremise (state: WriteState) (value: global.Fidelity.PSG.BoundarySourcePremise) : Result<WriteState, BinaryError> = result {
@@ -5614,6 +5774,11 @@ module internal BinaryGenerated =
                 let! state = write_Fidelity_PSG_BufferAbsenceArgumentConversionModel state a0
                 return leaveWrite state
               }
+            | global.Fidelity.PSG.ObligationBody.``SharedBufferPlacementObligation``(a0) -> result {
+                let! state = writeTag state 41
+                let! state = write_BAREWire_Platform_Obligation state a0
+                return leaveWrite state
+              }
     }
 
     and write_Fidelity_PSG_ObligationInfo (state: WriteState) (value: global.Fidelity.PSG.ObligationInfo) : Result<WriteState, BinaryError> = result {
@@ -8536,6 +8701,21 @@ module internal BinaryGenerated =
             | _ -> malformed state "Unknown BAREWire.Descriptors.FixedArgument case"
     }
 
+    and read_BAREWire_Descriptors_MemorySpaceDescriptor (state: ReadState) : Result<global.BAREWire.Descriptors.MemorySpaceDescriptor * ReadState, BinaryError> = result {
+        let! state = enterReadFields 10 state
+        let! a0, state = readString state
+        let! a1, state = readString state
+        let! a2, state = readString state
+        let! a3, state = readString state
+        let! a4, state = readI32 state
+        let! a5, state = readI32 state
+        let! a6, state = readI32 state
+        let! a7, state = readI32 state
+        let! a8, state = readI32 state
+        let! a9, state = readI32 state
+        return! finishRead ({ ``Space`` = a0; ``MemoryRegion`` = a1; ``Access`` = a2; ``ByteOrder`` = a3; ``ElementSize`` = a4; ``ElementCount`` = a5; ``RegionByteExtent`` = a6; ``RegionAlignment`` = a7; ``RegionLifetimeDepth`` = a8; ``LibraryRetentionDepth`` = a9 } : global.BAREWire.Descriptors.MemorySpaceDescriptor) state
+    }
+
     and read_BAREWire_Descriptors_ParameterInfo (state: ReadState) : Result<global.BAREWire.Descriptors.ParameterInfo * ReadState, BinaryError> = result {
         let! state = enterReadFields 3 state
         let! a0, state = readString state
@@ -8682,6 +8862,15 @@ module internal BinaryGenerated =
             | _ -> malformed state "Unknown BAREWire.Descriptors.TypeRef case"
     }
 
+    and read_BAREWire_Descriptors_ViewLayoutDescriptor (state: ReadState) : Result<global.BAREWire.Descriptors.ViewLayoutDescriptor * ReadState, BinaryError> = result {
+        let! state = enterReadFields 4 state
+        let! a0, state = readString state
+        let! a1, state = readString state
+        let! a2, state = readI32 state
+        let! a3, state = readString state
+        return! finishRead ({ ``Schema`` = a0; ``Element`` = a1; ``Alignment`` = a2; ``Access`` = a3 } : global.BAREWire.Descriptors.ViewLayoutDescriptor) state
+    }
+
     and read_BAREWire_Descriptors_WritableBufferDescriptor (state: ReadState) : Result<global.BAREWire.Descriptors.WritableBufferDescriptor * ReadState, BinaryError> = result {
         let! state = enterReadFields 4 state
         let! a0, state = readString state
@@ -8689,6 +8878,57 @@ module internal BinaryGenerated =
         let! a2, state = readI32 state
         let! a3, state = read_BAREWire_Descriptors_ExternalExecutionHypothesis state
         return! finishRead ({ ``Binding`` = a0; ``Parameter`` = a1; ``CountParameter`` = a2; ``Hypothesis`` = a3 } : global.BAREWire.Descriptors.WritableBufferDescriptor) state
+    }
+
+    and read_BAREWire_Hardware_BitFieldDescriptor (state: ReadState) : Result<global.BAREWire.Hardware.BitFieldDescriptor * ReadState, BinaryError> = result {
+        let! state = enterReadFields 4 state
+        let! a0, state = readString state
+        let! a1, state = readI32 state
+        let! a2, state = readI32 state
+        let! a3, state = readString state
+        return! finishRead ({ ``Name`` = a0; ``Position`` = a1; ``Width`` = a2; ``Access`` = a3 } : global.BAREWire.Hardware.BitFieldDescriptor) state
+    }
+
+    and read_BAREWire_Hardware_FieldDescriptor (state: ReadState) : Result<global.BAREWire.Hardware.FieldDescriptor * ReadState, BinaryError> = result {
+        let! state = enterReadFields 7 state
+        let! a0, state = readString state
+        let! a1, state = readI32 state
+        let! a2, state = readString state
+        let! a3, state = readI32 state
+        let! a4, state = readString state
+        let! a5, state = (readArray read_BAREWire_Hardware_BitFieldDescriptor) state
+        let! a6, state = (readOption readString) state
+        return! finishRead ({ ``Name`` = a0; ``Offset`` = a1; ``Repr`` = a2; ``Count`` = a3; ``Access`` = a4; ``BitFields`` = a5; ``Documentation`` = a6 } : global.BAREWire.Hardware.FieldDescriptor) state
+    }
+
+    and read_BAREWire_Hardware_FlexibleArrayDescriptor (state: ReadState) : Result<global.BAREWire.Hardware.FlexibleArrayDescriptor * ReadState, BinaryError> = result {
+        let! state = enterReadFields 7 state
+        let! a0, state = readString state
+        let! a1, state = readI32 state
+        let! a2, state = readString state
+        let! a3, state = readString state
+        let! a4, state = readString state
+        let! a5, state = readString state
+        let! a6, state = (readOption readString) state
+        return! finishRead ({ ``Name`` = a0; ``Offset`` = a1; ``Repr`` = a2; ``Access`` = a3; ``CountField`` = a4; ``CountRule`` = a5; ``Documentation`` = a6 } : global.BAREWire.Hardware.FlexibleArrayDescriptor) state
+    }
+
+    and read_BAREWire_Hardware_PeripheralLayout (state: ReadState) : Result<global.BAREWire.Hardware.PeripheralLayout * ReadState, BinaryError> = result {
+        let! state = enterReadFields 3 state
+        let! a0, state = readI32 state
+        let! a1, state = readI32 state
+        let! a2, state = (readArray read_BAREWire_Hardware_FieldDescriptor) state
+        return! finishRead ({ ``Size`` = a0; ``Alignment`` = a1; ``Fields`` = a2 } : global.BAREWire.Hardware.PeripheralLayout) state
+    }
+
+    and read_BAREWire_Hardware_StructDescriptor (state: ReadState) : Result<global.BAREWire.Hardware.StructDescriptor * ReadState, BinaryError> = result {
+        let! state = enterReadFields 5 state
+        let! a0, state = readString state
+        let! a1, state = read_BAREWire_Hardware_PeripheralLayout state
+        let! a2, state = readBool state
+        let! a3, state = (readOption read_BAREWire_Hardware_FlexibleArrayDescriptor) state
+        let! a4, state = (readOption readString) state
+        return! finishRead ({ ``Name`` = a0; ``Layout`` = a1; ``MayAlias`` = a2; ``FlexibleArray`` = a3; ``Documentation`` = a4 } : global.BAREWire.Hardware.StructDescriptor) state
     }
 
     and read_BAREWire_Platform_MemorySpace (state: ReadState) : Result<global.BAREWire.Platform.MemorySpace * ReadState, BinaryError> = result {
@@ -8708,6 +8948,28 @@ module internal BinaryGenerated =
         return! finishRead ({ ``Name`` = a0; ``Kind`` = a1; ``Capacity`` = a2; ``Alignment`` = a3; ``Granularity`` = a4; ``Growth`` = a5; ``Access`` = a6; ``Base`` = a7; ``Notes`` = a8; ``MapKind`` = a9; ``Since`` = a10; ``Until`` = a11 } : global.BAREWire.Platform.MemorySpace) state
     }
 
+    and read_BAREWire_Platform_Obligation (state: ReadState) : Result<global.BAREWire.Platform.Obligation * ReadState, BinaryError> = result {
+        let! state = enterReadFields 7 state
+        let! a0, state = readString state
+        let! a1, state = readString state
+        let! a2, state = readString state
+        let! a3, state = readString state
+        let! a4, state = readString state
+        let! a5, state = (readArray readString) state
+        let! a6, state = read_BAREWire_Platform_ObligationForm state
+        return! finishRead ({ ``Id`` = a0; ``Kind`` = a1; ``Logic`` = a2; ``Statement`` = a3; ``Source`` = a4; ``Refs`` = a5; ``Form`` = a6 } : global.BAREWire.Platform.Obligation) state
+    }
+
+    and read_BAREWire_Platform_ObligationForm (state: ReadState) : Result<global.BAREWire.Platform.ObligationForm * ReadState, BinaryError> = result {
+        let! state = enterReadFields 5 state
+        let! a0, state = readString state
+        let! a1, state = readI64 state
+        let! a2, state = readI64 state
+        let! a3, state = (readArray readString) state
+        let! a4, state = (readArray readI64) state
+        return! finishRead ({ ``Kind`` = a0; ``A`` = a1; ``B`` = a2; ``Names`` = a3; ``Values`` = a4 } : global.BAREWire.Platform.ObligationForm) state
+    }
+
     and read_BAREWire_Platform_ProcessLinkContract (state: ReadState) : Result<global.BAREWire.Platform.ProcessLinkContract * ReadState, BinaryError> = result {
         let! state = enterReadFields 11 state
         let! a0, state = readString state
@@ -8722,6 +8984,31 @@ module internal BinaryGenerated =
         let! a9, state = readString state
         let! a10, state = readString state
         return! finishRead ({ ``Identity`` = a0; ``Version`` = a1; ``Source`` = a2; ``Library`` = a3; ``Runtime`` = a4; ``Os`` = a5; ``Arch`` = a6; ``LoadAt`` = a7; ``LiveUntil`` = a8; ``Unloading`` = a9; ``ExportedLibrary`` = a10 } : global.BAREWire.Platform.ProcessLinkContract) state
+    }
+
+    and read_BAREWire_Platform_SharedBufferPlacement (state: ReadState) : Result<global.BAREWire.Platform.SharedBufferPlacement * ReadState, BinaryError> = result {
+        let! state = enterReadFields 20 state
+        let! a0, state = readString state
+        let! a1, state = read_BAREWire_Descriptors_MemorySpaceDescriptor state
+        let! a2, state = readI64 state
+        let! a3, state = read_BAREWire_Hardware_StructDescriptor state
+        let! a4, state = read_BAREWire_Descriptors_ViewLayoutDescriptor state
+        let! a5, state = readI32 state
+        let! a6, state = readI32 state
+        let! a7, state = readString state
+        let! a8, state = readBool state
+        let! a9, state = readBool state
+        let! a10, state = readI32 state
+        let! a11, state = readI32 state
+        let! a12, state = readI32 state
+        let! a13, state = readI32 state
+        let! a14, state = readI32 state
+        let! a15, state = readBool state
+        let! a16, state = readBool state
+        let! a17, state = readBool state
+        let! a18, state = readBool state
+        let! a19, state = readI32 state
+        return! finishRead ({ ``Name`` = a0; ``SpaceDescriptor`` = a1; ``SpaceOffset`` = a2; ``StructLayout`` = a3; ``ViewLayout`` = a4; ``MeasuredElementSize`` = a5; ``LayoutAlignment`` = a6; ``LayoutByteOrder`` = a7; ``HasRawPointerFields`` = a8; ``HasVerifiedExports`` = a9; ``MappedDepth`` = a10; ``FirstUseDepth`` = a11; ``LastUseDepth`` = a12; ``LibraryRetentionEndDepth`` = a13; ``UnmapDepth`` = a14; ``LeakedAtExit`` = a15; ``ConcurrentClefMutation`` = a16; ``LibraryMutatesBuffer`` = a17; ``OverlappingMutableShare`` = a18; ``MaxAccessedElementIndex`` = a19 } : global.BAREWire.Platform.SharedBufferPlacement) state
     }
 
     and read_BAREWire_Platform_StorageRequest (state: ReadState) : Result<global.BAREWire.Platform.StorageRequest * ReadState, BinaryError> = result {
@@ -9243,7 +9530,7 @@ module internal BinaryGenerated =
     }
 
     and read_Fidelity_PSG_BoundaryEmissionProjection (state: ReadState) : Result<global.Fidelity.PSG.BoundaryEmissionProjection * ReadState, BinaryError> = result {
-        let! state = enterReadFields 28 state
+        let! state = enterReadFields 30 state
         let! a0, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_BoundaryWritableBufferDeclaration) state
         let! a1, state = (readMap (fun state -> enterReadFields 2 state |> Result.bind (fun state -> read_Fidelity_PSG_NodeId state |> Result.bind (fun (v1_0, state) -> readI32 state |> Result.bind (fun (v1_1, state) -> finishRead (v1_0, v1_1) state)))) read_Fidelity_PSG_BoundaryWritableBufferUse) state
         let! a2, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_BoundaryReadOnlyBufferDeclaration) state
@@ -9252,27 +9539,29 @@ module internal BinaryGenerated =
         let! a5, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_BoundaryBorrowedResultViewUse) state
         let! a6, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_BoundaryBufferAbsence) state
         let! a7, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_BoundaryCountedEntryArray) state
-        let! a8, state = (readOption read_Fidelity_PSG_BoundaryResourceEvidence) state
-        let! a9, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_BoundaryResourceDeclaration) state
-        let! a10, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_BoundaryResourceAccess) state
-        let! a11, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_BoundaryImport) state
-        let! a12, state = (readOption read_Fidelity_PSG_BoundaryLoading) state
-        let! a13, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_BoundaryEntry) state
-        let! a14, state = (readMap read_Fidelity_PSG_NodeId (readList read_Fidelity_PSG_NodeId)) state
-        let! a15, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_BoundaryCall) state
-        let! a16, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_BoundaryByteView) state
-        let! a17, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_BoundaryStringExtent) state
-        let! a18, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_IntrinsicWriteImport) state
-        let! a19, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_IntrinsicWriteCall) state
-        let! a20, state = (readMap read_Fidelity_PSG_NodeId (readList read_Fidelity_PSG_IntrinsicWriteProof)) state
-        let! a21, state = (readSet read_Fidelity_PSG_NodeId) state
-        let! a22, state = (readSet read_Fidelity_PSG_NodeId) state
-        let! a23, state = (readSet readString) state
-        let! a24, state = (readList read_Fidelity_PSG_ForeignResultHypothesis) state
-        let! a25, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_BoundaryCallbackInvocation) state
-        let! a26, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_BoundaryCallbackAbsence) state
-        let! a27, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_BoundaryClosedEntry) state
-        return! finishRead ({ ``WritableBufferDeclarations`` = a0; ``WritableBufferUses`` = a1; ``ReadOnlyBufferDeclarations`` = a2; ``ReadOnlyBufferUses`` = a3; ``BorrowedResultViewDeclarations`` = a4; ``BorrowedResultViewUses`` = a5; ``BufferAbsences`` = a6; ``CountedEntryArrays`` = a7; ``ResourceEvidence`` = a8; ``ResourceDeclarations`` = a9; ``ResourceAccesses`` = a10; ``Imports`` = a11; ``Loading`` = a12; ``Entries`` = a13; ``ByScope`` = a14; ``Calls`` = a15; ``ByteViews`` = a16; ``StringExtents`` = a17; ``IntrinsicWriteImports`` = a18; ``IntrinsicWrites`` = a19; ``IntrinsicWriteProofs`` = a20; ``DeclarationLeaves`` = a21; ``DeclarationOnly`` = a22; ``Links`` = a23; ``ResultHypotheses`` = a24; ``CallbackInvocations`` = a25; ``CallbackAbsences`` = a26; ``ClosedEntries`` = a27 } : global.Fidelity.PSG.BoundaryEmissionProjection) state
+        let! a8, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_BoundarySharedBufferPlacementDeclaration) state
+        let! a9, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_BoundarySharedBufferViewUse) state
+        let! a10, state = (readOption read_Fidelity_PSG_BoundaryResourceEvidence) state
+        let! a11, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_BoundaryResourceDeclaration) state
+        let! a12, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_BoundaryResourceAccess) state
+        let! a13, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_BoundaryImport) state
+        let! a14, state = (readOption read_Fidelity_PSG_BoundaryLoading) state
+        let! a15, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_BoundaryEntry) state
+        let! a16, state = (readMap read_Fidelity_PSG_NodeId (readList read_Fidelity_PSG_NodeId)) state
+        let! a17, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_BoundaryCall) state
+        let! a18, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_BoundaryByteView) state
+        let! a19, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_BoundaryStringExtent) state
+        let! a20, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_IntrinsicWriteImport) state
+        let! a21, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_IntrinsicWriteCall) state
+        let! a22, state = (readMap read_Fidelity_PSG_NodeId (readList read_Fidelity_PSG_IntrinsicWriteProof)) state
+        let! a23, state = (readSet read_Fidelity_PSG_NodeId) state
+        let! a24, state = (readSet read_Fidelity_PSG_NodeId) state
+        let! a25, state = (readSet readString) state
+        let! a26, state = (readList read_Fidelity_PSG_ForeignResultHypothesis) state
+        let! a27, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_BoundaryCallbackInvocation) state
+        let! a28, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_BoundaryCallbackAbsence) state
+        let! a29, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_BoundaryClosedEntry) state
+        return! finishRead ({ ``WritableBufferDeclarations`` = a0; ``WritableBufferUses`` = a1; ``ReadOnlyBufferDeclarations`` = a2; ``ReadOnlyBufferUses`` = a3; ``BorrowedResultViewDeclarations`` = a4; ``BorrowedResultViewUses`` = a5; ``BufferAbsences`` = a6; ``CountedEntryArrays`` = a7; ``SharedBufferPlacements`` = a8; ``SharedBufferViewUses`` = a9; ``ResourceEvidence`` = a10; ``ResourceDeclarations`` = a11; ``ResourceAccesses`` = a12; ``Imports`` = a13; ``Loading`` = a14; ``Entries`` = a15; ``ByScope`` = a16; ``Calls`` = a17; ``ByteViews`` = a18; ``StringExtents`` = a19; ``IntrinsicWriteImports`` = a20; ``IntrinsicWrites`` = a21; ``IntrinsicWriteProofs`` = a22; ``DeclarationLeaves`` = a23; ``DeclarationOnly`` = a24; ``Links`` = a25; ``ResultHypotheses`` = a26; ``CallbackInvocations`` = a27; ``CallbackAbsences`` = a28; ``ClosedEntries`` = a29 } : global.Fidelity.PSG.BoundaryEmissionProjection) state
     }
 
     and read_Fidelity_PSG_BoundaryEntry (state: ReadState) : Result<global.Fidelity.PSG.BoundaryEntry * ReadState, BinaryError> = result {
@@ -9594,6 +9883,42 @@ module internal BinaryGenerated =
                 return! finishRead (global.Fidelity.PSG.BoundaryScalar.``BorrowedBytes``(a0)) state
               }
             | _ -> malformed state "Unknown Fidelity.PSG.BoundaryScalar case"
+    }
+
+    and read_Fidelity_PSG_BoundarySharedBufferPlacementDeclaration (state: ReadState) : Result<global.Fidelity.PSG.BoundarySharedBufferPlacementDeclaration * ReadState, BinaryError> = result {
+        let! state = enterReadFields 11 state
+        let! a0, state = read_Fidelity_PSG_NodeId state
+        let! a1, state = read_Fidelity_PSG_NodeId state
+        let! a2, state = read_Fidelity_PSG_NodeId state
+        let! a3, state = read_Fidelity_PSG_NodeId state
+        let! a4, state = read_Fidelity_PSG_NodeId state
+        let! a5, state = read_Fidelity_PSG_NodeId state
+        let! a6, state = read_Fidelity_PSG_NodeId state
+        let! a7, state = read_BAREWire_Platform_SharedBufferPlacement state
+        let! a8, state = (readList read_Fidelity_PSG_NodeId) state
+        let! a9, state = (readMap read_Fidelity_PSG_NodeId read_Fidelity_PSG_BoundaryDeclarationFact) state
+        let! a10, state = read_Fidelity_PSG_ParticipantEvidence state
+        return! finishRead ({ ``Identity`` = a0; ``Declaration`` = a1; ``SpaceNode`` = a2; ``BufferSchemaNode`` = a3; ``SpaceDescriptorNode`` = a4; ``StructDescriptorNode`` = a5; ``ViewDescriptorNode`` = a6; ``Placement`` = a7; ``Obligations`` = a8; ``DeclarationFacts`` = a9; ``Participants`` = a10 } : global.Fidelity.PSG.BoundarySharedBufferPlacementDeclaration) state
+    }
+
+    and read_Fidelity_PSG_BoundarySharedBufferViewUse (state: ReadState) : Result<global.Fidelity.PSG.BoundarySharedBufferViewUse * ReadState, BinaryError> = result {
+        let! state = enterReadFields 15 state
+        let! a0, state = read_Fidelity_PSG_NodeId state
+        let! a1, state = read_Fidelity_PSG_NodeId state
+        let! a2, state = read_Fidelity_PSG_NodeId state
+        let! a3, state = (readOption read_Fidelity_PSG_NodeId) state
+        let! a4, state = (readList read_Fidelity_PSG_NodeId) state
+        let! a5, state = (readList read_Fidelity_PSG_NodeId) state
+        let! a6, state = read_Fidelity_PSG_TypeIdentity state
+        let! a7, state = read_Fidelity_PSG_SettledSlot state
+        let! a8, state = readI32 state
+        let! a9, state = read_Fidelity_PSG_NodeId state
+        let! a10, state = read_Fidelity_PSG_NodeId state
+        let! a11, state = read_Fidelity_PSG_NodeId state
+        let! a12, state = read_Fidelity_PSG_NodeId state
+        let! a13, state = (readOption read_Fidelity_PSG_NodeId) state
+        let! a14, state = read_Fidelity_PSG_ParticipantEvidence state
+        return! finishRead ({ ``Site`` = a0; ``PlacementDeclaration`` = a1; ``RegionAcquisitionCall`` = a2; ``RegionReleaseCall`` = a3; ``SyncCalls`` = a4; ``ViewProjections`` = a5; ``ElementType`` = a6; ``ElementSlot`` = a7; ``Copies`` = a8; ``ExtentObligation`` = a9; ``LayoutObligation`` = a10; ``LifetimeObligation`` = a11; ``ExclusivityObligation`` = a12; ``SpaceExtentObligation`` = a13; ``Participants`` = a14 } : global.Fidelity.PSG.BoundarySharedBufferViewUse) state
     }
 
     and read_Fidelity_PSG_BoundarySourcePremise (state: ReadState) : Result<global.Fidelity.PSG.BoundarySourcePremise * ReadState, BinaryError> = result {
@@ -13529,6 +13854,10 @@ module internal BinaryGenerated =
             | 40 -> result {
                 let! a0, state = read_Fidelity_PSG_BufferAbsenceArgumentConversionModel state
                 return! finishRead (global.Fidelity.PSG.ObligationBody.``BufferAbsenceArgumentConversion``(a0)) state
+              }
+            | 41 -> result {
+                let! a0, state = read_BAREWire_Platform_Obligation state
+                return! finishRead (global.Fidelity.PSG.ObligationBody.``SharedBufferPlacementObligation``(a0)) state
               }
             | _ -> malformed state "Unknown Fidelity.PSG.ObligationBody case"
     }
