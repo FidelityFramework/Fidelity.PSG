@@ -93,6 +93,13 @@ type Codata = {
     ContinuationStorage: Map<NodeId, NodeId>
     /// Exact allocation occurrence -> owned byte region within a parent frame.
     ContinuationRegions: Map<NodeId, ContinuationRegion>
+    AsyncFormations: Map<NodeId, AsyncFormation>
+    AsyncActivations: Map<NodeId, AsyncActivation>
+    AsyncSuspensions: Map<NodeId, AsyncSuspension>
+    AsyncOrchestrations: Map<NodeId, AsyncOrchestration>
+    RegionAllocations: Map<NodeId, RegionAllocation>
+    RegionCallPassings: Map<NodeId, RegionCallPassing>
+    RegionCopyEndpoints: Map<NodeId, RegionCopyEndpoint>
     SequenceInitializers: Map<NodeId, (NodeId * NodeId) list>
     /// Caller-owned destination for a known sequence factory constructor.
     SequenceDestinations: Map<NodeId, NodeId>
@@ -176,6 +183,13 @@ module Codata =
           SequenceTemplateCopies = Map.empty
           ContinuationStorage = Map.empty
           ContinuationRegions = Map.empty
+          AsyncFormations = Map.empty
+          AsyncActivations = Map.empty
+          AsyncSuspensions = Map.empty
+          AsyncOrchestrations = Map.empty
+          RegionAllocations = Map.empty
+          RegionCallPassings = Map.empty
+          RegionCopyEndpoints = Map.empty
           SequenceInitializers = Map.empty
           SequenceDestinations = Map.empty
           SequenceCurrentReads = Set.empty
@@ -196,7 +210,7 @@ module ExplicitDemandProjection =
 module Revision =
     /// The version of the contract declared by this library.
     [<Literal>]
-    let Schema = 55
+    let Schema = 56
 
     /// The published form of a program with nothing in it, from a producer that
     /// declares no platform width.

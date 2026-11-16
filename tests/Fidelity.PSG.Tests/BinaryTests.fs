@@ -222,7 +222,7 @@ let ``snapshot header has independent version schema and fingerprint bytes`` () 
     // Pin the approved schema/shape pair independently of the generated values.
     // A changed published shape must earn a deliberate schema migration; merely
     // regenerating the codecs cannot update this oracle.
-    let prefix = Convert.FromHexString("465053474944583202000000370000008E49266136E32ADFFEC41159F6CA8F60298F150E1D6FD6CEC5EE942A020A5AC9")
+    let prefix = Convert.FromHexString("46505347494458320200000038000000D15B116DA0EEC1F06925755BA2564B7FE2E64F7E9476F6EA429B9F24BC88B02E")
     Assert.Equal<byte>(prefix, bytes[..47])
     Assert.Equal(Revision.Schema, System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(12, 4)))
     Assert.Equal<byte>(Convert.FromHexString(BinaryGenerated.Fingerprint), bytes[16..47])

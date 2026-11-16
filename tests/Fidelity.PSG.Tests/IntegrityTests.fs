@@ -7431,3 +7431,538 @@ let ``shared buffer placement and view use enforce FS9220-FS9223 zero-copy contr
         Assert.Contains(violations, fun v -> v.Part = expectedPart)
         if mode = "entrypoint-lambda-leaked" then
             Assert.DoesNotContain(violations, fun v -> v.Part = "Emission.Boundary.SharedBufferViewUses.Account")
+
+module AsyncAndRegionIntegrityTests =
+
+    let private asyncLimits : Binary.Limits =
+        { MaxBytes = 4 * 1024 * 1024
+          MaxCollectionLength = 10000
+          MaxDepth = 128
+          MaxStringBytes = 1024 * 1024
+          MaxBigIntegerBytes = 4096
+          MaxValues = 1000000 }
+
+    let private mkParticipant group ordinal node : Participant =
+        { Node = NodeId node
+          Role = ParticipantRole.Site
+          Ordinal = ordinal
+          Group = NodeId group }
+
+    let private mkParticipants group (nodes: int list) : Participant list =
+        nodes
+        |> List.distinct
+        |> List.mapi (fun idx n -> mkParticipant group idx n)
+
+    let private mkSettledClaim (id: string) (kind: string) : ObligationInfo =
+        { Id = id
+          Kind = kind
+          Logic = "QF_LIA"
+          Statement = "Settled async/region proof premise."
+          Source = "async-region-fixture.clef:1:1"
+          Refs = []
+          Body = ObligationBody.CapacityFits(256L, 1024L) }
+
+    let private buildAsyncAndRegionFixture (mode: string) : Revision =
+        let allNodeIds = [ 1 .. 95 ]
+        let nodes =
+            allNodeIds
+            |> List.map (fun id -> node id (SemanticKind.Literal NativeLiteral.Unit) [])
+        let baseRev = revision nodes
+
+        let claimIds = [ 901 .. 910 ]
+        let claimsMap =
+            claimIds
+            |> List.map (fun cid ->
+                let body =
+                    if mode = "a03-pending-join-obligation" && cid = 904 then
+                        ObligationBody.Pending [ "Unsettled join obligation" ]
+                    else
+                        ObligationBody.CapacityFits(256L, 1024L)
+                let info =
+                    { mkSettledClaim (sprintf "claim-%d" cid) "async-region-contract" with
+                        Body = body }
+                NodeId cid, info)
+            |> Map.ofList
+        let claimsList = claimsMap |> Map.toList |> List.map snd
+        let claimSources =
+            claimIds
+            |> List.map (fun cid ->
+                let sources =
+                    if mode = "a01-unrelated-obligation-subject" && cid = 901 then
+                        [ NodeId 1; NodeId 2 ]
+                    else
+                        [ NodeId 10; NodeId 23; NodeId 30; NodeId 35; NodeId 40; NodeId 50; NodeId 54; NodeId 55
+                          NodeId 60; NodeId 61; NodeId 62; NodeId 63; NodeId 64
+                          NodeId 65; NodeId 66; NodeId 67; NodeId 68; NodeId 69; NodeId 80 ]
+                NodeId cid, [ sources ])
+            |> Map.ofList
+
+        let slotField (name: string) (offset: int) : SettledField =
+            { Name = name
+              Slot = SettledSlot.Integer(64, None)
+              Offset = Some offset
+              Size = Some 8
+              Align = Some 8 }
+
+        let captureSlot12 : ContinuationSlot =
+            { Source = NodeId 12
+              ValueType = unitType
+              Field = slotField "cap12" 0
+              Holds = CaptureSlotKind.Scalar(SettledSlot.Integer(64, None))
+              IsCapture = true }
+
+        let localSlot13 : ContinuationSlot =
+            { Source = NodeId 13
+              ValueType = unitType
+              Field = slotField "loc13" 8
+              Holds = CaptureSlotKind.Scalar(SettledSlot.Integer(64, None))
+              IsCapture = false }
+
+        let frameSlots =
+            if mode = "a01-uncaptured-binding-in-frame" then [ localSlot13 ]
+            else [ captureSlot12; localSlot13 ]
+
+        let mkFrame (frameId: int) (genId: int) : ContinuationFrame =
+            { Owner = NodeId frameId
+              Generator = NodeId genId
+              Formal = NodeId 16
+              State = NodeId 17
+              Current = NodeId 18
+              Slots = frameSlots
+              Bytes = 32
+              Alignment = 8
+              ScratchSlots = []
+              ScratchBytes = 0
+              ScratchAlignment = 1
+              Initializers = [ NodeId 12, NodeId 19 ]
+              ResumeStates = [ 0; 1; 2 ]
+              Obligations = [ NodeId 901 ] }
+
+        let mainFrame = mkFrame 15 10
+        let childFrames =
+            [ 0 .. 4 ]
+            |> List.map (fun i ->
+                let fId = 75 + i
+                NodeId fId, mkFrame fId (60 + i))
+
+        let framesMap =
+            if mode = "a01-missing-frame" then Map.ofList childFrames
+            else Map.ofList ((NodeId 15, mainFrame) :: childFrames)
+
+        let mainFormationParticipants =
+            let baseParts = mkParticipants 10 [ 10; 11; 12; 14; 15; 20; 21; 22 ]
+            if mode = "a01-dangling-participant" then
+                baseParts @ [ mkParticipant 10 99 999999 ]
+            else
+                baseParts
+
+        let mainFormation : AsyncFormation =
+            { Formation = NodeId 10
+              Callable = if mode = "a01-self-callable" then NodeId 10 else NodeId 11
+              Body = NodeId 14
+              CapturedBindings = [ NodeId 12 ]
+              ResultType = unitType
+              ResultStorage = NodeId 20
+              Frame = NodeId 15
+              LifetimeScope = NodeId 21
+              CompletionProtocol = NodeId 22
+              Obligations = if mode = "a01-missing-obligation" then [] else [ NodeId 901 ]
+              Participants = mainFormationParticipants }
+
+        let childFormations =
+            [ 0 .. 4 ]
+            |> List.map (fun i ->
+                let formId = 60 + i
+                let fId = 75 + i
+                let cForm : AsyncFormation =
+                    { Formation = NodeId formId
+                      Callable = NodeId 11
+                      Body = NodeId 14
+                      CapturedBindings = [ NodeId 12 ]
+                      ResultType = unitType
+                      ResultStorage = NodeId 20
+                      Frame = NodeId fId
+                      LifetimeScope = NodeId 21
+                      CompletionProtocol = NodeId 22
+                      Obligations = [ NodeId 901 ]
+                      Participants = mkParticipants formId [ formId; 11; 12; 14; fId; 20; 21; 22 ] }
+                NodeId formId, cForm)
+
+        let formationsMap =
+            Map.ofList ((NodeId 10, mainFormation) :: childFormations)
+
+        let actSiteId = if mode = "a01-conflated-formation-activation" then 10 else 23
+        let actFormationId =
+            if mode = "a01-activation-missing-formation" then 95
+            else 10
+        let mainActivation : AsyncActivation =
+            { Site = NodeId actSiteId
+              Formation = NodeId actFormationId
+              ResultTarget = NodeId 24
+              CompletionTarget = NodeId 25
+              Obligations = [ NodeId 902 ]
+              Participants = mkParticipants actSiteId [ actSiteId; actFormationId; 24; 25 ] }
+
+        let childActivations =
+            [ 0 .. 4 ]
+            |> List.map (fun i ->
+                let sId = 65 + i
+                let formId = 60 + i
+                let cAct : AsyncActivation =
+                    { Site = NodeId sId
+                      Formation = NodeId formId
+                      ResultTarget = NodeId 24
+                      CompletionTarget = NodeId 25
+                      Obligations = [ NodeId 902 ]
+                      Participants = mkParticipants sId [ sId; formId; 24; 25 ] }
+                NodeId sId, cAct)
+
+        let activationsMap =
+            Map.ofList ((NodeId actSiteId, mainActivation) :: childActivations)
+
+        // A-04: RegionAllocations (Region 40 = inner scope depth 2; Region 50 = outer scope depth 1)
+        let regExtent =
+            if mode = "a04-nonpositive-extent" then 0L
+            elif mode = "a04-extent-exceeds-capacity" then 2048L
+            else 256L
+        let regAlign = if mode = "a04-non-power-of-two-alignment" then 24 else 64
+        let regReleases =
+            if mode = "a04-missing-scope-exit-release" then
+                [ NodeId 44, NodeId 46 ]
+            else
+                [ NodeId 44, NodeId 46; NodeId 45, NodeId 47 ]
+
+        let region40 : RegionAllocation =
+            { Region = NodeId 40
+              SpacePlacement = NodeId 41
+              ByteExtent = regExtent
+              Capacity = 1024L
+              Alignment = regAlign
+              LifetimeScope = NodeId 42
+              LifetimeDepth = 2
+              AllocatedValues = [ NodeId 12; NodeId 43; NodeId 83 ]
+              ScopeExitPaths = [ NodeId 44; NodeId 45 ]
+              ScopeExitReleases = regReleases
+              Obligations = [ NodeId 905 ]
+              Participants = mkParticipants 40 [ 40; 41; 42; 12; 43; 83; 44; 45; 46; 47 ] }
+
+        let region50 : RegionAllocation =
+            { Region = NodeId 50
+              SpacePlacement = NodeId 41
+              ByteExtent = 512L
+              Capacity = 2048L
+              Alignment = 64
+              LifetimeScope = NodeId 51
+              LifetimeDepth = 1
+              AllocatedValues = [ NodeId 82 ]
+              ScopeExitPaths = [ NodeId 52 ]
+              ScopeExitReleases = [ NodeId 52, NodeId 53 ]
+              Obligations = [ NodeId 905 ]
+              Participants = mkParticipants 50 [ 50; 41; 51; 82; 52; 53 ] }
+
+        let regionsMap =
+            Map.ofList [ NodeId 40, region40; NodeId 50, region50 ]
+
+        // A-02 + Farscape#220: AsyncSuspension
+        let suspStateOrd = if mode = "a02-negative-state-ordinal" then -1 else 1
+        let liveSlots =
+            if mode = "a02-undeclared-live-slot" then [ NodeId 12; NodeId 89 ]
+            else [ NodeId 12; NodeId 13 ]
+        let initSlots =
+            if mode = "a02-uninitialized-live-slot" then Set.ofList [ NodeId 12 ]
+            else Set.ofList (liveSlots |> List.map id)
+        let completionTarget =
+            if mode = "a02-non-distinct-completion-target" then NodeId 26
+            else NodeId 27
+        let cleanupTarget =
+            if mode = "a02-conflated-resume-cleanup" then NodeId 26
+            else NodeId 28
+        let spanningBackingReg =
+            if mode = "a02-unbacked-spanning-borrow" then NodeId 94
+            else NodeId 40
+        let spanningInvalidatedBy =
+            if mode = "a02-invalidated-at-suspension" then [ NodeId 30 ]
+            else [ NodeId 48 ]
+
+        let spanningRetention : AsyncSuspensionSpanningRetention =
+            { Binding = NodeId 12
+              BackingRegion = spanningBackingReg
+              RetainedUntil = NodeId 26
+              InvalidatedBy = spanningInvalidatedBy
+              RetirementCheck = NodeId 903 }
+
+        let spanningList =
+            if mode = "a02-unretained-borrowed-live-slot" then []
+            else [ spanningRetention ]
+
+        let suspParticipantNodes =
+            [ 30; 10; 15; 31; 32; 33; 26; 27; 28; 12; 13; 40; 48; 903 ]
+            @ (if mode = "a02-undeclared-live-slot" then [ 89 ] else [])
+            @ (if mode = "a02-unbacked-spanning-borrow" then [ 94 ] else [])
+
+        let suspension30 : AsyncSuspension =
+            { Site = NodeId 30
+              Formation = NodeId 10
+              Frame = NodeId 15
+              StateOrdinal = suspStateOrd
+              Delimiter = NodeId 31
+              Continuation = NodeId 32
+              AwaitedSource = NodeId 33
+              LiveSlots = liveSlots
+              InitializedSlots = initSlots
+              BindResumeTarget = NodeId 26
+              CompletionTarget = completionTarget
+              CleanupTarget = cleanupTarget
+              SpanningRetentions = spanningList
+              Obligations = [ NodeId 903 ]
+              Participants = mkParticipants 30 suspParticipantNodes }
+
+        let suspensionsMap =
+            if mode = "a02-duplicate-state-ordinal" then
+                let dup34 =
+                    { suspension30 with
+                        Site = NodeId 34
+                        Participants = mkParticipants 34 (34 :: suspParticipantNodes) }
+                Map.ofList [ NodeId 30, suspension30; NodeId 34, dup34 ]
+            else
+                Map.ofList [ NodeId 30, suspension30 ]
+
+        // A-03: AsyncOrchestration (5-element Parallel & Sequential join)
+        let orchChildren =
+            if mode = "a03-empty-children" then []
+            else [ NodeId 65; NodeId 66; NodeId 67; NodeId 68; NodeId 69 ]
+        let orchCapacity =
+            if mode = "a03-capacity-mismatch" then 4
+            else 5
+        let orchOrdering =
+            if mode = "a03-ordering-mismatch" then
+                [ 0, NodeId 65; 1, NodeId 66; 2, NodeId 67; 3, NodeId 68; 3, NodeId 69 ]
+            else
+                [ 0, NodeId 65; 1, NodeId 66; 2, NodeId 67; 3, NodeId 68; 4, NodeId 69 ]
+        let orchMode =
+            if mode = "valid-sequential" || mode = "a03-sequential-missing-dependency" then
+                AsyncOrchestrationMode.Sequential
+            else
+                AsyncOrchestrationMode.Parallel
+        let orchDeps =
+            if mode = "valid-sequential" then
+                [ NodeId 65, NodeId 66
+                  NodeId 66, NodeId 67
+                  NodeId 67, NodeId 68
+                  NodeId 68, NodeId 69 ]
+            elif mode = "a03-sequential-missing-dependency" then
+                [ NodeId 65, NodeId 66; NodeId 66, NodeId 67 ]
+            elif mode = "a03-dependency-cycle" then
+                [ NodeId 65, NodeId 66; NodeId 66, NodeId 65 ]
+            else
+                []
+        let orchObligations =
+            if mode = "a03-missing-join-obligation" then []
+            else [ NodeId 904 ]
+
+        let orchestration35 : AsyncOrchestration =
+            { Site = NodeId 35
+              Mode = orchMode
+              Children = orchChildren
+              WorkDependencies = orchDeps
+              ResultOrdering = orchOrdering
+              JoinCondition = NodeId 36
+              ResultStorage = NodeId 37
+              ResultCapacity = orchCapacity
+              ElementStride = 8
+              LifetimeScope = NodeId 38
+              SynchronizationObligations = orchObligations
+              Participants = mkParticipants 35 [ 35; 36; 37; 38; 65; 66; 67; 68; 69 ] }
+
+        // A-05: RegionCallPassing (Borrowed at site 54, Owned at site 55)
+        let borrowedPermitRelease = (mode = "a05-release-borrowed-region")
+        let borrowedReleases =
+            if mode = "a05-release-borrowed-region" then [ NodeId 56 ]
+            else []
+        let borrowedCalleeDepth =
+            if mode = "a05-borrowed-outlives-caller" then 1
+            else 3
+        let borrowedProvenance =
+            if mode = "a05-missing-provenance" then NodeId 50
+            else NodeId 40
+
+        let callPassingBorrowed : RegionCallPassing =
+            { Site = NodeId 54
+              Call = NodeId 57
+              ParameterOrdinal = 0
+              Region = NodeId 40
+              Mode = RegionOwnershipMode.Borrowed
+              AllocationProvenance = borrowedProvenance
+              CallerLifetimeScope = NodeId 42
+              CallerLifetimeDepth = 2
+              CalleeLifetimeScope = NodeId 58
+              CalleeLifetimeDepth = borrowedCalleeDepth
+              PermitCalleeRelease = borrowedPermitRelease
+              CalleeReleases = borrowedReleases
+              Obligations = [ NodeId 906 ]
+              Participants = mkParticipants 54 [ 54; 57; 40; 42; 58; 56 ] }
+
+        let callPassingOwned : RegionCallPassing =
+            { Site = NodeId 55
+              Call = NodeId 59
+              ParameterOrdinal = 1
+              Region = NodeId 50
+              Mode = RegionOwnershipMode.Owned
+              AllocationProvenance = NodeId 50
+              CallerLifetimeScope = NodeId 51
+              CallerLifetimeDepth = 1
+              CalleeLifetimeScope = NodeId 58
+              CalleeLifetimeDepth = 2
+              PermitCalleeRelease = true
+              CalleeReleases = [ NodeId 56 ]
+              Obligations = [ NodeId 906 ]
+              Participants = mkParticipants 55 [ 55; 59; 50; 51; 58; 56 ] }
+
+        // A-06: RegionCopyEndpoint (CopyOut or CopyTo for escaping value NodeId 43)
+        let copyKind =
+            if mode = "valid-copyto" || mode = "a06-copyto-missing-destination-region" then
+                RegionCopyKind.CopyTo
+            else
+                RegionCopyKind.CopyOut
+        let copyDstRegion =
+            if mode = "valid-copyto" then Some(NodeId 50)
+            elif mode = "a06-unsafe-aliasing" then Some(NodeId 40)
+            else None
+        let copyDstCap =
+            if mode = "a06-undersized-copyout-destination" then 128L
+            else 2048L
+        let copyDstAlign =
+            if mode = "a06-incompatible-alignment" then 32
+            else 64
+        let copyDstDepth =
+            if mode = "a06-destination-shorter-lifetime" then 3
+            else 1
+
+        let copyDstStorage =
+            if mode = "a06-destination-in-source-region" then NodeId 83
+            else NodeId 82
+
+        let copyEndpoint80 : RegionCopyEndpoint =
+            { Site = NodeId 80
+              Kind = copyKind
+              EscapingValue = NodeId 43
+              SourceRegion = NodeId 40
+              SourceView = NodeId 81
+              SourceByteExtent = 256L
+              SourceCapacity = 1024L
+              SourceAlignment = 64
+              SourceLifetimeScope = NodeId 42
+              SourceLifetimeDepth = 2
+              DestinationRegion = copyDstRegion
+              DestinationStorage = copyDstStorage
+              DestinationByteExtent = 256L
+              DestinationCapacity = copyDstCap
+              DestinationAlignment = copyDstAlign
+              DestinationLifetimeScope = NodeId 51
+              DestinationLifetimeDepth = copyDstDepth
+              EscapeDischargeObligation = NodeId 907
+              Participants = mkParticipants 80 [ 80; 43; 40; 50; 81; 42; 82; 83; 51 ] }
+
+        let copyEndpointsMap =
+            if mode = "a06-uncopied-region-return-escape" then Map.empty
+            else Map.ofList [ NodeId 80, copyEndpoint80 ]
+
+        { baseRev with
+            Platform = { Register = Ok 64; Pointer = Ok 64 }
+            CurrentClaims = claimsMap
+            Obligations = claimsList
+            ObligationSources = claimSources
+            Codata =
+                { baseRev.Codata with
+                    Escapes = Map.ofList [ NodeId 43, EscapeKind.EscapesViaReturn ]
+                    ContinuationFrames = framesMap
+                    AsyncFormations = formationsMap
+                    AsyncActivations = activationsMap
+                    AsyncSuspensions = suspensionsMap
+                    AsyncOrchestrations = Map.ofList [ NodeId 35, orchestration35 ]
+                    RegionAllocations = regionsMap
+                    RegionCallPassings = Map.ofList [ NodeId 54, callPassingBorrowed; NodeId 55, callPassingOwned ]
+                    RegionCopyEndpoints = copyEndpointsMap } }
+
+    [<Theory>]
+    [<InlineData("valid")>]
+    [<InlineData("valid-sequential")>]
+    [<InlineData("valid-copyto")>]
+    let ``settled A-01..A-06 async and region contracts pass Integrity.check and binary roundtrip`` (mode: string) =
+        let rev = buildAsyncAndRegionFixture mode
+        Assert.Empty(Integrity.check rev)
+        match Binary.encode asyncLimits rev with
+        | Ok bytes ->
+            match Binary.decode asyncLimits bytes with
+            | Ok decoded ->
+                Assert.Equal(Revision.Schema, decoded.Header.Schema)
+                Assert.Equal(rev.Codata, decoded.Codata)
+                Assert.Equal<Map<NodeId, AsyncFormation>>(rev.Codata.AsyncFormations, decoded.Codata.AsyncFormations)
+                Assert.Equal<Map<NodeId, AsyncActivation>>(rev.Codata.AsyncActivations, decoded.Codata.AsyncActivations)
+                Assert.Equal<Map<NodeId, AsyncSuspension>>(rev.Codata.AsyncSuspensions, decoded.Codata.AsyncSuspensions)
+                Assert.Equal<Map<NodeId, AsyncOrchestration>>(rev.Codata.AsyncOrchestrations, decoded.Codata.AsyncOrchestrations)
+                Assert.Equal<Map<NodeId, RegionAllocation>>(rev.Codata.RegionAllocations, decoded.Codata.RegionAllocations)
+                Assert.Equal<Map<NodeId, RegionCallPassing>>(rev.Codata.RegionCallPassings, decoded.Codata.RegionCallPassings)
+                Assert.Equal<Map<NodeId, RegionCopyEndpoint>>(rev.Codata.RegionCopyEndpoints, decoded.Codata.RegionCopyEndpoints)
+                Assert.Empty(Integrity.check decoded)
+                match Binary.openSource asyncLimits (BAREWire.Memory.ByteSource.ofArray bytes) with
+                | Ok view ->
+                    match Fidelity.PSG.Json.Inspection.render false view with
+                    | Ok jsonText ->
+                        Assert.Contains("\"AsyncFormations\"", jsonText)
+                        Assert.Contains("\"AsyncSuspensions\"", jsonText)
+                        Assert.Contains("\"AsyncOrchestrations\"", jsonText)
+                        Assert.Contains("\"RegionAllocations\"", jsonText)
+                        Assert.Contains("\"RegionCallPassings\"", jsonText)
+                        Assert.Contains("\"RegionCopyEndpoints\"", jsonText)
+                        match Fidelity.Data.JSON.Json.parse jsonText with
+                        | Ok parsed -> Assert.Equal(Fidelity.Data.JSON.Json.serialize parsed, jsonText)
+                        | Error err -> Assert.Fail(sprintf "Json.parse failed: %s" (string err))
+                    | Error err -> Assert.Fail(sprintf "Inspection.render failed: %s" (string err))
+                | Error err -> Assert.Fail(sprintf "Binary.openSource failed: %s" (string err))
+            | Error err -> Assert.Fail(sprintf "Binary.decode failed: %s" (string err))
+        | Error err -> Assert.Fail(sprintf "Binary.encode failed: %s" (string err))
+
+    [<Theory>]
+    [<InlineData("a01-conflated-formation-activation", "Codata.AsyncFormations.Boundary")>]
+    [<InlineData("a01-self-callable", "Codata.AsyncFormations.Account")>]
+    [<InlineData("a01-missing-frame", "Codata.AsyncFormations.Frame")>]
+    [<InlineData("a01-uncaptured-binding-in-frame", "Codata.AsyncFormations.Frame")>]
+    [<InlineData("a01-missing-obligation", "Codata.AsyncFormations.Obligations")>]
+    [<InlineData("a01-unrelated-obligation-subject", "Codata.AsyncFormations.Obligations")>]
+    [<InlineData("a01-dangling-participant", "Codata.AsyncFormations.Participants")>]
+    [<InlineData("a01-activation-missing-formation", "Codata.AsyncActivations.Formation")>]
+    [<InlineData("a02-uninitialized-live-slot", "Codata.AsyncSuspensions.Liveness")>]
+    [<InlineData("a02-undeclared-live-slot", "Codata.AsyncSuspensions.Liveness")>]
+    [<InlineData("a02-negative-state-ordinal", "Codata.AsyncSuspensions.StateOrdinal")>]
+    [<InlineData("a02-duplicate-state-ordinal", "Codata.AsyncSuspensions.StateOrdinal")>]
+    [<InlineData("a02-conflated-resume-cleanup", "Codata.AsyncSuspensions.Account")>]
+    [<InlineData("a02-non-distinct-completion-target", "Codata.AsyncSuspensions.Protocol")>]
+    [<InlineData("a02-unbacked-spanning-borrow", "Codata.AsyncSuspensions.Retention")>]
+    [<InlineData("a02-unretained-borrowed-live-slot", "Codata.AsyncSuspensions.Retention")>]
+    [<InlineData("a02-invalidated-at-suspension", "Codata.AsyncSuspensions.Retention")>]
+    [<InlineData("a03-capacity-mismatch", "Codata.AsyncOrchestrations.Capacity")>]
+    [<InlineData("a03-empty-children", "Codata.AsyncOrchestrations.Account")>]
+    [<InlineData("a03-ordering-mismatch", "Codata.AsyncOrchestrations.Ordering")>]
+    [<InlineData("a03-sequential-missing-dependency", "Codata.AsyncOrchestrations.Ordering")>]
+    [<InlineData("a03-dependency-cycle", "Codata.AsyncOrchestrations.Ordering")>]
+    [<InlineData("a03-missing-join-obligation", "Codata.AsyncOrchestrations.Obligations")>]
+    [<InlineData("a03-pending-join-obligation", "Codata.AsyncOrchestrations.Obligations")>]
+    [<InlineData("a04-nonpositive-extent", "Codata.RegionAllocations.Extent")>]
+    [<InlineData("a04-extent-exceeds-capacity", "Codata.RegionAllocations.Extent")>]
+    [<InlineData("a04-non-power-of-two-alignment", "Codata.RegionAllocations.Extent")>]
+    [<InlineData("a04-missing-scope-exit-release", "Codata.RegionAllocations.Release")>]
+    [<InlineData("a05-release-borrowed-region", "Codata.RegionCallPassings.Ownership")>]
+    [<InlineData("a05-borrowed-outlives-caller", "Codata.RegionCallPassings.Lifetime")>]
+    [<InlineData("a05-missing-provenance", "Codata.RegionCallPassings.Account")>]
+    [<InlineData("a06-uncopied-region-return-escape", "Codata.RegionAllocations.Escape")>]
+    [<InlineData("a06-undersized-copyout-destination", "Codata.RegionCopyEndpoints.Capacity")>]
+    [<InlineData("a06-incompatible-alignment", "Codata.RegionCopyEndpoints.Alignment")>]
+    [<InlineData("a06-unsafe-aliasing", "Codata.RegionCopyEndpoints.Aliasing")>]
+    [<InlineData("a06-destination-in-source-region", "Codata.RegionCopyEndpoints.Aliasing")>]
+    [<InlineData("a06-destination-shorter-lifetime", "Codata.RegionCopyEndpoints.Lifetime")>]
+    [<InlineData("a06-copyto-missing-destination-region", "Codata.RegionCopyEndpoints.Account")>]
+    let ``Integrity.check refuses violated A-01..A-06 async and region premises`` (mode: string) (expectedPart: string) =
+        let rev = buildAsyncAndRegionFixture mode
+        let violations = Integrity.check rev
+        Assert.Contains(violations, fun v -> v.Part = expectedPart)

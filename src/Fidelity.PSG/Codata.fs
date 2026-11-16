@@ -459,6 +459,156 @@ type ContinuationFrame = {
     Obligations: NodeId list
 }
 
+/// Settled deferred async computation formation (A-01 coexponential coalgebra carrier).
+/// Distinct from activation: captures, frame, result storage, lifetime, and completion
+/// protocol are settled before any activation occurs.
+type AsyncFormation = {
+    Formation: NodeId
+    Callable: NodeId
+    Body: NodeId
+    CapturedBindings: NodeId list
+    ResultType: TypeIdentity
+    ResultStorage: NodeId
+    Frame: NodeId
+    LifetimeScope: NodeId
+    CompletionProtocol: NodeId
+    Obligations: NodeId list
+    Participants: Participant list
+}
+
+/// Settled async activation site (A-01, e.g., Async.RunSynchronously or scheduler spawn)
+/// referencing a distinct settled AsyncFormation carrier.
+type AsyncActivation = {
+    Site: NodeId
+    Formation: NodeId
+    ResultTarget: NodeId
+    CompletionTarget: NodeId
+    Obligations: NodeId list
+    Participants: Participant list
+}
+
+/// Suspension-spanning binding or borrowed result view retention premise across a
+/// suspension cut (A-02, Farscape #220 CCS8424 RetainedUntil / CCS8425 InvalidatedBy).
+type AsyncSuspensionSpanningRetention = {
+    Binding: NodeId
+    BackingRegion: NodeId
+    RetainedUntil: NodeId
+    InvalidatedBy: NodeId list
+    RetirementCheck: NodeId
+}
+
+/// Settled let!/do! suspension point, continuation identity, frame liveness across the
+/// suspension cut, definite-initialization set, and bind/resume/completion/cleanup edges (A-02).
+type AsyncSuspension = {
+    Site: NodeId
+    Formation: NodeId
+    Frame: NodeId
+    StateOrdinal: int
+    Delimiter: NodeId
+    Continuation: NodeId
+    AwaitedSource: NodeId
+    LiveSlots: NodeId list
+    InitializedSlots: Set<NodeId>
+    BindResumeTarget: NodeId
+    CompletionTarget: NodeId
+    CleanupTarget: NodeId
+    SpanningRetentions: AsyncSuspensionSpanningRetention list
+    Obligations: NodeId list
+    Participants: Participant list
+}
+
+[<RequireQualifiedAccess>]
+type AsyncOrchestrationMode =
+    | Parallel
+    | Sequential
+
+/// Settled Async.Parallel / Async.Sequential orchestration protocol, child computations,
+/// work dependencies, deterministic result-ordering map, join condition, and pre-settled
+/// result-storage capacity and element stride (A-03).
+type AsyncOrchestration = {
+    Site: NodeId
+    Mode: AsyncOrchestrationMode
+    Children: NodeId list
+    WorkDependencies: (NodeId * NodeId) list
+    ResultOrdering: (int * NodeId) list
+    JoinCondition: NodeId
+    ResultStorage: NodeId
+    ResultCapacity: int
+    ElementStride: int
+    LifetimeScope: NodeId
+    SynchronizationObligations: NodeId list
+    Participants: Participant list
+}
+
+/// Settled region allocation authority, memory space placement, extent, capacity,
+/// power-of-two alignment, lifetime scope/depth, allocated values, and mandatory
+/// scope-exit release edges covering every scope-exit path (A-04).
+type RegionAllocation = {
+    Region: NodeId
+    SpacePlacement: NodeId
+    ByteExtent: int64
+    Capacity: int64
+    Alignment: int
+    LifetimeScope: NodeId
+    LifetimeDepth: int
+    AllocatedValues: NodeId list
+    ScopeExitPaths: NodeId list
+    ScopeExitReleases: (NodeId * NodeId) list
+    Obligations: NodeId list
+    Participants: Participant list
+}
+
+[<RequireQualifiedAccess>]
+type RegionOwnershipMode =
+    | Owned
+    | Borrowed
+
+/// Settled per-call region ownership and borrowing provenance (A-05).
+type RegionCallPassing = {
+    Site: NodeId
+    Call: NodeId
+    ParameterOrdinal: int
+    Region: NodeId
+    Mode: RegionOwnershipMode
+    AllocationProvenance: NodeId
+    CallerLifetimeScope: NodeId
+    CallerLifetimeDepth: int
+    CalleeLifetimeScope: NodeId
+    CalleeLifetimeDepth: int
+    PermitCalleeRelease: bool
+    CalleeReleases: NodeId list
+    Obligations: NodeId list
+    Participants: Participant list
+}
+
+[<RequireQualifiedAccess>]
+type RegionCopyKind =
+    | CopyOut
+    | CopyTo
+
+/// Settled region escape analysis and copyOut/copyTo transfer endpoint contract (A-06).
+type RegionCopyEndpoint = {
+    Site: NodeId
+    Kind: RegionCopyKind
+    EscapingValue: NodeId
+    SourceRegion: NodeId
+    SourceView: NodeId
+    SourceByteExtent: int64
+    SourceCapacity: int64
+    SourceAlignment: int
+    SourceLifetimeScope: NodeId
+    SourceLifetimeDepth: int
+    DestinationRegion: NodeId option
+    DestinationStorage: NodeId
+    DestinationByteExtent: int64
+    DestinationCapacity: int64
+    DestinationAlignment: int
+    DestinationLifetimeScope: NodeId
+    DestinationLifetimeDepth: int
+    EscapeDischargeObligation: NodeId
+    Participants: Participant list
+}
+
 /// Complete source alternatives at one sequence value occurrence. This is
 /// flow evidence, not permission to substitute an environment instance or an
 /// admitted common physical carrier. Unknown alternatives prevent elision.

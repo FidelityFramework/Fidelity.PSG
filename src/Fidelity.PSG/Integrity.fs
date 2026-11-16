@@ -5772,7 +5772,11 @@ module Integrity =
                          "Emission.Storage.EnvironmentResidences.AuthorityInputs"
                          "Emission.Storage.EnvironmentResidences.BindingPath"
                          "Emission.Storage.EnvironmentResidences.DeclarationInputs"
-                         "Emission.Boundary.Loading.Participants"; "Emission.Boundary.Entries.Participants" ]
+                         "Emission.Boundary.Loading.Participants"; "Emission.Boundary.Entries.Participants"
+                         "Codata.AsyncFormations.Participants"; "Codata.AsyncActivations.Participants"
+                         "Codata.AsyncSuspensions.Participants"; "Codata.AsyncOrchestrations.Participants"
+                         "Codata.RegionAllocations.Participants"; "Codata.RegionCallPassings.Participants"
+                         "Codata.RegionCopyEndpoints.Participants" ]
         let role (part: string) (id: NodeId) =
             // These mixed row/source identities are checked with their typed
             // roles by callableAggregates. Row identity is not a runtime body.
@@ -6032,7 +6036,36 @@ module Integrity =
                 | "Codata.EnvironmentLayouts.Obligations" | "Codata.LazyLayouts.Obligations"
                 | "Codata.ContinuationFrames.Obligations" | "Emission.Numeric.Values.Obligations"
                 | "Emission.Numeric.Operations.Obligations" | "Emission.Numeric.IndexTransports.Obligation"
-                | "Emission.Spatial.Hardware.Obligations" | "Emission.Spatial.Kernels.Obligations" -> revision.CurrentClaims.ContainsKey id
+                | "Emission.Spatial.Hardware.Obligations" | "Emission.Spatial.Kernels.Obligations"
+                | "Codata.AsyncFormations.Obligations" | "Codata.AsyncActivations.Obligations"
+                | "Codata.AsyncSuspensions.Obligations" | "Codata.AsyncOrchestrations.SynchronizationObligations"
+                | "Codata.RegionAllocations.Obligations" | "Codata.RegionCallPassings.Obligations"
+                | "Codata.RegionCopyEndpoints.EscapeDischargeObligation" -> revision.CurrentClaims.ContainsKey id
+                | "Codata.AsyncFormations.Frame" | "Codata.AsyncSuspensions.Frame" ->
+                    body id || revision.Codata.ContinuationFrames.ContainsKey id
+                | "Codata.AsyncActivations.Formation" | "Codata.AsyncSuspensions.Formation" ->
+                    body id || revision.Codata.AsyncFormations.ContainsKey id
+                | "Codata.AsyncOrchestrations.Children"
+                | "Codata.AsyncOrchestrations.WorkDependencies"
+                | "Codata.AsyncOrchestrations.ResultOrdering" ->
+                    body id || revision.Codata.AsyncFormations.ContainsKey id || revision.Codata.AsyncActivations.ContainsKey id
+                | "Codata.AsyncSuspensions.SpanningRetentions" ->
+                    body id ||
+                    revision.Codata.RegionAllocations.ContainsKey id ||
+                    revision.Emission.Boundary.BorrowedResultViewUses.ContainsKey id ||
+                    revision.Emission.Boundary.SharedBufferViewUses.ContainsKey id ||
+                    (revision.Emission.Boundary.ReadOnlyBufferUses |> Map.exists (fun (callId, _) u -> callId = id || u.Buffer = id || u.Residence = id)) ||
+                    revision.Emission.Boundary.ResourceAccesses.ContainsKey id ||
+                    revision.CurrentClaims.ContainsKey id
+                | "Codata.RegionAllocations.SpacePlacement" ->
+                    body id ||
+                    revision.Emission.Boundary.SharedBufferPlacements.ContainsKey id ||
+                    (revision.Codata.ProgramStorage.Entries.Values |> Seq.exists (fun e -> e.SpaceNode = id))
+                | "Codata.RegionCallPassings.Region"
+                | "Codata.RegionCallPassings.AllocationProvenance"
+                | "Codata.RegionCopyEndpoints.SourceRegion"
+                | "Codata.RegionCopyEndpoints.DestinationRegion" ->
+                    body id || revision.Codata.RegionAllocations.ContainsKey id
                 | "Emission.Storage.EnvironmentReservations" | "Emission.Storage.EnvironmentReservations.Claim"
                 | "Emission.Storage.ProgramInitializationOrders.Claim"
                 | "Emission.Storage.EnvironmentResidences.ReservationClaim"
@@ -6212,6 +6245,542 @@ module Integrity =
                       yield defect site "The inactive source premise differs from its live type or structural incidence."
                   | _ -> () ]
 
+    /// Settled A-01..A-06 async formation, activation, suspension, orchestration, and region
+    /// allocation, per-call ownership/borrowing, and escape/copyOut/copyTo contracts (#27).
+    let asyncAndRegionRows (revision: Revision) : IntegrityViolation list =
+        let codata = revision.Codata
+        let body id = revision.Nodes.ContainsKey id
+        let defect part site reason = { Part = part; Node = Some site; Reason = reason }
+        let isPowerOfTwoInt (value: int) = value > 0 && (value &&& (value - 1)) = 0
+        let validSpacePlacement (id: NodeId) =
+            body id ||
+            revision.Emission.Boundary.SharedBufferPlacements.ContainsKey id ||
+            (codata.ProgramStorage.Entries.Values |> Seq.exists (fun e -> e.SpaceNode = id))
+        let validParticipantNode (id: NodeId) =
+            body id ||
+            revision.CurrentClaims.ContainsKey id ||
+            revision.SourceReadings.ContextHeaders.ContainsKey id ||
+            codata.ContinuationFrames.ContainsKey id ||
+            codata.AsyncFormations.ContainsKey id ||
+            codata.AsyncActivations.ContainsKey id ||
+            codata.RegionAllocations.ContainsKey id ||
+            revision.Emission.Boundary.BorrowedResultViewUses.ContainsKey id ||
+            revision.Emission.Boundary.SharedBufferViewUses.ContainsKey id ||
+            (revision.Emission.Boundary.ReadOnlyBufferUses |> Map.exists (fun (callId, _) u -> callId = id || u.Buffer = id || u.Residence = id)) ||
+            revision.Emission.Boundary.ResourceAccesses.ContainsKey id ||
+            revision.Emission.Boundary.SharedBufferPlacements.ContainsKey id ||
+            (codata.ProgramStorage.Entries.Values |> Seq.exists (fun e -> e.SpaceNode = id))
+        let validParticipants (requiredNodes: NodeId list) (participants: Participant list) =
+            not participants.IsEmpty &&
+            (participants |> List.forall (fun p -> p.Ordinal >= 0 && validParticipantNode p.Node && validParticipantNode p.Group)) &&
+            (participants |> List.map (fun p -> p.Group, p.Ordinal) |> List.distinct).Length = participants.Length &&
+            (requiredNodes |> List.forall (fun n -> participants |> List.exists (fun p -> p.Node = n)))
+        let validSettledClaim (allowedSubjects: NodeId list) (claimId: NodeId) =
+            match revision.CurrentClaims.TryFind claimId, revision.ObligationSources.TryFind claimId with
+            | Some info, Some sourceGroups when
+                List.contains info revision.Obligations &&
+                not (System.String.IsNullOrWhiteSpace info.Id) &&
+                (allowedSubjects |> List.exists (fun subj -> sourceGroups |> List.exists (List.contains subj))) ->
+                match info.Body with
+                | ObligationBody.Pending _ -> false
+                | _ -> true
+            | _ -> false
+        let workDependenciesAcyclic (children: NodeId list) (edges: (NodeId * NodeId) list) : bool =
+            let childSet = Set.ofList children
+            let validEdges =
+                edges
+                |> List.distinct
+                |> List.filter (fun (u, v) -> childSet.Contains u && childSet.Contains v)
+            let emptyAdj = childSet |> Set.toList |> List.map (fun v -> v, []) |> Map.ofList
+            let emptyDeg = childSet |> Set.toList |> List.map (fun v -> v, 0) |> Map.ofList
+            let adj, inDeg =
+                validEdges
+                |> List.fold (fun (adjAcc: Map<NodeId, NodeId list>, degAcc: Map<NodeId, int>) (u, v) ->
+                    let prevAdj = adjAcc |> Map.tryFind u |> Option.defaultValue []
+                    let prevDeg = degAcc |> Map.tryFind v |> Option.defaultValue 0
+                    adjAcc.Add(u, v :: prevAdj), degAcc.Add(v, prevDeg + 1)) (emptyAdj, emptyDeg)
+            let initialQueue =
+                [ for v in childSet do
+                      if (inDeg |> Map.tryFind v |> Option.defaultValue 0) = 0 then
+                          yield v ]
+            let rec loop (queue: NodeId list) (deg: Map<NodeId, int>) (visited: int) : bool =
+                match queue with
+                | [] -> visited = childSet.Count
+                | u :: rest ->
+                    let neighbors = adj |> Map.tryFind u |> Option.defaultValue []
+                    let nextQueue, nextDeg =
+                        neighbors
+                        |> List.fold (fun (qAcc, dAcc: Map<NodeId, int>) v ->
+                            let curD = (dAcc |> Map.tryFind v |> Option.defaultValue 1) - 1
+                            let dAcc' = dAcc.Add(v, curD)
+                            if curD = 0 then (v :: qAcc, dAcc') else (qAcc, dAcc')) (rest, deg)
+                    loop nextQueue nextDeg (visited + 1)
+            loop initialQueue inDeg 0
+        let owningBackingRegionsForSlot (slotId: NodeId) : NodeId list =
+            [ for KeyValue(regId, reg) in codata.RegionAllocations do
+                  if regId = slotId || List.contains slotId reg.AllocatedValues then yield regId
+              for KeyValue(uKey, u) in revision.Emission.Boundary.BorrowedResultViewUses do
+                  if uKey = slotId || u.View = slotId || u.Call = slotId then yield uKey
+              for KeyValue(uKey, u) in revision.Emission.Boundary.SharedBufferViewUses do
+                  if uKey = slotId || u.Site = slotId || u.RegionAcquisitionCall = slotId || List.contains slotId u.ViewProjections then yield uKey
+              for KeyValue((callId, _), u) in revision.Emission.Boundary.ReadOnlyBufferUses do
+                  if callId = slotId || u.Buffer = slotId || u.Residence = slotId then yield callId
+              for KeyValue(accKey, u) in revision.Emission.Boundary.ResourceAccesses do
+                  if accKey = slotId || u.Site = slotId || u.Source = slotId || u.Acquisition = slotId then yield accKey ]
+            |> List.distinct
+        let backingRegionPremise (bindingId: NodeId) (backingId: NodeId) : (NodeId list) option =
+            match codata.RegionAllocations.TryFind backingId with
+            | Some reg when
+                reg.ByteExtent > 0L &&
+                reg.Capacity >= reg.ByteExtent &&
+                not reg.ScopeExitReleases.IsEmpty &&
+                (reg.Region = bindingId || List.contains bindingId reg.AllocatedValues) ->
+                Some (reg.ScopeExitReleases |> List.map snd)
+            | _ ->
+                match revision.Emission.Boundary.BorrowedResultViewUses.TryFind backingId with
+                | Some vu when vu.Call = bindingId || vu.View = bindingId || backingId = bindingId ->
+                    Some vu.Invalidations
+                | _ ->
+                    match revision.Emission.Boundary.SharedBufferViewUses.TryFind backingId with
+                    | Some vu when vu.Site = bindingId || vu.RegionAcquisitionCall = bindingId || List.contains bindingId vu.ViewProjections || backingId = bindingId ->
+                        Some (Option.toList vu.RegionReleaseCall)
+                    | _ ->
+                        let matchingRoUses =
+                            revision.Emission.Boundary.ReadOnlyBufferUses
+                            |> Map.toList
+                            |> List.choose (fun ((callId, _), u) ->
+                                if (callId = backingId || u.Buffer = backingId || u.Residence = backingId) &&
+                                   (u.Buffer = bindingId || u.Call = bindingId || u.Residence = bindingId) then
+                                    Some u
+                                else
+                                    None)
+                        if not matchingRoUses.IsEmpty then
+                            Some (matchingRoUses |> List.collect _.Retirements |> List.distinct)
+                        else
+                            match revision.Emission.Boundary.ResourceAccesses.TryFind backingId with
+                            | Some ra when ra.Site = bindingId || ra.Source = bindingId || ra.Acquisition = bindingId || backingId = bindingId ->
+                                Some [ ra.Cleanup ]
+                            | _ -> None
+        [ // A-01: AsyncFormation
+          for KeyValue(key, row) in codata.AsyncFormations do
+              let accountOk =
+                  key = row.Formation &&
+                  body row.Formation && body row.Callable && body row.Body &&
+                  body row.ResultStorage && body row.LifetimeScope && body row.CompletionProtocol &&
+                  row.Callable <> row.Formation && row.Body <> row.Formation &&
+                  (row.CapturedBindings |> List.forall body) &&
+                  (List.distinct row.CapturedBindings).Length = row.CapturedBindings.Length
+              let boundaryOk =
+                  not (codata.AsyncActivations.ContainsKey row.Formation) &&
+                  not (codata.AsyncActivations.Values |> Seq.exists (fun act -> act.Site = row.Formation)) &&
+                  row.ResultStorage <> row.Formation &&
+                  row.CompletionProtocol <> row.Formation
+              let frameOk =
+                  match codata.ContinuationFrames.TryFind row.Frame with
+                  | Some frame ->
+                      let captureSources =
+                          frame.Slots
+                          |> List.filter _.IsCapture
+                          |> List.map _.Source
+                          |> Set.ofList
+                      frame.Owner = row.Frame &&
+                      (frame.Generator = row.Formation || frame.Generator = row.Callable || frame.Generator = row.Body) &&
+                      (row.CapturedBindings |> List.forall captureSources.Contains)
+                  | None -> false
+              let allowedSubjects =
+                  [ row.Formation; row.Callable; row.Body; row.Frame; row.ResultStorage; row.LifetimeScope; row.CompletionProtocol ]
+                  @ row.CapturedBindings
+              let obligationsOk =
+                  not row.Obligations.IsEmpty &&
+                  (List.distinct row.Obligations).Length = row.Obligations.Length &&
+                  (row.Obligations |> List.forall (validSettledClaim allowedSubjects))
+              let requiredNodes =
+                  [ row.Formation; row.Callable; row.Body; row.ResultStorage; row.Frame; row.LifetimeScope; row.CompletionProtocol ]
+                  @ row.CapturedBindings
+              let participantsOk = validParticipants requiredNodes row.Participants
+              if not accountOk then
+                  yield defect "Codata.AsyncFormations.Account" key "The async formation row lacks its callable, body, result storage, lifetime scope, capture bindings, or completion protocol."
+              if not boundaryOk then
+                  yield defect "Codata.AsyncFormations.Boundary" key "The async formation conflates deferred computation formation with activation."
+              if not frameOk then
+                  yield defect "Codata.AsyncFormations.Frame" key "The async formation lacks a settled continuation frame covering its captured bindings."
+              if not obligationsOk then
+                  yield defect "Codata.AsyncFormations.Obligations" key "The async formation lacks settled completion and lifetime obligations in CurrentClaims."
+              if not participantsOk then
+                  yield defect "Codata.AsyncFormations.Participants" key "The async formation lacks participant evidence for its carrier nodes."
+
+          // A-01: AsyncActivation
+          for KeyValue(key, row) in codata.AsyncActivations do
+              let accountOk =
+                  key = row.Site &&
+                  body row.Site && body row.ResultTarget && body row.CompletionTarget &&
+                  row.ResultTarget <> row.Site
+              let formationOk =
+                  row.Site <> row.Formation &&
+                  codata.AsyncFormations.ContainsKey row.Formation &&
+                  not (codata.AsyncFormations.ContainsKey row.Site)
+              let allowedSubjects = [ row.Site; row.Formation; row.ResultTarget; row.CompletionTarget ]
+              let obligationsOk =
+                  not row.Obligations.IsEmpty &&
+                  (List.distinct row.Obligations).Length = row.Obligations.Length &&
+                  (row.Obligations |> List.forall (validSettledClaim allowedSubjects))
+              let requiredNodes = [ row.Site; row.Formation; row.ResultTarget; row.CompletionTarget ]
+              let participantsOk = validParticipants requiredNodes row.Participants
+              if not accountOk then
+                  yield defect "Codata.AsyncActivations.Account" key "The async activation row lacks its activation site, result target, or completion target."
+              if not formationOk then
+                  yield defect "Codata.AsyncActivations.Formation" key "The async activation lacks a distinct settled async formation carrier or conflates activation with formation."
+              if not obligationsOk then
+                  yield defect "Codata.AsyncActivations.Obligations" key "The async activation lacks settled activation obligations in CurrentClaims."
+              if not participantsOk then
+                  yield defect "Codata.AsyncActivations.Participants" key "The async activation lacks participant evidence for its activation site and formation."
+
+          // A-02 + Farscape#220: AsyncSuspension
+          for KeyValue(key, row) in codata.AsyncSuspensions do
+              let accountOk =
+                  key = row.Site &&
+                  body row.Site && body row.Delimiter && body row.Continuation &&
+                  body row.AwaitedSource && body row.BindResumeTarget &&
+                  body row.CompletionTarget && body row.CleanupTarget &&
+                  row.BindResumeTarget <> row.CleanupTarget &&
+                  row.Site <> row.BindResumeTarget &&
+                  row.Site <> row.CleanupTarget &&
+                  row.AwaitedSource <> row.Site
+              let protocolOk =
+                  row.BindResumeTarget <> row.CleanupTarget &&
+                  row.CompletionTarget <> row.BindResumeTarget &&
+                  row.CompletionTarget <> row.CleanupTarget &&
+                  row.Site <> row.BindResumeTarget &&
+                  row.Site <> row.CleanupTarget &&
+                  row.Site <> row.CompletionTarget
+              let frameOpt =
+                  match codata.AsyncFormations.TryFind row.Formation, codata.ContinuationFrames.TryFind row.Frame with
+                  | Some formation, Some frame when formation.Frame = row.Frame && frame.Owner = row.Frame -> Some frame
+                  | _ -> None
+              let frameOk =
+                  match frameOpt with
+                  | Some frame -> List.contains row.StateOrdinal frame.ResumeStates
+                  | None -> false
+              let stateOrdinalOk =
+                  row.StateOrdinal >= 0 &&
+                  (codata.AsyncSuspensions.Values
+                   |> Seq.filter (fun s -> s.Frame = row.Frame && s.StateOrdinal = row.StateOrdinal)
+                   |> Seq.length) = 1
+              let livenessOk =
+                  (row.LiveSlots |> List.forall body) &&
+                  (List.distinct row.LiveSlots).Length = row.LiveSlots.Length &&
+                  (row.InitializedSlots |> Set.forall body) &&
+                  (row.LiveSlots |> List.forall row.InitializedSlots.Contains) &&
+                  (match frameOpt with
+                   | Some frame ->
+                       let declaredSlots = frame.Slots |> List.map _.Source |> Set.ofList
+                       (row.LiveSlots |> List.forall declaredSlots.Contains) &&
+                       (row.InitializedSlots |> Set.forall declaredSlots.Contains)
+                   | None -> false)
+              let allBorrowedLiveSlotsCovered =
+                  row.LiveSlots |> List.forall (fun slotId ->
+                      let requiredBackings = owningBackingRegionsForSlot slotId
+                      requiredBackings.IsEmpty ||
+                      (row.SpanningRetentions |> List.exists (fun ret ->
+                          ret.Binding = slotId && List.contains ret.BackingRegion requiredBackings)))
+              let retentionOk =
+                  allBorrowedLiveSlotsCovered &&
+                  (row.SpanningRetentions |> List.forall (fun ret ->
+                      let backingRegionValid =
+                          match backingRegionPremise ret.Binding ret.BackingRegion with
+                          | Some releaseNodes ->
+                              not (List.contains row.Site releaseNodes) &&
+                              not (List.contains row.AwaitedSource releaseNodes) &&
+                              not (List.contains row.BindResumeTarget releaseNodes) &&
+                              not (List.contains ret.RetainedUntil releaseNodes)
+                          | None -> false
+                      let claimSubjects =
+                          [ row.Site; row.Formation; row.Frame; ret.Binding; ret.BackingRegion; ret.RetainedUntil ]
+                      body ret.Binding &&
+                      body ret.RetainedUntil &&
+                      (ret.InvalidatedBy |> List.forall body) &&
+                      List.contains ret.Binding row.LiveSlots &&
+                      row.InitializedSlots.Contains ret.Binding &&
+                      backingRegionValid &&
+                      ret.RetainedUntil <> row.Site &&
+                      not (List.contains row.Site ret.InvalidatedBy) &&
+                      not (List.contains row.AwaitedSource ret.InvalidatedBy) &&
+                      not (List.contains row.BindResumeTarget ret.InvalidatedBy) &&
+                      not (List.contains row.CompletionTarget ret.InvalidatedBy) &&
+                      not (List.contains ret.RetainedUntil ret.InvalidatedBy) &&
+                      not (List.contains ret.BackingRegion ret.InvalidatedBy) &&
+                      validSettledClaim claimSubjects ret.RetirementCheck))
+              let allowedSubjects =
+                  [ row.Site; row.Formation; row.Frame; row.Delimiter; row.Continuation; row.AwaitedSource ]
+                  @ row.LiveSlots
+              let obligationsOk =
+                  not row.Obligations.IsEmpty &&
+                  (List.distinct row.Obligations).Length = row.Obligations.Length &&
+                  (row.Obligations |> List.forall (validSettledClaim allowedSubjects))
+              let retentionNodes =
+                  row.SpanningRetentions
+                  |> List.collect (fun ret -> [ ret.Binding; ret.BackingRegion; ret.RetainedUntil; ret.RetirementCheck ] @ ret.InvalidatedBy)
+              let requiredNodes =
+                  [ row.Site; row.Formation; row.Frame; row.Delimiter; row.Continuation
+                    row.AwaitedSource; row.BindResumeTarget; row.CompletionTarget; row.CleanupTarget ]
+                  @ row.LiveSlots
+                  @ retentionNodes
+              let participantsOk = validParticipants requiredNodes row.Participants
+              if not accountOk then
+                  yield defect "Codata.AsyncSuspensions.Account" key "The async suspension row lacks its delimiter, continuation, awaited source, or distinct bind/resume, completion, and cleanup targets."
+              if not protocolOk then
+                  yield defect "Codata.AsyncSuspensions.Protocol" key "The async suspension row conflates its bind/resume, completion, or cleanup protocol targets."
+              if not frameOk then
+                  yield defect "Codata.AsyncSuspensions.Frame" key "The async suspension lacks a valid formation frame reference or its state ordinal is absent from the frame's ResumeStates."
+              if not stateOrdinalOk then
+                  yield defect "Codata.AsyncSuspensions.StateOrdinal" key "The async suspension has a negative or duplicate state ordinal within its continuation frame."
+              if not livenessOk then
+                  yield defect "Codata.AsyncSuspensions.Liveness" key "The async suspension has an uninitialized or undeclared live frame slot across the suspension cut."
+              if not retentionOk then
+                  yield defect "Codata.AsyncSuspensions.Retention" key "A suspension-spanning binding or borrowed view lacks a valid backing-region lifetime premise or is invalidated across the suspension point."
+              if not obligationsOk then
+                  yield defect "Codata.AsyncSuspensions.Obligations" key "The async suspension lacks settled frame-liveness and continuation obligations in CurrentClaims."
+              if not participantsOk then
+                  yield defect "Codata.AsyncSuspensions.Participants" key "The async suspension lacks participant evidence for its continuation and frame nodes."
+
+          // A-03: AsyncOrchestration
+          for KeyValue(key, row) in codata.AsyncOrchestrations do
+              let childSet = Set.ofList row.Children
+              let accountOk =
+                  key = row.Site &&
+                  body row.Site && body row.JoinCondition && body row.ResultStorage && body row.LifetimeScope &&
+                  not row.Children.IsEmpty &&
+                  childSet.Count = row.Children.Length &&
+                  (row.Children |> List.forall (fun c -> codata.AsyncFormations.ContainsKey c || codata.AsyncActivations.ContainsKey c))
+              let capacityOk =
+                  row.ResultCapacity > 0 &&
+                  row.ResultCapacity = row.Children.Length &&
+                  row.ElementStride > 0
+              let orderingOk =
+                  row.ResultOrdering.Length = row.Children.Length &&
+                  (row.ResultOrdering |> List.map fst |> List.sort) = [ 0 .. row.Children.Length - 1 ] &&
+                  (row.ResultOrdering |> List.map snd |> Set.ofList) = childSet &&
+                  (List.distinct row.WorkDependencies).Length = row.WorkDependencies.Length &&
+                  (row.WorkDependencies |> List.forall (fun (u, v) -> u <> v && childSet.Contains u && childSet.Contains v)) &&
+                  workDependenciesAcyclic row.Children row.WorkDependencies &&
+                  (match row.Mode with
+                   | AsyncOrchestrationMode.Parallel -> true
+                   | AsyncOrchestrationMode.Sequential ->
+                       row.Children.Length <= 1 ||
+                       (List.pairwise row.Children |> List.forall (fun edge -> List.contains edge row.WorkDependencies)))
+              let allowedSubjects = [ row.Site; row.JoinCondition; row.ResultStorage; row.LifetimeScope ] @ row.Children
+              let obligationsOk =
+                  not row.SynchronizationObligations.IsEmpty &&
+                  (List.distinct row.SynchronizationObligations).Length = row.SynchronizationObligations.Length &&
+                  (row.SynchronizationObligations |> List.forall (validSettledClaim allowedSubjects))
+              let requiredNodes = [ row.Site; row.JoinCondition; row.ResultStorage; row.LifetimeScope ] @ row.Children
+              let participantsOk = validParticipants requiredNodes row.Participants
+              if not accountOk then
+                  yield defect "Codata.AsyncOrchestrations.Account" key "The async orchestration row lacks valid distinct child async computations, join condition, result storage, or lifetime scope."
+              if not capacityOk then
+                  yield defect "Codata.AsyncOrchestrations.Capacity" key "The async orchestration child count disagrees with its pre-settled result-storage capacity or has a non-positive element stride."
+              if not orderingOk then
+                  yield defect "Codata.AsyncOrchestrations.Ordering" key "The async orchestration lacks a deterministic bijection between child computations and result slots or violates its work-dependency ordering."
+              if not obligationsOk then
+                  yield defect "Codata.AsyncOrchestrations.Obligations" key "The async orchestration lacks settled join and synchronization obligations in CurrentClaims."
+              if not participantsOk then
+                  yield defect "Codata.AsyncOrchestrations.Participants" key "The async orchestration lacks participant evidence for its join, storage, and child nodes."
+
+          // A-04: RegionAllocation (+ A-06 uncopied region escape check)
+          for KeyValue(key, row) in codata.RegionAllocations do
+              let accountOk =
+                  key = row.Region &&
+                  body row.Region && validSpacePlacement row.SpacePlacement && body row.LifetimeScope &&
+                  row.LifetimeDepth > 0 &&
+                  (row.AllocatedValues |> List.forall body) &&
+                  (List.distinct row.AllocatedValues).Length = row.AllocatedValues.Length
+              let extentOk =
+                  row.ByteExtent > 0L &&
+                  row.Capacity > 0L &&
+                  row.ByteExtent <= row.Capacity &&
+                  isPowerOfTwoInt row.Alignment
+              let releaseOk =
+                  not row.ScopeExitPaths.IsEmpty &&
+                  not row.ScopeExitReleases.IsEmpty &&
+                  (List.distinct row.ScopeExitPaths).Length = row.ScopeExitPaths.Length &&
+                  (row.ScopeExitPaths |> List.forall body) &&
+                  (row.ScopeExitReleases |> List.forall (fun (p, r) -> body p && body r && p <> row.Region && r <> row.Region)) &&
+                  (row.ScopeExitReleases |> List.map fst |> List.distinct).Length = row.ScopeExitReleases.Length &&
+                  (row.ScopeExitPaths |> List.forall (fun exitPath -> row.ScopeExitReleases |> List.exists (fun (p, _) -> p = exitPath))) &&
+                  (row.ScopeExitReleases |> List.forall (fun (p, _) -> List.contains p row.ScopeExitPaths))
+              let allowedSubjects =
+                  [ row.Region; row.SpacePlacement; row.LifetimeScope ] @ row.AllocatedValues
+              let obligationsOk =
+                  not row.Obligations.IsEmpty &&
+                  (List.distinct row.Obligations).Length = row.Obligations.Length &&
+                  (row.Obligations |> List.forall (validSettledClaim allowedSubjects))
+              let requiredNodes =
+                  [ row.Region; row.SpacePlacement; row.LifetimeScope ]
+                  @ row.ScopeExitPaths
+                  @ (row.ScopeExitReleases |> List.map snd)
+              let participantsOk = validParticipants requiredNodes row.Participants
+              if not accountOk then
+                  yield defect "Codata.RegionAllocations.Account" key "The region allocation row lacks its region identity, placement, positive lifetime depth, or valid allocated value nodes."
+              if not extentOk then
+                  yield defect "Codata.RegionAllocations.Extent" key "The region allocation has non-positive byte extent or capacity, extent exceeding capacity, or non-power-of-two alignment."
+              if not releaseOk then
+                  yield defect "Codata.RegionAllocations.Release" key "The region allocation lacks constructed scope-exit release edges covering every scope-exit path."
+              if not obligationsOk then
+                  yield defect "Codata.RegionAllocations.Obligations" key "The region allocation lacks settled capacity, alignment, and lifetime obligations in CurrentClaims."
+              if not participantsOk then
+                  yield defect "Codata.RegionAllocations.Participants" key "The region allocation lacks participant evidence for its region, placement, lifetime, and release nodes."
+              for valId in row.AllocatedValues do
+                  let escapesRegion =
+                      match codata.Escapes.TryFind valId with
+                      | Some(EscapeKind.EscapesViaReturn | EscapeKind.EscapesViaClosure _ | EscapeKind.EscapesViaByRef | EscapeKind.StaticLifetime) -> true
+                      | _ -> false
+                  if escapesRegion then
+                      let hasCopyEndpoint =
+                          codata.RegionCopyEndpoints.Values
+                          |> Seq.exists (fun ep -> ep.SourceRegion = row.Region && ep.EscapingValue = valId)
+                      if not hasCopyEndpoint then
+                          yield defect "Codata.RegionAllocations.Escape" valId "A region-allocated value escapes its region scope via return, capture, or alias without a settled CopyOut/CopyTo endpoint contract."
+
+          // A-05: RegionCallPassing
+          for KeyValue(key, row) in codata.RegionCallPassings do
+              let allocOpt = codata.RegionAllocations.TryFind row.Region
+              let accountOk =
+                  key = row.Site &&
+                  body row.Site && body row.Call &&
+                  row.ParameterOrdinal >= 0 &&
+                  body row.CallerLifetimeScope && body row.CalleeLifetimeScope &&
+                  (row.CalleeReleases |> List.forall body) &&
+                  row.AllocationProvenance = row.Region &&
+                  allocOpt.IsSome
+              let regionReleaseNodes =
+                  allocOpt
+                  |> Option.map (fun r -> r.ScopeExitReleases |> List.map snd |> Set.ofList)
+                  |> Option.defaultValue Set.empty
+              let ownershipOk =
+                  match row.Mode with
+                  | RegionOwnershipMode.Borrowed ->
+                      not row.PermitCalleeRelease &&
+                      row.CalleeReleases.IsEmpty &&
+                      not (regionReleaseNodes.Contains row.Call) &&
+                      not (regionReleaseNodes.Contains row.Site)
+                  | RegionOwnershipMode.Owned ->
+                      row.PermitCalleeRelease &&
+                      not row.CalleeReleases.IsEmpty &&
+                      (List.distinct row.CalleeReleases).Length = row.CalleeReleases.Length
+              let lifetimeOk =
+                  let callerMatchesAlloc =
+                      allocOpt |> Option.exists (fun r -> r.LifetimeScope = row.CallerLifetimeScope && r.LifetimeDepth = row.CallerLifetimeDepth)
+                  row.CallerLifetimeDepth > 0 &&
+                  row.CalleeLifetimeDepth > 0 &&
+                  callerMatchesAlloc &&
+                  (match row.Mode with
+                   | RegionOwnershipMode.Borrowed ->
+                       row.CalleeLifetimeDepth > row.CallerLifetimeDepth &&
+                       row.CalleeLifetimeScope <> row.CallerLifetimeScope
+                   | RegionOwnershipMode.Owned -> true)
+              let allowedSubjects =
+                  [ row.Site; row.Call; row.Region; row.CallerLifetimeScope; row.CalleeLifetimeScope ]
+              let obligationsOk =
+                  not row.Obligations.IsEmpty &&
+                  (List.distinct row.Obligations).Length = row.Obligations.Length &&
+                  (row.Obligations |> List.forall (validSettledClaim allowedSubjects))
+              let requiredNodes =
+                  [ row.Site; row.Call; row.Region; row.CallerLifetimeScope; row.CalleeLifetimeScope ]
+                  @ row.CalleeReleases
+              let participantsOk = validParticipants requiredNodes row.Participants
+              if not accountOk then
+                  yield defect "Codata.RegionCallPassings.Account" key "The region call-passing row lacks a valid call site, non-negative parameter ordinal, or settled region allocation provenance."
+              if not ownershipOk then
+                  yield defect "Codata.RegionCallPassings.Ownership" key "The region call-passing row violates Owned vs. Borrowed release discipline (a Borrowed region parameter cannot be released by the callee)."
+              if not lifetimeOk then
+                  yield defect "Codata.RegionCallPassings.Lifetime" key "The region call-passing row has a Borrowed region that outlives its caller region lifetime or disagrees with its allocation lifetime premise."
+              if not obligationsOk then
+                  yield defect "Codata.RegionCallPassings.Obligations" key "The region call-passing row lacks settled borrow/ownership obligations in CurrentClaims."
+              if not participantsOk then
+                  yield defect "Codata.RegionCallPassings.Participants" key "The region call-passing row lacks participant evidence for its call, region, and lifetime scopes."
+
+          // A-06: RegionCopyEndpoint
+          for KeyValue(key, row) in codata.RegionCopyEndpoints do
+              let srcRegOpt = codata.RegionAllocations.TryFind row.SourceRegion
+              let dstRegMatches (dstReg: RegionAllocation) =
+                  dstReg.LifetimeScope = row.DestinationLifetimeScope &&
+                  dstReg.LifetimeDepth = row.DestinationLifetimeDepth &&
+                  dstReg.ByteExtent >= row.DestinationByteExtent &&
+                  dstReg.Capacity >= row.DestinationCapacity &&
+                  dstReg.Alignment >= row.DestinationAlignment &&
+                  (List.contains row.DestinationStorage dstReg.AllocatedValues || row.DestinationStorage = dstReg.Region)
+              let dstRegValid =
+                  match row.Kind, row.DestinationRegion with
+                  | RegionCopyKind.CopyOut, None -> true
+                  | RegionCopyKind.CopyOut, Some dstId
+                  | RegionCopyKind.CopyTo, Some dstId ->
+                      match codata.RegionAllocations.TryFind dstId with
+                      | Some dstReg -> dstRegMatches dstReg
+                      | None -> false
+                  | RegionCopyKind.CopyTo, None -> false
+              let accountOk =
+                  key = row.Site &&
+                  body row.Site && body row.EscapingValue && body row.SourceView &&
+                  body row.SourceLifetimeScope && body row.DestinationStorage && body row.DestinationLifetimeScope &&
+                  dstRegValid &&
+                  (match srcRegOpt with
+                   | Some srcReg ->
+                       List.contains row.EscapingValue srcReg.AllocatedValues &&
+                       srcReg.LifetimeScope = row.SourceLifetimeScope &&
+                       srcReg.LifetimeDepth = row.SourceLifetimeDepth &&
+                       srcReg.ByteExtent >= row.SourceByteExtent &&
+                       srcReg.Capacity = row.SourceCapacity &&
+                       srcReg.Alignment = row.SourceAlignment
+                   | None -> false)
+              let capacityOk =
+                  row.SourceByteExtent > 0L &&
+                  row.SourceCapacity >= row.SourceByteExtent &&
+                  row.DestinationByteExtent >= row.SourceByteExtent &&
+                  row.DestinationCapacity >= row.SourceByteExtent &&
+                  row.DestinationCapacity >= row.DestinationByteExtent
+              let alignmentOk =
+                  isPowerOfTwoInt row.SourceAlignment &&
+                  isPowerOfTwoInt row.DestinationAlignment &&
+                  row.DestinationAlignment >= row.SourceAlignment &&
+                  row.DestinationAlignment % row.SourceAlignment = 0
+              let dstNotInSrcRegion =
+                  srcRegOpt |> Option.forall (fun srcReg -> not (List.contains row.DestinationStorage srcReg.AllocatedValues))
+              let aliasingOk =
+                  row.DestinationRegion <> Some row.SourceRegion &&
+                  row.DestinationStorage <> row.SourceView &&
+                  row.DestinationStorage <> row.EscapingValue &&
+                  row.DestinationStorage <> row.SourceRegion &&
+                  row.DestinationLifetimeScope <> row.SourceLifetimeScope &&
+                  dstNotInSrcRegion
+              let lifetimeOk =
+                  row.SourceLifetimeDepth > 0 &&
+                  row.DestinationLifetimeDepth > 0 &&
+                  row.DestinationLifetimeDepth < row.SourceLifetimeDepth
+              let allowedSubjects =
+                  [ row.Site; row.EscapingValue; row.SourceRegion; row.SourceView; row.DestinationStorage ]
+                  @ Option.toList row.DestinationRegion
+              let obligationsOk =
+                  validSettledClaim allowedSubjects row.EscapeDischargeObligation
+              let requiredNodes =
+                  [ row.Site; row.EscapingValue; row.SourceRegion; row.SourceView; row.SourceLifetimeScope
+                    row.DestinationStorage; row.DestinationLifetimeScope ]
+                  @ Option.toList row.DestinationRegion
+              let participantsOk = validParticipants requiredNodes row.Participants
+              if not accountOk then
+                  yield defect "Codata.RegionCopyEndpoints.Account" key "The region copy endpoint lacks a valid source region, escaping value provenance, or CopyTo destination region."
+              if not capacityOk then
+                  yield defect "Codata.RegionCopyEndpoints.Capacity" key "The region copy endpoint has an undersized destination capacity or non-positive byte extent."
+              if not alignmentOk then
+                  yield defect "Codata.RegionCopyEndpoints.Alignment" key "The region copy endpoint has non-power-of-two or incompatible source and destination alignments."
+              if not aliasingOk then
+                  yield defect "Codata.RegionCopyEndpoints.Aliasing" key "The region copy endpoint aliases its source and destination regions, views, or lifetime scopes unsafely."
+              if not lifetimeOk then
+                  yield defect "Codata.RegionCopyEndpoints.Lifetime" key "The region copy endpoint lacks a destination lifetime premise that outlives the source region."
+              if not obligationsOk then
+                  yield defect "Codata.RegionCopyEndpoints.Obligations" key "The region copy endpoint lacks a settled escape-discharge obligation in CurrentClaims."
+              if not participantsOk then
+                  yield defect "Codata.RegionCopyEndpoints.Participants" key "The region copy endpoint lacks participant evidence for its source and destination endpoints." ]
+
     /// Every structural defect of the revision. The list is empty for a well-formed one.
     let check (revision: Revision) : IntegrityViolation list =
         let header =
@@ -6245,7 +6814,7 @@ module Integrity =
                       Reason = sprintf "The row of node %d in %s differs from its row in %s." (NodeId.value identity) part other }))
         header @ misfiled @ absent @ unrelated @ disagreed @ sourceReadings revision @ claims revision @ regions revision @
         callableRows revision @ numericRows revision @ memoryRows revision @ programStorageRows revision @ spatialRows revision @ startupRows revision @
-        boundaryRows revision @ foreignResultRows revision @ artifactAccounts revision @ branchScopes revision @ stored revision @ incidence revision @ callableAggregates revision @ ordinaryDemand revision
+        boundaryRows revision @ foreignResultRows revision @ artifactAccounts revision @ branchScopes revision @ stored revision @ incidence revision @ callableAggregates revision @ ordinaryDemand revision @ asyncAndRegionRows revision
 
     /// The first violations as one reason, for a reader that refuses the revision.
     let describe (violations: IntegrityViolation list) : string =
