@@ -845,7 +845,32 @@ type MemoryLocalScalarWitness = {
 }
 
 [<RequireQualifiedAccess>]
+type MemoryRegionKind = Create | Allocate | Release | CopyOut | CopyTo | RetireCopy
+
+type MemoryRegionRuntime = {
+    Declaration: NodeId
+    Acquire: NodeId
+    Release: NodeId
+    Contract: BAREWire.Descriptors.RegionMemoryDescriptor
+    Participants: Set<NodeId>
+}
+
+/// Complete source-selected geometry of one region memory occurrence.
+/// Offset is a reservation in the owning region, never emitter allocator state.
+type MemoryRegionWitness = {
+    Site: NodeId; Region: NodeId; Kind: MemoryRegionKind
+    Operand: NodeId option; Source: NodeId option; Count: NodeId option
+    Element: SettledSlot; ElementBytes: int; Length: int; Offset: int64
+    Capacity: int64; Alignment: int; Space: NodeId
+    Runtime: MemoryRegionRuntime option
+    CopyOwner: NodeId option
+    Declarations: Map<NodeId,BoundaryDeclarationFact>
+    Obligations: NodeId list; Participants: Set<NodeId>
+}
+
+[<RequireQualifiedAccess>]
 type MemoryWitnessOperation =
+    | Region of MemoryRegionWitness
     | LocalScalar of MemoryLocalScalarWitness
     | BufferExtent of MemoryExtentWitness
     | ArrayExtent of MemoryArrayExtentWitness

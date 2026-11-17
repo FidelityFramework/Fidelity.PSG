@@ -587,6 +587,17 @@ type RegionCopyKind =
     | CopyTo
 
 /// Settled region escape analysis and copyOut/copyTo transfer endpoint contract (A-06).
+type RegionCopyLifetime = {
+    Application: NodeId
+    Implementation: NodeId
+    Caller: NodeId
+    Binding: NodeId
+    Uses: Set<NodeId>
+    Retirements: (NodeId * NodeId) list
+    Space: NodeId
+    Policy: ProjectMemoryPolicy
+}
+
 type RegionCopyEndpoint = {
     Site: NodeId
     Kind: RegionCopyKind
@@ -606,6 +617,7 @@ type RegionCopyEndpoint = {
     DestinationLifetimeScope: NodeId
     DestinationLifetimeDepth: int
     EscapeDischargeObligation: NodeId
+    Returned: RegionCopyLifetime option
     Participants: Participant list
 }
 

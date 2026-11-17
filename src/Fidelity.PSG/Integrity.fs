@@ -959,6 +959,13 @@ module Integrity =
     /// stored copies, including the ordered requirement and snapshot accounts.
     let private memoryRows (revision: Revision) =
         let memory = revision.Emission.Memory
+        let rec intrinsic seen id arguments =
+            if Set.contains id seen then None else
+            match revision.Nodes.TryFind id with
+            | Some {Kind=SemanticKind.Intrinsic info} -> Some(info.FullName,arguments)
+            | Some {Kind=SemanticKind.TypeAnnotation(inner,_)} -> intrinsic (Set.add id seen) inner arguments
+            | Some {Kind=SemanticKind.Application(callee,actuals)} -> intrinsic (Set.add id seen) callee (actuals @ arguments)
+            | _ -> None
         let body part id = if revision.Nodes.ContainsKey id then [] else [missingBody part id]
         let requirement part (row: RequirementWitness) =
             [ if revision.Emission.Storage.Requirements.TryFind row.Site <> Some row then
@@ -1249,6 +1256,7 @@ module Integrity =
         [ for KeyValue(key, operation) in memory.Operations do
               let site =
                   match operation with
+                  | MemoryWitnessOperation.Region row -> row.Site
                   | MemoryWitnessOperation.BufferExtent row -> row.Site
                   | MemoryWitnessOperation.ArrayExtent row -> row.Site
                   | MemoryWitnessOperation.ArrayAccess row -> row.Site
@@ -1265,6 +1273,219 @@ module Integrity =
               if key <> site then yield defect "Emission.Memory.Operations.Site" key "A memory operation is filed under a different site."
               yield! body "Emission.Memory.Operations.Site" site
               match operation with
+              | MemoryWitnessOperation.Region row ->
+                  let part = "Emission.Memory.Operations.Region"
+                  let region = revision.Codata.RegionAllocations.TryFind row.Region
+                  let extent = int64 row.Length * int64 row.ElementBytes
+                  let geometry = row.Length>0 && row.ElementBytes>0 && row.Alignment>0
+                                 && row.Alignment &&& (row.Alignment-1)=0 && row.Offset>=0L
+                                 && row.Capacity<=int64 System.Int32.MaxValue
+                                 && row.Offset % int64 row.Alignment=0L && extent<=row.Capacity-row.Offset
+                  if not geometry then yield defect part row.Site "Region storage has invalid extent, alignment or reservation bounds."
+                  let operandsMatch =
+                      match row.Kind,intrinsic Set.empty row.Site [] with
+                      | MemoryRegionKind.Create,Some("Region.create",[_]) -> row.Operand.IsNone && row.Source.IsNone && row.Count.IsNone
+                      | MemoryRegionKind.Release,Some("Region.release",[region]) -> row.Operand=Some region && row.Source.IsNone && row.Count.IsNone
+                      | MemoryRegionKind.RetireCopy,Some("Region.retireCopy",[value]) -> row.Operand=Some value && row.Source.IsNone && row.Count.IsNone
+                      | MemoryRegionKind.Allocate,Some("Region.alloc",[region;count]) -> row.Operand=Some region && row.Source.IsNone && row.Count=Some count
+                      | MemoryRegionKind.CopyOut,Some("Region.copyOut",[source;count]) -> row.Operand.IsNone && row.Source=Some source && row.Count=Some count
+                      | MemoryRegionKind.CopyTo,Some("Region.copyTo",[source;region;count]) -> row.Operand=Some region && row.Source=Some source && row.Count=Some count
+                      | _ -> false
+                  if not operandsMatch then yield defect part row.Site "Region memory operands differ from their exact source application."
+                  match row.Count with
+                  | Some count ->
+                      let countMatches = revision.Emission.Numeric.Values.TryFind count |> Option.exists (fun carrier ->
+                          carrier.Range=ValueRange.Bounded(bigint row.Length,bigint row.Length))
+                      let elementMatches = revision.Emission.Numeric.Elements.TryFind row.Site=Some row.Element
+                      let widthMatches =
+                          match row.Element with
+                          | SettledSlot.Integer(bits,_) -> bits>0 && bits%8=0 && row.ElementBytes=bits/8
+                          | SettledSlot.Bool -> row.ElementBytes=1
+                          | SettledSlot.Char -> row.ElementBytes=4
+                          | SettledSlot.Real bits -> row.ElementBytes=bits/8
+                          | _ -> false
+                      if not(countMatches && elementMatches && widthMatches) then
+                          yield defect part row.Site "Region reservation differs from its exact numeric count or settled element layout."
+                  | None -> ()
+                  if row.Kind=MemoryRegionKind.Allocate || row.Kind=MemoryRegionKind.CopyTo then
+                      for other in memory.Operations.Values do
+                          match other with
+                          | MemoryWitnessOperation.Region other when other.Site<>row.Site && other.Region=row.Region
+                              && (other.Kind=MemoryRegionKind.Allocate || other.Kind=MemoryRegionKind.CopyTo)
+                              && row.Offset<other.Offset+int64 other.Length*int64 other.ElementBytes && other.Offset<row.Offset+extent ->
+                              yield defect part row.Site "Distinct source region reservations overlap."
+                          | _ -> ()
+                  let matching =
+                      region |> Option.exists (fun owner ->
+                          (row.Kind=MemoryRegionKind.CopyOut || row.Kind=MemoryRegionKind.RetireCopy || owner.SpacePlacement=row.Space) &&
+                          (row.Kind=MemoryRegionKind.CopyOut || row.Kind=MemoryRegionKind.RetireCopy || owner.Capacity=row.Capacity) &&
+                          match row.Kind with
+                          | MemoryRegionKind.Create -> row.Site=owner.Region && row.Operand.IsNone && row.Source.IsNone && row.Count.IsNone && row.Offset=0L && extent=owner.Capacity
+                          | MemoryRegionKind.Release -> row.Operand.IsSome && row.Source.IsNone && row.Count.IsNone && owner.ScopeExitReleases |> List.exists (fun (_,site) -> site=row.Site)
+                          | MemoryRegionKind.RetireCopy ->
+                              row.CopyOwner |> Option.bind revision.Codata.RegionCopyEndpoints.TryFind |> Option.exists(fun copy ->
+                                  copy.SourceRegion=row.Region && copy.Kind=RegionCopyKind.CopyOut &&
+                                  copy.Returned |> Option.exists(fun life -> life.Space=row.Space && life.Retirements |> List.exists(fun (_,site) -> site=row.Site)))
+                          | MemoryRegionKind.Allocate -> row.Operand.IsSome && row.Source.IsNone && row.Count.IsSome && List.contains row.Site owner.AllocatedValues
+                          | MemoryRegionKind.CopyOut | MemoryRegionKind.CopyTo ->
+                              revision.Codata.RegionCopyEndpoints.TryFind row.Site |> Option.exists (fun copy ->
+                                  Some copy.SourceView=row.Source && copy.DestinationStorage=row.Site && row.Count.IsSome
+                                  && extent<=copy.SourceByteExtent && extent<=copy.DestinationCapacity
+                                  && (if row.Kind=MemoryRegionKind.CopyOut then copy.Kind=RegionCopyKind.CopyOut && row.Operand.IsNone && copy.SourceRegion=row.Region
+                                      else copy.Kind=RegionCopyKind.CopyTo && row.Operand.IsSome && copy.DestinationRegion=Some row.Region)))
+                  if not matching then yield defect part row.Site "Region storage differs from its source allocation, release or copy endpoint account."
+                  match row.CopyOwner |> Option.bind revision.Codata.RegionCopyEndpoints.TryFind with
+                  | Some copy when row.Kind=MemoryRegionKind.CopyOut || row.Kind=MemoryRegionKind.RetireCopy ->
+                      match copy.Returned with
+                      | Some life ->
+                          if life.Space<>row.Space || life.Retirements.IsEmpty || life.Policy.Model<>"Standard" || life.Policy.SourceVersion.Length<>64 then
+                              yield defect part row.Site "Independent region copy lacks its current residence, policy or retirement."
+                          let node id = revision.Nodes.TryFind id
+                          let rec scope seen id =
+                              if Set.contains id seen then None else
+                              match node id |> Option.bind _.Parent |> Option.bind node with
+                              | Some {Kind=SemanticKind.Lambda(_,body,_,_,_)} -> Some body
+                              | Some parent -> scope (Set.add id seen) parent.Id
+                              | None -> None
+                          let rec straight seen id =
+                              if id=life.Caller then (match node id with Some {Kind=SemanticKind.Sequential _} -> true | _ -> false)
+                              elif Set.contains id seen then false else
+                              match node id with
+                              | Some ({Kind=SemanticKind.Application _} as current)
+                              | Some ({Kind=SemanticKind.Binding(_,false,_,_)} as current)
+                              | Some ({Kind=SemanticKind.TypeAnnotation _} as current)
+                              | Some ({Kind=SemanticKind.Sequential _} as current) -> current.Parent |> Option.exists(straight (Set.add id seen))
+                              | _ -> false
+                          let retirements=life.Retirements |> List.map snd |> Set.ofList
+                          let retirementOperands=retirements |> Seq.choose(fun id ->
+                              match intrinsic Set.empty id [] with Some("Region.retireCopy",[operand]) -> Some operand | _ -> None) |> Set.ofSeq
+                          let rec aliases (family:Set<NodeId>) =
+                              let next=revision.Nodes.Values |> Seq.fold(fun held current ->
+                                  let input=match current.Kind,current.Children with
+                                            | SemanticKind.VarRef(_,Some value),_ | SemanticKind.TypeAnnotation(value,_),_ -> Some value
+                                            | SemanticKind.Binding(_,false,_,_),[value] -> Some value
+                                            | _ -> None
+                                  if input |> Option.exists family.Contains then Set.add current.Id held else held) family
+                              if next=family then family else aliases next
+                          let actualUses=Set.difference (aliases (Set.singleton life.Application)) retirementOperands
+                          let allowed id =
+                              scope Set.empty id=Some life.Caller &&
+                              (id=life.Application || node id |> Option.bind _.Parent |> Option.bind node |> Option.exists(fun parent ->
+                                  if actualUses.Contains parent.Id then true else
+                                  match parent.Kind with
+                                  | SemanticKind.Sequential _ -> node id |> Option.exists(fun value -> match value.Kind with SemanticKind.Binding _ -> true | _ -> false)
+                                  | SemanticKind.IndexGet(buffer,_) | SemanticKind.IndexSet(buffer,_,_) -> buffer=id
+                                  | _ -> match intrinsic Set.empty parent.Id [] with Some("Array.length",[buffer]) -> buffer=id | _ -> false))
+                          let tails=life.Retirements |> List.map fst |> Set.ofList
+                          let rec exits seen id =
+                              if Set.contains id seen then Set.empty
+                              elif tails.Contains id then Set.singleton id
+                              else
+                              let seen=Set.add id seen
+                              match node id with
+                              | Some {Kind=SemanticKind.Sequential items} when not items.IsEmpty -> exits seen (List.last items)
+                              | Some {Kind=SemanticKind.IfThenElse(_,yes,Some no)} -> Set.union (exits seen yes) (exits seen no)
+                              | Some {Kind=SemanticKind.Match(_,cases)} when not cases.IsEmpty -> cases |> List.map(fun arm -> exits seen arm.Body) |> Set.unionMany
+                              | Some {Kind=SemanticKind.CaseElimination(_,arms)} when not arms.IsEmpty -> arms |> List.map(fun arm -> exits seen arm.Body) |> Set.unionMany
+                              | _ -> Set.singleton id
+                          let implementation =
+                              match node life.Application with
+                              | Some {Kind=SemanticKind.Application _} -> revision.Emission.Callable.Calls.TryFind life.Application |> Option.map _.Implementation
+                              | _ -> None
+                          if not(straight Set.empty life.Application) || implementation<>Some life.Implementation ||
+                             scope Set.empty copy.Site<>(node life.Implementation |> Option.bind(fun value -> match value.Kind with SemanticKind.Lambda(_,body,[],_,_) -> Some body | _ -> None)) ||
+                             actualUses<>life.Uses || not(Set.forall allowed actualUses) || exits Set.empty life.Caller<>tails ||
+                             life.Retirements.Length<>tails.Count || retirements.Count<>tails.Count then
+                              yield defect part row.Site "Independent copy lost its exact helper, caller use closure or complete exit retirement."
+                          match revision.Nodes.TryFind life.Binding with
+                          | Some {Kind=SemanticKind.Binding(_,false,_,_);Children=[application]} when application=life.Application -> ()
+                          | _ -> yield defect part row.Site "Independent-copy result lost its exact receiving binding."
+                          for tail,retirement in life.Retirements do
+                              match revision.Nodes.TryFind tail,intrinsic Set.empty retirement [] with
+                              | Some {Kind=SemanticKind.Sequential[saved;released;result]},Some("Region.retireCopy",[operand]) when released=retirement ->
+                                  match revision.Nodes.TryFind saved,revision.Nodes.TryFind result,revision.Nodes.TryFind operand with
+                                  | Some {Kind=SemanticKind.Binding(_,false,_,_);Children=[_]},Some {Kind=SemanticKind.VarRef(_,Some binding)},
+                                    Some {Kind=SemanticKind.VarRef(_,Some actual)} when binding=saved && actual=life.Binding -> ()
+                                  | _ -> yield defect part retirement "Copy retirement must follow its saved scalar result and consume the received array."
+                              | _ -> yield defect part retirement "Copy retirement lost its exact caller exit ordering."
+                      | None when row.Kind=MemoryRegionKind.RetireCopy -> yield defect part row.Site "Copy retirement has no source lifetime account."
+                      | None -> ()
+                  | _ when row.Kind=MemoryRegionKind.CopyOut || row.Kind=MemoryRegionKind.RetireCopy ->
+                      yield defect part row.Site "Independent copy lost its endpoint identity."
+                  | _ -> ()
+                  match row.Runtime with
+                  | None -> ()
+                  | Some runtime ->
+                      let imports=revision.Emission.Boundary.Imports
+                      if not(imports.ContainsKey runtime.Acquire && imports.ContainsKey runtime.Release && runtime.Participants.Contains runtime.Declaration) then
+                          yield defect part row.Site "Region runtime lost its exact generated import declarations."
+                      let rec value seen id =
+                          if Set.contains id seen then None else
+                          let seen=Set.add id seen
+                          match row.Declarations.TryFind id with
+                          | Some {Form=("reference"|"annotation"|"quotation");References=[next]} -> value seen next
+                          | Some {Form="binding";Numbers=[zero;_];References=[next]} when zero=0I -> value seen next
+                          | fact -> fact
+                      match value Set.empty runtime.Declaration with
+                      | Some {Form="record";Text=names;References=references} when names.Length=references.Length ->
+                          let fields=List.zip names references
+                          let field name = fields |> List.tryPick(fun (key,id) -> if key=name then value Set.empty id else None)
+                          let str name expected = field name |> Option.exists(fun fact -> fact.Form="string" && fact.Text=[expected])
+                          let rec integer id =
+                              match value Set.empty id with
+                              | Some {Form=("integer"|"unsigned-integer");Numbers=[value]} when value>=bigint System.Int64.MinValue && value<=bigint System.Int64.MaxValue -> Some(int64 value)
+                              | Some {Form="application";References=[fn;operand]} ->
+                                  match value Set.empty fn with
+                                  | Some {Form="intrinsic";Text=[_;"op_UnaryNegation"]} -> integer operand |> Option.map (~-)
+                                  | _ -> None
+                              | _ -> None
+                          let number name expected=fields |> List.tryPick(fun (key,id) -> if key=name then integer id else None)=Some expected
+                          let contract=runtime.Contract
+                          if not(str "Space" contract.Space && str "EscapeSpace" contract.EscapeSpace && str "Acquire" contract.Acquire && str "Release" contract.Release
+                                 && str "FailureAction" contract.FailureAction && number "Address" contract.Address && number "Protection" contract.Protection
+                                 && number "Flags" contract.Flags && number "FileDescriptor" contract.FileDescriptor && number "Offset" contract.Offset
+                                 && number "FailureValue" contract.FailureValue && number "ReleaseSuccess" contract.ReleaseSuccess) then
+                              yield defect part row.Site "Region runtime changed its exact source mapping contract."
+                          match row.CopyOwner |> Option.bind revision.Codata.RegionCopyEndpoints.TryFind |> Option.bind _.Returned with
+                          | Some life ->
+                              let selected =
+                                  match value Set.empty life.Space with
+                                  | Some {Form="record";Text=names;References=references} when names.Length=references.Length ->
+                                      let spaceFields=List.zip names references
+                                      let text name=spaceFields |> List.tryPick(fun (key,id) ->
+                                          if key<>name then None else
+                                          value Set.empty id |> Option.bind(fun value -> match value.Form,value.Text with "string",[text] -> Some text | _ -> None))
+                                      let capacity=spaceFields |> List.tryPick(fun (key,id) -> if key="Capacity" then integer id else None)
+                                      match text "Name",text "Kind",text "Access",capacity with
+                                      | Some name,Some "heap",Some access,Some capacity when name=contract.EscapeSpace && access.Contains("w") -> Some capacity
+                                      | _ -> None
+                                  | _ -> None
+                              let capacityBound = selected |> Option.exists(fun capacity ->
+                                  row.Obligations |> List.exists(fun id ->
+                                      match revision.CurrentClaims.TryFind id,revision.ObligationSources.TryFind id with
+                                      | Some {Body=ObligationBody.CapacityFits(bytes,available)},Some sources ->
+                                          bytes=row.Capacity && available=capacity && bytes>0L && bytes<=available &&
+                                          [life.Application;life.Space] |> List.forall(fun source -> sources |> List.exists(List.contains source))
+                                      | _ -> false))
+                              if not capacityBound then yield defect part row.Site "Independent copy lost its declared writable heap capacity claim."
+                              match row.Kind,row.CopyOwner |> Option.bind memory.Operations.TryFind with
+                              | MemoryRegionKind.RetireCopy,Some(MemoryWitnessOperation.Region allocation)
+                                  when allocation.Kind=MemoryRegionKind.CopyOut && allocation.Space=row.Space && allocation.Capacity=row.Capacity &&
+                                       allocation.Length=row.Length && allocation.Element=row.Element && allocation.ElementBytes=row.ElementBytes -> ()
+                              | MemoryRegionKind.RetireCopy,_ -> yield defect part row.Site "Copy retirement changed its originating allocation geometry."
+                              | _ -> ()
+                          | None -> ()
+                      | _ -> yield defect part row.Site "Region runtime has no current source declaration."
+                  for operand in Option.toList row.Operand @ Option.toList row.Source @ Option.toList row.Count do
+                      yield! body (part+".Operand") operand
+                  let expected = [
+                      ObligationBody.ContinuationLayout((if row.Offset=0L then [] else [0,int row.Offset,1]) @ [int row.Offset,row.Length*row.ElementBytes,row.Alignment],int (row.Offset+extent),row.Alignment)
+                      ObligationBody.CapacityFits(row.Offset+extent,row.Capacity) ]
+                  for expected in expected do
+                      if not (row.Obligations |> List.exists (fun id -> revision.CurrentClaims.TryFind id |> Option.exists (fun claim -> claim.Body=expected))) then
+                          yield defect part row.Site "Region storage lacks its exact settled layout or capacity obligation."
+                  if row.Obligations.IsEmpty || row.Obligations |> List.exists (fun id -> not (revision.CurrentClaims.ContainsKey id) || not(row.Participants.Contains id)) then
+                      yield defect part row.Site "Region storage lacks its current source obligations and support."
               | MemoryWitnessOperation.BufferExtent row ->
                   yield! body "Emission.Memory.Operations.BufferExtent.Source" row.Source
                   yield! scalarRow revision "Emission.Memory.Operations.BufferExtent.Result" row.Site row.Result
@@ -6110,8 +6331,13 @@ module Integrity =
                     (revision.Emission.Boundary.ReadOnlyBufferUses |> Map.exists (fun (callId, _) u -> callId = id || u.Buffer = id || u.Residence = id)) ||
                     revision.Emission.Boundary.ResourceAccesses.ContainsKey id ||
                     revision.CurrentClaims.ContainsKey id
+                | "Codata.RegionCopyEndpoints.Returned" ->
+                    body id ||
+                    (revision.Codata.RegionCopyEndpoints.Values |> Seq.exists(fun copy -> copy.Returned |> Option.exists(fun life -> life.Space=id)) &&
+                     revision.Emission.Memory.Operations.Values |> Seq.exists(function MemoryWitnessOperation.Region row -> row.Declarations.ContainsKey id | _ -> false))
                 | "Codata.RegionAllocations.SpacePlacement" ->
                     body id ||
+                    (revision.Emission.Memory.Operations.Values |> Seq.exists(function MemoryWitnessOperation.Region row -> row.Declarations.ContainsKey id | _ -> false)) ||
                     revision.Emission.Boundary.SharedBufferPlacements.ContainsKey id ||
                     (revision.Codata.ProgramStorage.Entries.Values |> Seq.exists (fun e -> e.SpaceNode = id))
                 | "Codata.RegionCallPassings.Region"
@@ -6307,10 +6533,12 @@ module Integrity =
         let isPowerOfTwoInt (value: int) = value > 0 && (value &&& (value - 1)) = 0
         let validSpacePlacement (id: NodeId) =
             body id ||
+            (revision.Emission.Memory.Operations.Values |> Seq.exists(function MemoryWitnessOperation.Region row -> row.Declarations.ContainsKey id | _ -> false)) ||
             revision.Emission.Boundary.SharedBufferPlacements.ContainsKey id ||
             (codata.ProgramStorage.Entries.Values |> Seq.exists (fun e -> e.SpaceNode = id))
         let validParticipantNode (id: NodeId) =
             body id ||
+            (revision.Emission.Memory.Operations.Values |> Seq.exists(function MemoryWitnessOperation.Region row -> row.Declarations.ContainsKey id | _ -> false)) ||
             revision.CurrentClaims.ContainsKey id ||
             revision.SourceReadings.ContextHeaders.ContainsKey id ||
             codata.ContinuationFrames.ContainsKey id ||
