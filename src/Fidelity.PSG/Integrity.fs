@@ -948,7 +948,11 @@ module Integrity =
         [ for KeyValue(key, operation) in numeric.Operations do
               if key <> operation.Site then
                   yield defect "Emission.Numeric.Operations.Site" key "An operation is filed under a different site."
-              yield! numericOperationRow revision "Emission.Numeric.Operations" operation ]
+              yield! numericOperationRow revision "Emission.Numeric.Operations" operation
+          for KeyValue(key, transport) in numeric.IndexTransports do
+              if key <> transport.Site then
+                  yield defect "Emission.Numeric.IndexTransports.Site" key "An index transport is filed under a different site."
+              yield! scalarRow revision "Emission.Numeric.IndexTransports.Carrier" transport.Operand transport.Carrier ]
 
     /// Memory operations separate their executable operands from declaration
     /// provenance and complete source proof participants. Shared rows are exact
@@ -5731,7 +5735,7 @@ module Integrity =
                          "CurrentClaims"; "ObligationSources"; "ObligationSources (values)"
                          "Emission.Storage.Lazies.Layout"; "Edges.Sources"; "Edges.Target"; "Edges.Role"
                          "Emission.Numeric.Operations.Operands"; "Emission.Numeric.Operations.Result"
-                         "Emission.Numeric.Operations.ResultAdaptation"
+                         "Emission.Numeric.Operations.ResultAdaptation"; "Emission.Numeric.IndexTransports.Carrier"
                          "Emission.Memory.Operations (values)"; "Emission.Memory.ArrayCopies.CountCarrier"
                          "Emission.Memory.ArrayCopies.Read"; "Emission.Memory.ArrayCopies.Write"; "Emission.Memory.ArrayCopies.Requirements"
                          "Codata.ProgramStorage.Entries.SpaceNode"; "Codata.ProgramStorage.Reservations"
