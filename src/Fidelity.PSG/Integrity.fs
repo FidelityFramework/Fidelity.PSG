@@ -5289,6 +5289,47 @@ module Integrity =
                 if key <> imported.Identity then
                     yield defect "Emission.Boundary.Imports.Identity" key "An import is filed under a different identity."
 
+                let fixedOrdinals = imported.FixedSentinels |> List.map (fun (ordinal, _, _, _) -> ordinal)
+                let nativeCount = imported.Parameters.Length + fixedOrdinals.Length
+                let validFixed (ordinal, name, value: int, abi) =
+                    let fits =
+                        match abi with
+                        | BoundaryFixedType.EntryPointer bits -> bits > 0
+                        | BoundaryFixedType.Integer(bits, signed) when bits > 0 ->
+                            let number = bigint value
+                            (bits >= 32 && signed) || (bits >= 31 && not signed && value >= 0) ||
+                            (bits < 32 && number >= (if signed then -(1I <<< (bits - 1)) else 0I) &&
+                             number < (1I <<< (if signed then bits - 1 else bits)))
+                        | _ -> false
+                    ordinal >= 0 && ordinal < nativeCount && name <> "" && fits
+                if (Set.ofList fixedOrdinals).Count <> fixedOrdinals.Length ||
+                   not (List.forall validFixed imported.FixedSentinels) then
+                    yield defect "Emission.Boundary.Imports.FixedSentinels" key "Fixed native slots require unique complete-vector ordinals, names and representable declared ABI values."
+                let facts = imported.DeclarationFacts
+                let declaredFixed =
+                    descriptorParamRefs facts imported.Identity
+                    |> Option.map (List.indexed >> List.filter (snd >> isFixedParam facts))
+                    |> Option.defaultValue []
+                let fixedMatches ((ordinal, parameter), (storedOrdinal, name, value: int, abi)) =
+                    let fields = boundaryRecordFields facts parameter
+                    let field name = fields |> Option.bind (Map.tryFind name)
+                    let sentinel = field "PassBy" |> Option.bind (factCase facts "Fixed") |> Option.bind List.tryExactlyOne
+                                   |> Option.bind (factCase facts "EntrySentinel") |> Option.bind List.tryExactlyOne |> Option.bind facts.TryFind
+                    let valueMatches = sentinel |> Option.exists (fun pair ->
+                        match pair.Form, pair.References with
+                        | "tuple", [label; number] when pair.Children = pair.References ->
+                            factText facts label = Some name && factNumber facts number = Some(bigint value)
+                        | _ -> false)
+                    let typeMatches =
+                        match abi with
+                        | BoundaryFixedType.EntryPointer bits -> field "Type" |> Option.bind (factPointer facts) = Some(bigint bits)
+                        | BoundaryFixedType.Integer(bits, signed) -> field "Type" |> Option.bind (factInteger facts) = Some(signed, bigint bits)
+                    ordinal = storedOrdinal && valueMatches && typeMatches
+                if declaredFixed.Length <> imported.FixedSentinels.Length ||
+                   (declaredFixed.Length = imported.FixedSentinels.Length &&
+                    not (List.forall fixedMatches (List.zip declaredFixed imported.FixedSentinels))) then
+                    yield defect "Emission.Boundary.Imports.FixedSentinels.Source" key "Fixed native slots differ from the complete original FunctionDescriptor facts."
+
                 yield!
                     need
                         "Emission.Boundary.Imports.Scope"

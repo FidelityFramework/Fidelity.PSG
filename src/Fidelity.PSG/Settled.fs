@@ -350,6 +350,11 @@ type BoundarySharedBufferViewUse = {
     Participants: ParticipantEvidence
 }
 
+[<RequireQualifiedAccess>]
+type BoundaryFixedType =
+    | EntryPointer of bits: int
+    | Integer of bits: int * signed: bool
+
 type BoundaryImport = {
     Identity: NodeId
     Binding: NodeId
@@ -359,6 +364,9 @@ type BoundaryImport = {
     CallingConvention: string
     DeclarationPath: NodeId list
     Parameters: (NodeId * BoundaryScalar) list
+    /// Native ABI ordinal, declared macro name and signed entry value. These
+    /// slots have no source formal but remain part of the native call signature.
+    FixedSentinels: (int * string * int * BoundaryFixedType) list
     Result: BoundaryScalar option
     Participants: Set<NodeId>
     SourceTypes: Map<NodeId, TypeIdentity>

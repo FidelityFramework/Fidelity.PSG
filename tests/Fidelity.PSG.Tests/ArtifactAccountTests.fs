@@ -159,7 +159,7 @@ let private importedEntryAccount () =
             Library = "c"
             Symbol = "fixture_external"
             CallingConvention = "cdecl"
-            DeclarationPath = [ NodeId 10 ]
+            FixedSentinels = []; DeclarationPath = [ NodeId 10 ]
             Parameters = []
             Result = None
             Participants = Set.singleton (NodeId 10)

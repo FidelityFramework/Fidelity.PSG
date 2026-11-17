@@ -1979,7 +1979,7 @@ let private boundaryCalleeFacts =
             Ports = numericOperationFacts.SourceReadings.Ports.Add((NodeId 50, OccurrencePort.ModuleDeclaration), header.Ports[OccurrencePort.ModuleDeclaration])}
     let imported : BoundaryImport =
         {Identity = NodeId 72; Binding = NodeId 2; Scope = NodeId 50; Library = "c"; Symbol = "add"; CallingConvention = "CDecl"
-         DeclarationPath = [NodeId 2]; Parameters = [NodeId 3, BoundaryScalar.Integer(32, true); NodeId 4, BoundaryScalar.Integer(32, true)]
+         FixedSentinels = []; DeclarationPath = [NodeId 2]; Parameters = [NodeId 3, BoundaryScalar.Integer(32, true); NodeId 4, BoundaryScalar.Integer(32, true)]
          Result = Some(BoundaryScalar.Integer(32, true)); Participants = Set.singleton(NodeId 8000)
          SourceTypes = [1;3;4] |> List.map(fun id -> NodeId id, numericOperationFacts.Nodes[NodeId id].Type) |> Map.ofList
          DeclarationFacts = Map.ofList [NodeId 72, declared]}
@@ -2005,6 +2005,57 @@ let ``a boundary call retains its live callee occurrence separately from its dec
     Assert.Empty(Integrity.check boundaryCalleeFacts)
     Assert.NotEqual(boundaryCalleeFacts.Emission.Boundary.Calls[NodeId 1].Callee, boundaryCalleeFacts.Emission.Boundary.Imports[NodeId 72].Identity)
     Assert.False(boundaryCalleeFacts.Nodes.ContainsKey(NodeId 72))
+
+[<Theory>]
+[<InlineData("exact")>]
+[<InlineData("duplicate")>]
+[<InlineData("ordinal")>]
+[<InlineData("width")>]
+[<InlineData("overflow")>]
+[<InlineData("value")>]
+[<InlineData("name")>]
+[<InlineData("moved")>]
+[<InlineData("type")>]
+[<InlineData("drop")>]
+[<InlineData("insert")>]
+let ``fixed native slots retain structural ABI authority`` shape =
+    let imported = boundaryCalleeFacts.Emission.Boundary.Imports[NodeId 72]
+    let fact form text numbers references =
+        { imported.DeclarationFacts[NodeId 72] with
+            Form = form; Text = text; Numbers = numbers
+            References = List.map NodeId references; Children = List.map NodeId references }
+    let facts =
+        [72, fact "record" ["Parameters"] [] [900]
+         900, fact "array" [] [] [901; 902; 903]
+         901, fact "record" [] [] []
+         902, fact "record" ["PassBy"; "Type"] [] [904; 909]
+         903, fact "record" [] [] []
+         904, fact "case" ["Fixed"] [] [905]
+         905, fact "case" ["EntrySentinel"] [] [906]
+         906, fact "tuple" [] [] [907; 908]
+         907, fact "string" ["SQLITE_STATIC"] [] []
+         908, fact "integer" [] [0I] []
+         909, fact "case" ["Pointer"] [] [910]
+         910, fact "integer" [] [64I] []] |> List.map (fun (key, value) -> NodeId key, value) |> Map.ofList
+    let slots =
+        match shape with
+        | "exact" -> [1, "SQLITE_STATIC", 0, BoundaryFixedType.EntryPointer 64]
+        | "duplicate" -> [1, "a", 0, BoundaryFixedType.EntryPointer 64; 1, "b", 0, BoundaryFixedType.EntryPointer 64]
+        | "ordinal" -> [3, "a", 0, BoundaryFixedType.EntryPointer 64]
+        | "width" -> [1, "a", 0, BoundaryFixedType.EntryPointer 0]
+        | "value" -> [1, "SQLITE_STATIC", 1, BoundaryFixedType.EntryPointer 64]
+        | "name" -> [1, "CHANGED", 0, BoundaryFixedType.EntryPointer 64]
+        | "moved" -> [0, "SQLITE_STATIC", 0, BoundaryFixedType.EntryPointer 64]
+        | "type" -> [1, "SQLITE_STATIC", 0, BoundaryFixedType.Integer(64, true)]
+        | "drop" -> []
+        | "insert" -> [1, "SQLITE_STATIC", 0, BoundaryFixedType.EntryPointer 64; 3, "extra", 0, BoundaryFixedType.EntryPointer 64]
+        | _ -> [1, "a", 255, BoundaryFixedType.Integer(8, true)]
+    let boundary = { boundaryCalleeFacts.Emission.Boundary with Imports = Map.ofList [imported.Identity, { imported with FixedSentinels = slots; DeclarationFacts = facts }] }
+    let changed = { boundaryCalleeFacts with Emission = { boundaryCalleeFacts.Emission with Boundary = boundary } }
+    let violations = Integrity.check changed
+    if shape = "exact" then Assert.Empty violations
+    elif List.contains shape ["value"; "name"; "moved"; "type"; "drop"; "insert"] then within "Emission.Boundary.Imports.FixedSentinels.Source" violations |> ignore
+    else within "Emission.Boundary.Imports.FixedSentinels" violations |> ignore
 
 [<Theory>]
 [<InlineData("reverse")>]
@@ -3111,7 +3162,7 @@ let private conditionalOptionalCallback () =
         |> List.map (fun (id, item) -> NodeId id, item) |> Map.ofList
     let imported : BoundaryImport =
         {Identity = NodeId 210; Binding = NodeId 217; Scope = NodeId 400; Library = "c"; Symbol = "receive"; CallingConvention = "CDecl"
-         DeclarationPath = [NodeId 217]; Parameters = [NodeId 211, BoundaryScalar.Entry(NodeId 220)]; Result = None
+         FixedSentinels = []; DeclarationPath = [NodeId 217]; Parameters = [NodeId 211, BoundaryScalar.Entry(NodeId 220)]; Result = None
          Participants = facts.Keys |> Set.ofSeq; SourceTypes = Map.ofList [NodeId 211, optionType]; DeclarationFacts = facts}
     let receiver : BoundaryCallbackInvocation =
         {Identity = NodeId 220; Import = NodeId 210; Parameter = 0; Formal = NodeId 211; Scope = NodeId 600
@@ -3948,7 +3999,7 @@ let private optionalBoundaryControl absent =
         |> List.map (fun (id,fact) -> NodeId id,fact) |> Map.ofList
     let imported : BoundaryImport =
         {Identity=NodeId 210;Binding=NodeId 217;Scope=NodeId 400;Library="c";Symbol="receive";CallingConvention="CDecl"
-         DeclarationPath=[NodeId 217];Parameters=[NodeId 211,BoundaryScalar.Entry(NodeId 220)];Result=None
+         FixedSentinels=[];DeclarationPath=[NodeId 217];Parameters=[NodeId 211,BoundaryScalar.Entry(NodeId 220)];Result=None
          Participants=facts.Keys |> Set.ofSeq;SourceTypes=Map.ofList [NodeId 211,optionType];DeclarationFacts=facts}
     let receiver : BoundaryCallbackInvocation =
         {Identity=NodeId 220;Import=NodeId 210;Parameter=0;Formal=NodeId 211;Scope=NodeId 600
@@ -4761,9 +4812,10 @@ let ``readonly declaration ignores trailing PassBy Fixed descriptor sentinel par
           1031, case "Pointer" [1032] 1030
           1032, number 64I 1031
           1033, case "Fixed" [1034] 1030
-          1034, case "EntrySentinel" [1035; 1036] 1033
-          1035, text "SQLITE_TRANSIENT" 1034
-          1036, number (-1I) 1034
+          1034, case "EntrySentinel" [1037] 1033
+          1037, controlFact "tuple" [] [] [1035; 1036] (Some 1034)
+          1035, text "SQLITE_TRANSIENT" 1037
+          1036, number (-1I) 1037
           1020, text "readFn" 72
           1101, binding "readFnReadOnlyDescriptor" 1100
           1100, controlFact "quotation" [] [] [1102] (Some 1101)
@@ -4798,6 +4850,7 @@ let ``readonly declaration ignores trailing PassBy Fixed descriptor sentinel par
     let imported =
         { basis.Imports[NodeId 72] with
             Symbol = "readFn"
+            FixedSentinels = [2, "SQLITE_TRANSIENT", -1, BoundaryFixedType.EntryPointer 64]
             Parameters = [NodeId 1004, BoundaryScalar.ReadOnlyBytes(NodeId 1100); NodeId 1005, BoundaryScalar.Integer(64, false)]
             Result = None; DeclarationFacts = facts; Participants = facts.Keys |> Set.ofSeq
             SourceTypes = Map.ofList [NodeId 1004, arrayType; NodeId 1005, countType; NodeId 1, unitType] }
@@ -5976,9 +6029,10 @@ let ``leading PassBy Fixed shifts ReadOnlyBufferDeclaration ReadOnlyBufferUse an
           1031, case "Pointer" [1032] 1030
           1032, number 64I 1031
           1033, case "Fixed" [1034] 1030
-          1034, case "EntrySentinel" [1035; 1036] 1033
-          1035, text "SQLITE_TRANSIENT" 1034
-          1036, number (-1I) 1034
+          1034, case "EntrySentinel" [1037] 1033
+          1037, controlFact "tuple" [] [] [1035; 1036] (Some 1034)
+          1035, text "SQLITE_TRANSIENT" 1037
+          1036, number (-1I) 1037
           1011, record ["Type"; "PassBy"] [1013; 1016] 1010
           1013, case "Pointer" [1014] 1011
           1014, number 64I 1013
@@ -6023,6 +6077,7 @@ let ``leading PassBy Fixed shifts ReadOnlyBufferDeclaration ReadOnlyBufferUse an
     let imported =
         { basis.Imports[NodeId 72] with
             Symbol = "readFn"
+            FixedSentinels = [0, "SQLITE_TRANSIENT", -1, BoundaryFixedType.EntryPointer 64]
             Parameters = [NodeId 1004, BoundaryScalar.ReadOnlyBytes(NodeId 1100); NodeId 1005, BoundaryScalar.Integer(64, false)]
             Result = None; DeclarationFacts = facts; Participants = facts.Keys |> Set.ofSeq
             SourceTypes = Map.ofList [NodeId 1004, arrayType; NodeId 1005, countType; NodeId 1, unitType] }
@@ -6098,9 +6153,10 @@ let ``leading PassBy Fixed shifts ReadOnlyBufferDeclaration ReadOnlyBufferUse an
         |> Map.add (NodeId 241) (case "Pointer" [242] 240)
         |> Map.add (NodeId 242) (number 64I 241)
         |> Map.add (NodeId 243) (case "Fixed" [244] 240)
-        |> Map.add (NodeId 244) (case "EntrySentinel" [260; 261] 243)
-        |> Map.add (NodeId 260) (text "SENTINEL" 244)
-        |> Map.add (NodeId 261) (number (-1I) 244)
+        |> Map.add (NodeId 244) (case "EntrySentinel" [262] 243)
+        |> Map.add (NodeId 262) (controlFact "tuple" [] [] [260; 261] (Some 244))
+        |> Map.add (NodeId 260) (text "SENTINEL" 262)
+        |> Map.add (NodeId 261) (number (-1I) 262)
         |> Map.add (NodeId 245) (record ["Type"; "PassBy"] [246; 249] 212)
         |> Map.add (NodeId 246) (case "Integer" [247] 245)
         |> Map.add (NodeId 247) (controlFact "tuple" [] [] [248; 250] (Some 246))
@@ -6116,7 +6172,7 @@ let ``leading PassBy Fixed shifts ReadOnlyBufferDeclaration ReadOnlyBufferUse an
         |> Map.add (NodeId 608) (record ["Binding"; "Parameter"] [609; 610] 607)
         |> Map.add (NodeId 609) (text "OptionalControl.close" 608)
         |> Map.add (NodeId 610) (number 0I 608)
-    let leadImp = { imp0 with Parameters = imp0.Parameters @ [NodeId 211, BoundaryScalar.Integer(32, true)]; DeclarationFacts = leadFixedFacts }
+    let leadImp = { imp0 with FixedSentinels = [0, "SENTINEL", -1, BoundaryFixedType.EntryPointer 64]; Parameters = imp0.Parameters @ [NodeId 211, BoundaryScalar.Integer(32, true)]; DeclarationFacts = leadFixedFacts }
     let leadCb = { receiver0 with Parameter = 1; Contract = { receiver0.Contract with Parameter = 1 }; Extent = BoundaryCallbackExtent.Retained(2, [| BAREWire.Descriptors.RetentionRelease.OwnerRelease { Binding = "OptionalControl.close"; Parameter = 0 } |]) }
     let leadAbsence =
         { optBasis.CallbackAbsences[NodeId 500] with
@@ -6154,9 +6210,10 @@ let ``leading PassBy Fixed shifts BorrowedResultViewDeclaration and CompanionCal
           1031, case "Pointer" [1032] 1030
           1032, number 64I 1031
           1033, case "Fixed" [1034] 1030
-          1034, case "EntrySentinel" [1035; 1036] 1033
-          1035, text "SENTINEL" 1034
-          1036, number (-1I) 1034
+          1034, case "EntrySentinel" [1037] 1033
+          1037, controlFact "tuple" [] [] [1035; 1036] (Some 1034)
+          1035, text "SENTINEL" 1037
+          1036, number (-1I) 1037
           1011, record ["Type"; "PassBy"] [1013; 1016] 1010
           1013, case "Pointer" [1014] 1011
           1014, number 64I 1013
@@ -6226,6 +6283,7 @@ let ``leading PassBy Fixed shifts BorrowedResultViewDeclaration and CompanionCal
     let borrowImport =
         { basis.Imports[NodeId 72] with
             Binding = NodeId 2; Symbol = "colText"
+            FixedSentinels = [0, "SENTINEL", -1, BoundaryFixedType.EntryPointer 64]
             Parameters = [NodeId 1004, BoundaryScalar.Integer(64, false); NodeId 1005, BoundaryScalar.Integer(32, true)]
             Result = Some(BoundaryScalar.BorrowedBytes(NodeId 1200))
             DeclarationFacts = viewFacts; Participants = viewFacts.Keys |> Set.ofSeq
@@ -6310,6 +6368,7 @@ let ``CallbackInvocations maps Entry Parameter across leading PassBy Fixed forma
             .Add(NodeId 504, number 1I 502)
     let imported =
         { imported0 with
+            FixedSentinels = [0, "FLAG", 1, BoundaryFixedType.Integer(32, true)]
             DeclarationFacts = facts
             Participants = facts.Keys |> Set.ofSeq }
     let receiver =
@@ -6372,9 +6431,10 @@ let ``BufferAbsences maps ReadOnlyBuffer Parameter across leading PassBy Fixed f
           1031, case "Pointer" [1032] 1030
           1032, number 64I 1031
           1033, case "Fixed" [1034] 1030
-          1034, case "EntrySentinel" [1035; 1036] 1033
-          1035, text "FLAGS" 1034
-          1036, number 1I 1034
+          1034, case "EntrySentinel" [1037] 1033
+          1037, controlFact "tuple" [] [] [1035; 1036] (Some 1034)
+          1035, text "FLAGS" 1037
+          1036, number 1I 1037
           1011, record ["Type"; "PassBy"] [1013; 1016] 1010
           1013, case "Pointer" [1014] 1011
           1014, number 64I 1013
@@ -6439,6 +6499,7 @@ let ``BufferAbsences maps ReadOnlyBuffer Parameter across leading PassBy Fixed f
     let imported =
         { basis.Imports[NodeId 72] with
             Symbol = "openVfs"; Parameters = [NodeId 1004, BoundaryScalar.ReadOnlyBytes(NodeId 1100)]; Result = None
+            FixedSentinels = [0, "FLAGS", 1, BoundaryFixedType.EntryPointer 64]
             DeclarationFacts = facts; Participants = facts.Keys |> Set.ofSeq
             SourceTypes = Map.ofList [NodeId 1004, optionArrayType; NodeId 1, unitType] }
     let call =
@@ -7308,7 +7369,7 @@ let ``shared buffer placement and view use enforce FS9220-FS9223 zero-copy contr
               Library = "audio"
               Symbol = shortFuncName
               CallingConvention = "CDecl"
-              DeclarationPath = [ NodeId calleeId ]
+              FixedSentinels = []; DeclarationPath = [ NodeId calleeId ]
               Parameters = impParams
               Result = resScalar
               Participants = Set.singleton (NodeId calleeId)
@@ -7861,6 +7922,7 @@ module AsyncAndRegionIntegrityTests =
               DestinationLifetimeScope = NodeId 51
               DestinationLifetimeDepth = copyDstDepth
               EscapeDischargeObligation = NodeId 907
+              Returned = None
               Participants = mkParticipants 80 [ 80; 43; 40; 50; 81; 42; 82; 83; 51 ] }
 
         let copyEndpointsMap =
