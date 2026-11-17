@@ -5,11 +5,11 @@ module internal BinaryGenerated =
     [<Literal>]
     let Format = 2u
     [<Literal>]
-    let Schema = 59
+    let Schema = 60
     [<Literal>]
-    let Fingerprint = "2E376A56B7D25E52DB73F6689B726993633CD56F5A1A8B8E97E5C103AA655EE9"
+    let Fingerprint = "99E15A333D3749F8E785B1B617D60CCD9A090BA06B0B36562440AD5A24F35612"
     [<Literal>]
-    let NamedTypes = 412
+    let NamedTypes = 413
     [<Literal>]
     let RevisionFields = 17
     [<Literal>]
@@ -4873,6 +4873,16 @@ module internal BinaryGenerated =
         return leaveWrite state
     }
 
+    and write_Fidelity_PSG_MemoryReadOnlyArrayViewWitness (state: WriteState) (value: global.Fidelity.PSG.MemoryReadOnlyArrayViewWitness) : Result<WriteState, BinaryError> = result {
+        let! state = enterWrite state
+        let! state = write_Fidelity_PSG_NodeId state value.``Site``
+        let! state = write_Fidelity_PSG_NodeId state value.``Source``
+        let! state = write_Fidelity_PSG_ValueRepresentation state value.``SourceCarrier``
+        let! state = write_Fidelity_PSG_ValueRepresentation state value.``ResultCarrier``
+        let! state = (writeSet write_Fidelity_PSG_NodeId) state value.``Participants``
+        return leaveWrite state
+    }
+
     and write_Fidelity_PSG_MemoryRegionKind (state: WriteState) (value: global.Fidelity.PSG.MemoryRegionKind) : Result<WriteState, BinaryError> = result {
         let! state = enterWrite state
         return!
@@ -5155,6 +5165,11 @@ module internal BinaryGenerated =
             | global.Fidelity.PSG.MemoryWitnessOperation.``EmptySnapshot``(a0) -> result {
                 let! state = writeTag state 13
                 let! state = write_Fidelity_PSG_MemoryEmptySnapshotWitness state a0
+                return leaveWrite state
+              }
+            | global.Fidelity.PSG.MemoryWitnessOperation.``ReadOnlyArrayView``(a0) -> result {
+                let! state = writeTag state 14
+                let! state = write_Fidelity_PSG_MemoryReadOnlyArrayViewWitness state a0
                 return leaveWrite state
               }
     }
@@ -13398,6 +13413,16 @@ module internal BinaryGenerated =
         return! finishRead ({ ``Site`` = a0; ``Obligation`` = a1; ``Body`` = a2; ``Participants`` = a3; ``Proven`` = a4 } : global.Fidelity.PSG.MemoryProof) state
     }
 
+    and read_Fidelity_PSG_MemoryReadOnlyArrayViewWitness (state: ReadState) : Result<global.Fidelity.PSG.MemoryReadOnlyArrayViewWitness * ReadState, BinaryError> = result {
+        let! state = enterReadFields 5 state
+        let! a0, state = read_Fidelity_PSG_NodeId state
+        let! a1, state = read_Fidelity_PSG_NodeId state
+        let! a2, state = read_Fidelity_PSG_ValueRepresentation state
+        let! a3, state = read_Fidelity_PSG_ValueRepresentation state
+        let! a4, state = (readSet read_Fidelity_PSG_NodeId) state
+        return! finishRead ({ ``Site`` = a0; ``Source`` = a1; ``SourceCarrier`` = a2; ``ResultCarrier`` = a3; ``Participants`` = a4 } : global.Fidelity.PSG.MemoryReadOnlyArrayViewWitness) state
+    }
+
     and read_Fidelity_PSG_MemoryRegionKind (state: ReadState) : Result<global.Fidelity.PSG.MemoryRegionKind * ReadState, BinaryError> = result {
         let! state = enterReadCases 1 state
         let! tag, state = readTag state
@@ -13653,6 +13678,10 @@ module internal BinaryGenerated =
             | 13 -> result {
                 let! a0, state = read_Fidelity_PSG_MemoryEmptySnapshotWitness state
                 return! finishRead (global.Fidelity.PSG.MemoryWitnessOperation.``EmptySnapshot``(a0)) state
+              }
+            | 14 -> result {
+                let! a0, state = read_Fidelity_PSG_MemoryReadOnlyArrayViewWitness state
+                return! finishRead (global.Fidelity.PSG.MemoryWitnessOperation.``ReadOnlyArrayView``(a0)) state
               }
             | _ -> malformed state "Unknown Fidelity.PSG.MemoryWitnessOperation case"
     }

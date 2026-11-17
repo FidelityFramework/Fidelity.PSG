@@ -868,6 +868,13 @@ type MemoryRegionWitness = {
     Obligations: NodeId list; Participants: Set<NodeId>
 }
 
+/// Exact descriptor-only conversion; storage and element values are unchanged.
+type MemoryReadOnlyArrayViewWitness = {
+    Site: NodeId; Source: NodeId
+    SourceCarrier: ValueRepresentation; ResultCarrier: ValueRepresentation
+    Participants: Set<NodeId>
+}
+
 [<RequireQualifiedAccess>]
 type MemoryWitnessOperation =
     | Region of MemoryRegionWitness
@@ -884,6 +891,7 @@ type MemoryWitnessOperation =
     | ConstructedValue of MemoryConstructedValueWitness
     | CheckedResultRetirement of MemoryCheckedResultRetirementWitness
     | EmptySnapshot of MemoryEmptySnapshotWitness
+    | ReadOnlyArrayView of MemoryReadOnlyArrayViewWitness
 
 type PinConstraint = { PortName: string; PackagePin: string; IOStandard: string; Direction: string }
 

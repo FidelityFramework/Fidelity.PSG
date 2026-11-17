@@ -1270,6 +1270,7 @@ module Integrity =
                   | MemoryWitnessOperation.ConstructedValue row -> row.Site
                   | MemoryWitnessOperation.CheckedResultRetirement row -> row.Site
                   | MemoryWitnessOperation.EmptySnapshot row -> row.Site
+                  | MemoryWitnessOperation.ReadOnlyArrayView row -> row.Site
               if key <> site then yield defect "Emission.Memory.Operations.Site" key "A memory operation is filed under a different site."
               yield! body "Emission.Memory.Operations.Site" site
               match operation with
@@ -1495,6 +1496,26 @@ module Integrity =
                   yield! body "Emission.Memory.Operations.ArrayExtent.Source" row.Source
                   yield! scalarRow revision "Emission.Memory.Operations.ArrayExtent.Result" row.Site row.Result
               | MemoryWitnessOperation.ArrayAccess row -> yield! access "Emission.Memory.Operations.ArrayAccess" row
+              | MemoryWitnessOperation.ReadOnlyArrayView row ->
+                  let part = "Emission.Memory.Operations.ReadOnlyArrayView"
+                  yield! body (part + ".Source") row.Source
+                  let incidence =
+                      match revision.Nodes.TryFind row.Site with
+                      | Some { Kind = SemanticKind.Application(callee, [source]); Children = children }
+                          when source = row.Source && children = [callee; source] ->
+                          match revision.Nodes.TryFind callee with
+                          | Some { Kind = SemanticKind.Intrinsic { Module = IntrinsicModule.Array; FullName = "ReadOnlyView.ofArray" } } ->
+                              row.Participants = Set.ofList [row.Site; callee; source]
+                          | _ -> false
+                      | _ -> false
+                  let carriers =
+                      revision.Emission.Numeric.OccurrenceRepresentations.TryFind row.Source = Some(Ok row.SourceCarrier) &&
+                      revision.Emission.Numeric.OccurrenceRepresentations.TryFind row.Site = Some(Ok row.ResultCarrier) &&
+                      (match row.SourceCarrier, row.ResultCarrier with
+                       | ValueRepresentation.Buffer(_, element), ValueRepresentation.Buffer(None, target) -> element = target
+                       | _ -> false)
+                  if not incidence || not carriers then
+                      yield defect part row.Site "The read-only array view differs from its exact source operand or descriptor carriers."
               | MemoryWitnessOperation.LocalScalar row ->
                   let part = "Emission.Memory.Operations.LocalScalar"
                   if not (revision.Nodes.TryFind row.Site |> Option.exists (fun node ->
@@ -6409,6 +6430,19 @@ module Integrity =
                          if not (body extent.Site) then yield missingBody "Edges.Target" extent.Site
                          for id in [extent.Source; extent.ExtentSource] do
                              if not (typeFact id) then yield missingRow "Edges.Role" "live operand or callable signature data" id]
+                    | EdgeRole.BoundaryDomain domain ->
+                        // Hypothesis quotes are stored declaration evidence,
+                        // not executable bodies. Check their exact typed role;
+                        // the same ID in any other position still needs a body.
+                        let remaining = { edge with Role = EdgeRole.BoundaryDomain { domain with ResultHypotheses = [] } }
+                        let edgeNames = IntegrityNamed.named { Revision.empty revision.Header.Producer with Edges = [remaining] }
+                        [ yield! edgeNames |> List.collect (fun (part, ids) ->
+                              ids |> List.distinct |> List.filter (fun id -> not (body id)) |> List.map (missingBody part))
+                          for hypothesis in domain.ResultHypotheses do
+                              if not (body hypothesis.Declaration) then
+                                  yield missingBody "Edges.Role" hypothesis.Declaration
+                              if not (foreignHypothesisFact revision hypothesis hypothesis.Quote && foreignBodyFact hypothesis.Quote) then
+                                  yield missingRow "Edges.Role" "the exact foreign-result hypothesis and current coverage claim" hypothesis.Quote ]
                     | _ ->
                         let edgeNames = IntegrityNamed.named { Revision.empty revision.Header.Producer with Edges = [edge] }
                         edgeNames |> List.collect (fun (part, ids) ->

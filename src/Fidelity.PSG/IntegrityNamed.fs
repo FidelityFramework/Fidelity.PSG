@@ -1502,6 +1502,13 @@ module IntegrityNamed =
         @ (idsOfObligationBody value.Body)
         @ (value.Participants |> Set.toList |> List.collect (fun v0 -> [ v0 ]))
 
+    and private idsOfMemoryReadOnlyArrayViewWitness (value: Fidelity.PSG.MemoryReadOnlyArrayViewWitness) : NodeId list =
+        [ value.Site ]
+        @ [ value.Source ]
+        @ (idsOfValueRepresentation value.SourceCarrier)
+        @ (idsOfValueRepresentation value.ResultCarrier)
+        @ (value.Participants |> Set.toList |> List.collect (fun v0 -> [ v0 ]))
+
     and private idsOfMemoryRegionRuntime (value: Fidelity.PSG.MemoryRegionRuntime) : NodeId list =
         [ value.Declaration ]
         @ [ value.Acquire ]
@@ -1587,6 +1594,7 @@ module IntegrityNamed =
         | Fidelity.PSG.MemoryWitnessOperation.ConstructedValue(a0) -> (idsOfMemoryConstructedValueWitness a0)
         | Fidelity.PSG.MemoryWitnessOperation.CheckedResultRetirement(a0) -> (idsOfMemoryCheckedResultRetirementWitness a0)
         | Fidelity.PSG.MemoryWitnessOperation.EmptySnapshot(a0) -> (idsOfMemoryEmptySnapshotWitness a0)
+        | Fidelity.PSG.MemoryWitnessOperation.ReadOnlyArrayView(a0) -> (idsOfMemoryReadOnlyArrayViewWitness a0)
 
     and private idsOfMemoryWitnessProjection (value: Fidelity.PSG.MemoryWitnessProjection) : NodeId list =
         (value.Operations |> Map.toList |> List.collect (fun (k0, h0) -> [ k0 ] @ (idsOfMemoryWitnessOperation h0)))

@@ -210,7 +210,7 @@ module ExplicitDemandProjection =
 module Revision =
     /// The version of the contract declared by this library.
     [<Literal>]
-    let Schema = 59
+    let Schema = 60
 
     /// The published form of a program with nothing in it, from a producer that
     /// declares no platform width.
