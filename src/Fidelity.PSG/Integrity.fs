@@ -990,6 +990,54 @@ module Integrity =
             [ if memory.Operations.TryFind row.Site <> Some(MemoryWitnessOperation.ArrayAccess row) then
                   yield missingRow part "Emission.Memory.Operations with the exact array access" row.Site
               yield! access part row ]
+        // This reads the producer's allocation, alias, delivery and join rows.
+        // It grants no storage from an orchestration name or capacity alone.
+        let asyncDelivery (allocation: MemoryArrayAllocationWitness) =
+            let target id =
+                let rec follows seen current =
+                    if Set.contains current seen then false
+                    elif current=allocation.Site then true
+                    else
+                        let seen=Set.add current seen
+                        match revision.Nodes.TryFind current with
+                        | Some {Kind=SemanticKind.Binding(_,false,_,_);Children=[value]}
+                        | Some {Kind=SemanticKind.VarRef(_,Some value)}
+                        | Some {Kind=SemanticKind.TypeAnnotation(value,_)} -> follows seen value
+                        | Some {Kind=SemanticKind.Sequential items} when not items.IsEmpty -> follows seen (List.last items)
+                        | _ -> false
+                follows Set.empty id
+            let orchestrations = revision.Codata.AsyncOrchestrations.Values |> Seq.filter (fun row -> row.ResultStorage=allocation.Site) |> Seq.toList
+            match orchestrations with
+            | [row] when row.Site=allocation.Construction.Owner && row.ResultCapacity>0 &&
+                         row.ResultCapacity=row.Children.Length && row.ElementStride=allocation.ElementBytes &&
+                         allocation.MinimumCount=bigint row.ResultCapacity && allocation.MaximumCount=bigint row.ResultCapacity &&
+                         allocation.CountCarrier.Range=ValueRange.Bounded(bigint row.ResultCapacity,bigint row.ResultCapacity) &&
+                         Set.count(Set.ofList row.Children)=row.Children.Length &&
+                         row.ResultOrdering=(row.Children |> List.mapi (fun ordinal child -> ordinal,child)) &&
+                         (row.Children |> List.forall revision.Codata.AsyncActivations.ContainsKey) ->
+                let writes = memory.Operations.Values |> Seq.choose (function
+                    | MemoryWitnessOperation.ArrayAccess write when write.Value.IsSome && target write.Buffer -> Some write
+                    | _ -> None) |> Seq.toList
+                let deliveries = row.ResultOrdering |> List.choose (fun (ordinal,child) ->
+                    match writes |> List.filter (fun write -> write.Value=Some child) with
+                    | [write] when write.Element=allocation.Element && write.Bounds.Index=write.Index && write.Bounds.Buffer=write.Buffer &&
+                                   write.Bounds.IndexCarrier.Range=ValueRange.Bounded(bigint ordinal,bigint ordinal) &&
+                                   write.Bounds.Requirement.Continuation=write.Site &&
+                                   revision.Emission.Storage.Requirements.TryFind write.Bounds.Requirement.Site=Some write.Bounds.Requirement ->
+                        Some write.Bounds.Requirement.Frontier
+                    | _ -> None)
+                let joins = revision.Nodes.Values |> Seq.filter (fun node ->
+                    match node.Kind with
+                    | SemanticKind.Sequential(stored::tail) when target stored && tail.Length=deliveries.Length+1 ->
+                        match revision.Nodes.TryFind stored, revision.Nodes.TryFind(List.last tail) with
+                        | Some {Kind=SemanticKind.Binding(_,false,_,_);Children=[value]}, Some {Kind=SemanticKind.VarRef(_,Some binding)} ->
+                            binding=stored && target value && tail=deliveries@[List.last tail]
+                        | _ -> false
+                    | _ -> false) |> Seq.length
+                (writes.Length=row.Children.Length && deliveries.Length=row.Children.Length && joins=1
+                 && (match allocation.Residence with MemoryResidence.Stack _ -> true | _ -> false)),
+                sprintf "Async storage has %d writes, %d complete deliveries and %d join blocks for %d children." writes.Length deliveries.Length joins row.Children.Length
+            | _ -> false,"Async storage lacks a unique orchestration with matching owner, children, count and stride."
         let representation part site expected =
             if revision.Emission.Numeric.OccurrenceRepresentations.TryFind site = Some(Ok expected) then []
             else [missingRow part "Emission.Numeric.OccurrenceRepresentations with the exact physical carrier" site]
@@ -1310,9 +1358,10 @@ module Integrity =
                       | None when row.MinimumCount = 0I && row.MaximumCount = 0I -> ()
                       | None -> yield defect part row.Site "A nonempty zero allocation has no retained initialization construction."
                   | None, None ->
-                      if not (memory.ArrayCopies.Values |> Seq.exists (fun copy ->
+                      let delivered,reason=asyncDelivery row
+                      if not delivered && not (memory.ArrayCopies.Values |> Seq.exists (fun copy ->
                           copy.Allocation = Some row.Site && copy.Site = construction.Owner && copy.CountOperand = construction.Count)) then
-                          yield defect part row.Site "An uninitialized allocation has no exact source copy construction."
+                          yield defect part row.Site ("An uninitialized allocation has no exact source copy or complete async delivery construction. " + reason)
                   | None, Some _ -> yield defect part row.Site "An initialization construction has no source default value."
               | MemoryWitnessOperation.Address row ->
                   match row.Place with
